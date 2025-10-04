@@ -51,6 +51,13 @@ export class LLMService {
   }
 
   /**
+   * Set API key for a provider
+   */
+  async setApiKey(provider: LLMProvider, apiKey: string): Promise<void> {
+    return await this.configManager.setApiKey(provider, apiKey);
+  }
+
+  /**
    * Unified configuration flow: Select provider -> Enter API key (if needed) -> Select model
    * Returns true if configuration is complete and ready
    */

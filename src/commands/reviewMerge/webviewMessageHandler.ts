@@ -3,7 +3,7 @@ import { LLMProvider } from '../../llm-adapter';
 import { ReviewMergeService } from './reviewMergeService';
 
 export interface ReviewMergeMessage {
-    command: 'reviewMerge' | 'viewRawDiff';
+    command: 'reviewMerge' | 'viewRawDiff' | 'cancel';
     baseBranch?: string;
     compareBranch?: string;
     provider?: LLMProvider;
@@ -32,6 +32,10 @@ export class WebviewMessageHandler {
             
             case 'viewRawDiff':
                 await this.handleViewRawDiff(message);
+                break;
+
+            case 'cancel':
+                this.reviewMergeService.cancel();
                 break;
         }
     }

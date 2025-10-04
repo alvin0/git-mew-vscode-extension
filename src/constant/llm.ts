@@ -132,7 +132,7 @@ export const API_VERSIONS = {
  * Default Configuration Values
  */
 export const DEFAULT_CONFIG = {
-  TIMEOUT: 120000, // 120 seconds
+  TIMEOUT: 300000, // 300 seconds
 } as const;
 
 /**

@@ -63,7 +63,9 @@ export function generateWebviewContent(
         </div>
 
         <button id="reviewBtn">Generate Review</button>
+        <button id="cancelBtn" class="hidden" style="margin-left: 10px; background-color: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); border: 1px solid var(--vscode-button-secondaryHoverBackground);">Cancel Generate</button>
         <button id="viewDiffBtn" class="hidden" style="margin-left: 10px;">View Raw Changes</button>
+        <button id="copyBtn" class="hidden" style="margin-left: 10px;">Copy</button>
 
         <div id="loader" class="loader hidden" style="margin-top: 20px;"></div>
         <div id="result-container" class="hidden"></div>
@@ -196,6 +198,12 @@ function getStyles(): string {
         button:hover {
             background-color: var(--vscode-button-hoverBackground);
         }
+        #cancelBtn:hover {
+            background-color: var(--vscode-button-secondaryHoverBackground);
+        }
+        #copyBtn:hover {
+            background-color: var(--vscode-button-hoverBackground);
+        }
         #result-container {
             margin-top: 20px;
             padding: 15px;
@@ -233,6 +241,8 @@ function getClientScript(modelOptionsMap: { [key: string]: string }): string {
         const languageSelect = document.getElementById('language');
         const reviewBtn = document.getElementById('reviewBtn');
         const viewDiffBtn = document.getElementById('viewDiffBtn');
+        const copyBtn = document.getElementById('copyBtn');
+        const cancelBtn = document.getElementById('cancelBtn');
         const loader = document.getElementById('loader');
         const resultContainer = document.getElementById('result-container');
         let currentRawDiff = '';
@@ -269,7 +279,9 @@ function getClientScript(modelOptionsMap: { [key: string]: string }): string {
             resultContainer.textContent = '';
             reviewBtn.disabled = true;
             reviewBtn.style.opacity = 0.5;
+            cancelBtn.classList.remove('hidden');
             viewDiffBtn.classList.add('hidden');
+            copyBtn.classList.add('hidden');
 
             vscode.postMessage({
                 command: 'reviewMerge',
@@ -281,9 +293,19 @@ function getClientScript(modelOptionsMap: { [key: string]: string }): string {
             });
         });
 
+        cancelBtn.addEventListener('click', () => {
+            vscode.postMessage({ command: 'cancel' });
+            loader.classList.add('hidden');
+            cancelBtn.classList.add('hidden');
+            reviewBtn.disabled = false;
+            reviewBtn.style.opacity = 1;
+            checkBranchSelection();
+        });
+
         window.addEventListener('message', event => {
             const message = event.data;
             loader.classList.add('hidden');
+            cancelBtn.classList.add('hidden');
             reviewBtn.disabled = false;
             reviewBtn.style.opacity = 1;
             checkBranchSelection();
@@ -294,11 +316,13 @@ function getClientScript(modelOptionsMap: { [key: string]: string }): string {
                     resultContainer.classList.remove('hidden');
                     currentRawDiff = message.rawDiff;
                     viewDiffBtn.classList.remove('hidden');
+                    copyBtn.classList.remove('hidden');
                     break;
                 case 'showError':
                     resultContainer.textContent = 'Error: ' + message.message;
                     resultContainer.classList.remove('hidden');
                     viewDiffBtn.classList.add('hidden');
+                    copyBtn.classList.add('hidden');
                     break;
             }
         });
@@ -310,6 +334,16 @@ function getClientScript(modelOptionsMap: { [key: string]: string }): string {
                     diff: currentRawDiff
                 });
             }
+        });
+
+        copyBtn.addEventListener('click', () => {
+            const textToCopy = resultContainer.textContent;
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                copyBtn.textContent = 'Copied!';
+                setTimeout(() => {
+                    copyBtn.textContent = 'Copy';
+                }, 2000);
+            });
         });
     `;
 }

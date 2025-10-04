@@ -2,7 +2,7 @@
   "name": "git-mew",
   "displayName": "Git Mew",
   "description": "Your AI kitty for Git chaos - Generate intelligent commit messages using AI",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "icon": "resources/images/logo.png",
   "publisher": "GitMew",
   "engines": {
@@ -66,6 +66,11 @@
         {
           "command": "git-mew.cancel-generate",
           "when": "scmProvider == git && git-mew.isGenerating",
+          "group": "navigation"
+        },
+        {
+          "command": "git-mew.review-merge",
+          "when": "scmProvider == git",
           "group": "navigation"
         }
       ]

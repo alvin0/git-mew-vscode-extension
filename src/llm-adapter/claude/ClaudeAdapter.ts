@@ -1,4 +1,4 @@
-import { API_BASE_URLS, API_VERSIONS, DEFAULT_CONFIG, DEFAULT_MODELS } from '../../constant/llm';
+import { API_BASE_URLS, API_VERSIONS, ClaudeModel, DEFAULT_CONFIG, DEFAULT_MODELS } from '../../constant/llm';
 import { GenerateOptions, GenerateResponse, ILLMAdapter, LLMAdapterConfig } from '../adapterInterface';
 
 /**
@@ -16,11 +16,14 @@ export class ClaudeAdapter implements ILLMAdapter {
       throw new Error('Claude API key is required');
     }
 
+    const model = (config.model || this.defaultModel) as ClaudeModel;
+
     this.config = {
       ...config,
-      model: config.model || this.defaultModel,
+      model,
       baseURL: config.baseURL || this.defaultBaseURL,
       timeout: config.timeout || DEFAULT_CONFIG.TIMEOUT,
+      maxTokens: config.maxTokens || 1024,
     };
   }
 
@@ -33,9 +36,7 @@ export class ClaudeAdapter implements ILLMAdapter {
       model: this.config.model,
       max_tokens: options?.maxTokens || this.config.maxTokens,
       temperature: options?.temperature ?? this.config.temperature,
-      messages: [
-        { role: 'user', content: prompt }
-      ],
+      messages: [{ role: 'user', content: prompt }],
     };
 
     if (options?.systemMessage) {

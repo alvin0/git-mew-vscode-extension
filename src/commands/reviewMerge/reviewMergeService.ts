@@ -22,6 +22,16 @@ export class ReviewMergeService {
     ) {}
 
     /**
+     * Cancel the review generation
+     */
+    cancel() {
+        // Currently, there's no long-running process to cancel on the backend.
+        // The cancellation is primarily handled on the client-side to reset the UI.
+        // This method is a placeholder for potential future backend cancellation logic.
+        console.log('Review generation cancelled by user.');
+    }
+
+    /**
      * Generate a review for merging two branches
      */
     async generateReview(
@@ -97,12 +107,23 @@ export class ReviewMergeService {
             return 'not-required';
         }
 
-        const key = await this.llmService.getApiKey(provider);
+        let key = await this.llmService.getApiKey(provider);
         if (!key) {
-            vscode.window.showWarningMessage(
-                `No API key found for ${provider.toUpperCase()}. Please configure it first using "Git Mew: Setup Model".`
-            );
-            return undefined;
+            const newKey = await vscode.window.showInputBox({
+                prompt: `Enter API Key for ${provider.toUpperCase()}`,
+                placeHolder: 'Your API Key',
+                ignoreFocusOut: true,
+            });
+
+            if (newKey) {
+                await this.llmService.setApiKey(provider, newKey);
+                key = newKey;
+            } else {
+                vscode.window.showWarningMessage(
+                    `No API key provided for ${provider.toUpperCase()}. Please configure it first to proceed.`
+                );
+                return undefined;
+            }
         }
 
         return key;

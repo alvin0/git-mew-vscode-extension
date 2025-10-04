@@ -4,6 +4,19 @@ All notable changes to the "Git Mew" extension will be documented in this file.
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [0.0.3] - 2025-10-05
+
+### Fixed
+- Fix bug and improve
+
+## [0.0.2] - 2025-10-05
+
+### Added
+- Add feature review merge request
+
+### Fixed
+- Fix bug and improve
+
 ## [0.0.1] - 2025-10-04
 
 ### Added
