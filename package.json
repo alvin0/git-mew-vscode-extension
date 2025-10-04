@@ -1,0 +1,104 @@
+{
+  "name": "git-mew",
+  "displayName": "Git Mew",
+  "description": "Your AI kitty for Git chaos - Generate intelligent commit messages using AI",
+  "version": "0.0.1",
+  "icon": "resources/images/logo.png",
+  "publisher": "git-mew",
+  "engines": {
+    "vscode": "^1.104.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Machine Learning",
+    "Other"
+  ],
+  "keywords": [
+    "git",
+    "commit",
+    "ai",
+    "llm",
+    "openai",
+    "claude",
+    "gemini",
+    "commit message"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/git-mew/git-mew"
+  },
+  "bugs": {
+    "url": "https://github.com/git-mew/git-mew/issues"
+  },
+  "homepage": "https://github.com/git-mew/git-mew#readme",
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "git-mew.generate-commit",
+        "title": "git-mew: Generate Commit Message",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "git-mew.setupModel",
+        "title": "git-mew: Setup Model"
+      }
+    ],
+    "menus": {
+      "scm/title": [
+        {
+          "command": "git-mew.generate-commit",
+          "when": "scmProvider == git",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "git-mew",
+      "properties": {
+        "git-mew.llmProvider": {
+          "type": "string",
+          "enum": ["openai", "claude", "gemini"],
+          "enumDescriptions": [
+            "OpenAI GPT models",
+            "Anthropic Claude models",
+            "Google Gemini models"
+          ],
+          "description": "Select the LLM provider to use for generating commit messages"
+        },
+        "git-mew.llmModel.openai": {
+          "type": "string",
+          "description": "OpenAI model to use"
+        },
+        "git-mew.llmModel.claude": {
+          "type": "string",
+          "description": "Claude model to use"
+        },
+        "git-mew.llmModel.gemini": {
+          "type": "string",
+          "description": "Gemini model to use"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.104.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "@typescript-eslint/eslint-plugin": "^8.45.0",
+    "@typescript-eslint/parser": "^8.45.0",
+    "eslint": "^9.36.0",
+    "typescript": "^5.9.3",
+    "@vscode/test-cli": "^0.0.11",
+    "@vscode/test-electron": "^2.5.2"
+  }
+}
