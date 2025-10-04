@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { FileTypeDetector } from './fileTypeDetector';
 
@@ -401,6 +403,210 @@ export class GitService {
             repository.inputBox.value = message;
         } catch (error) {
             throw new Error(`Failed to set commit message: ${error}`);
+        }
+    }
+
+    /**
+     * Stage all changes (add all files from working tree to index)
+     */
+    public async stageAllChanges(): Promise<void> {
+        try {
+            const repository = this.getRepository();
+            const workingTreeChanges = repository.state.workingTreeChanges;
+            
+            if (workingTreeChanges.length === 0) {
+                return;
+            }
+
+            // Add all working tree changes to the index
+            await repository.add(workingTreeChanges.map((change: GitChange) => change.uri.fsPath));
+        } catch (error) {
+            throw new Error(`Failed to stage all changes: ${error}`);
+        }
+    }
+
+    /**
+     * Get all branches (local and remote)
+     * @returns Array of branch names
+     */
+    public async getAllBranches(): Promise<string[]> {
+        try {
+            const repository = this.getRepository();
+            
+            // Get local and remote branches
+            const branches: string[] = [];
+            
+            // Try to get refs
+            const refs = await repository.getRefs();
+            console.log('Total refs found:', refs.length);
+            
+            for (const ref of refs) {
+                console.log('Ref:', ref.name, 'Type:', ref.type);
+                if (ref.name) {
+                    // Type 0 = local branch (HEAD)
+                    // Type 1 = remote branch
+                    // Type 2 = tag
+                    
+                    // Skip origin/HEAD as it's just a pointer
+                    if (ref.name === 'origin/HEAD') {
+                        continue;
+                    }
+                    
+                    // Add all branches (local and remote)
+                    // Local branches don't have prefix (e.g., "main")
+                    // Remote branches have "origin/" prefix (e.g., "origin/main")
+                    if (ref.type === 0 || ref.type === 1) {
+                        branches.push(ref.name);
+                        console.log('Added branch:', ref.name);
+                    }
+                }
+            }
+            
+            console.log('Total branches found:', branches.length);
+            
+            // Remove duplicates and sort
+            const uniqueBranches = [...new Set(branches)].sort();
+            console.log('Unique branches:', uniqueBranches);
+            return uniqueBranches;
+        } catch (error) {
+            console.error('Error getting branches:', error);
+            throw new Error(`Failed to get branches: ${error}`);
+        }
+    }
+
+    /**
+     * Get the current branch name
+     * @returns Current branch name or undefined
+     */
+    public async getCurrentBranch(): Promise<string | undefined> {
+        try {
+            const repository = this.getRepository();
+            const head = repository.state.HEAD;
+            return head?.name;
+        } catch (error) {
+            return undefined;
+        }
+    }
+
+    /**
+     * Get diff between two branches
+     * @param baseBranch - The base branch (target branch to merge into)
+     * @param compareBranch - The compare branch (source branch to merge from)
+     * @returns Diff content as string
+     */
+    public async getBranchDiff(baseBranch: string, compareBranch: string): Promise<string> {
+        try {
+            const repository = this.getRepository();
+            console.log('Getting diff between:', baseBranch, 'and', compareBranch);
+            
+            // diffBetween returns an array of Change objects, not a string
+            const changes = await repository.diffBetween(baseBranch, compareBranch);
+            console.log('Changes received:', changes);
+            
+            if (!changes || changes.length === 0) {
+                return 'No differences found between the branches.';
+            }
+            
+            // Build diff string from changes
+            let diffContent = '';
+            
+            for (const change of changes) {
+                const uri = change.uri;
+                const status = this.getStatusString(change.status);
+                const filePath = uri.fsPath.split('/').pop() || uri.fsPath;
+                
+                diffContent += `\n## ${status}: ${filePath}\n`;
+                diffContent += `Path: ${uri.fsPath}\n`;
+                
+                // Try to get the actual diff content for this file
+                try {
+                    const fileDiff = await repository.diffBetween(baseBranch, compareBranch, uri.fsPath);
+                    if (fileDiff) {
+                        diffContent += '\n```diff\n';
+                        diffContent += fileDiff;
+                        diffContent += '\n```\n';
+                    }
+                } catch (err) {
+                    console.log('Could not get file diff:', err);
+                }
+            }
+            
+            return diffContent || 'No detailed diff available.';
+        } catch (error) {
+            console.error('Error getting branch diff:', error);
+            throw new Error(`Failed to get diff between branches: ${error}`);
+        }
+    }
+    
+    /**
+     * Get status string from status code
+     */
+    private getStatusString(status: number): string {
+        switch (status) {
+            case GitStatus.INDEX_MODIFIED:
+            case GitStatus.MODIFIED:
+                return 'Modified';
+            case GitStatus.INDEX_ADDED:
+                return 'Added';
+            case GitStatus.INDEX_DELETED:
+            case GitStatus.DELETED:
+                return 'Deleted';
+            case GitStatus.INDEX_RENAMED:
+                return 'Renamed';
+            case GitStatus.INDEX_COPIED:
+                return 'Copied';
+            case GitStatus.UNTRACKED:
+                return 'Untracked';
+            default:
+                return 'Changed';
+        }
+    }
+
+    /**
+     * Get custom code review rules from .gitmew/code-rule.review-merge.md
+     * @returns Custom rules content or undefined if file doesn't exist
+     */
+    public async getCustomReviewRules(): Promise<string | undefined> {
+        try {
+            const repository = this.getRepository();
+            const workspaceRoot = repository.rootUri.fsPath;
+            const rulesPath = path.join(workspaceRoot, '.gitmew', 'code-rule.review-merge.md');
+            
+            // Check if file exists
+            if (!fs.existsSync(rulesPath)) {
+                return undefined;
+            }
+            
+            // Read file content
+            const content = fs.readFileSync(rulesPath, 'utf-8');
+            return content.trim();
+        } catch (error) {
+            console.error('Error reading custom review rules:', error);
+            return undefined;
+        }
+    }
+
+    /**
+     * Get custom system prompt from .gitmew/systemprompt.review-merge.md
+     * @returns Custom system prompt content or undefined if file doesn't exist
+     */
+    public async getCustomSystemPrompt(): Promise<string | undefined> {
+        try {
+            const repository = this.getRepository();
+            const workspaceRoot = repository.rootUri.fsPath;
+            const promptPath = path.join(workspaceRoot, '.gitmew', 'systemprompt.review-merge.md');
+            
+            // Check if file exists
+            if (!fs.existsSync(promptPath)) {
+                return undefined;
+            }
+            
+            // Read file content
+            const content = fs.readFileSync(promptPath, 'utf-8');
+            return content.trim();
+        } catch (error) {
+            console.error('Error reading custom system prompt:', error);
+            return undefined;
         }
     }
 }

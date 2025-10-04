@@ -8,20 +8,30 @@ Git Mew helps you write better commit messages by analyzing your staged changes 
 
 ### Key Features
 
-- 🤖 **AI-Powered Commit Messages**: Automatically generate commit messages based on your staged changes
-- 🎯 **Multiple LLM Providers**: Support for OpenAI, Claude, and Gemini
-- ⚡ **Quick Access**: Generate commit messages directly from the Source Control panel
-- 🎨 **Conventional Commits**: Follows conventional commit format for better changelog generation
-- 🔧 **Customizable**: Configure your preferred AI model and provider
+- 🤖 **AI-Powered Commit Messages**: Automatically generate commit messages based on your staged changes.
+- 🔍 **AI-Powered Code Review**: Generate comprehensive code reviews for merge requests/pull requests by comparing any two branches.
+- 🎯 **Multiple LLM Providers**: Support for OpenAI, Claude, Gemini, and Ollama.
+- ⚡ **Quick Access**: Generate commit messages directly from the Source Control panel.
+- 🎨 **Conventional Commits & Rich Reviews**: Follows conventional commit format and generates detailed code review reports.
+- 🔧 **Customizable**: Configure your preferred AI model and provider for both commit generation and code review.
+- 📝 **Custom Rules**: Define project-specific rules for both commit messages and code reviews.
+- 🌍 **Multi-Language Support**: Get code reviews in your preferred language.
 
 ### How to Use
 
-1. Stage your changes in Git
-2. Click the sparkle icon (✨) in the Source Control panel, or run the command `git-mew: Generate Commit Message`
-3. Git Mew will analyze your changes and generate a commit message
+#### Generating Commit Messages
+1. Stage your changes in Git.
+2. Click the sparkle icon (✨) in the Source Control panel, or run the command `git-mew: Generate Commit Message`.
+3. Git Mew will analyze your changes and generate a commit message.
 4. Review and commit!
 
-![Git Mew in action](resources/images/logo.png)
+#### Generating a Code Review
+1. Ensure you have committed your changes to your feature branch.
+2. Run the command `git-mew: Review Merge`.
+3. A webview will open. Select your base branch (e.g., `main`) and your compare branch (your feature branch).
+4. Choose your preferred LLM provider, model, and output language.
+5. Click "Generate Review".
+6. A detailed code review report will open in a new tab.
 
 ## Requirements
 
@@ -37,30 +47,59 @@ Git Mew helps you write better commit messages by analyzing your staged changes 
 4. Enter your API key when prompted
 5. Choose your preferred model
 
+## Customizing Rules
+
+Git Mew allows you to customize how AI generates content by creating rule files in a `.gitmew` folder in your repository root.
+
+### Customizing Commit Message Rules
+
+1.  Create a file: `.gitmew/systemprompt.generate-commit.md`
+2.  Define your custom commit message rules in this file. The AI will use these instructions instead of the default prompt.
+
+### Customizing Code Review Rules
+
+You can customize the code review process at two levels:
+
+1.  **Custom System Prompt**: To completely replace the default review instructions, create `.gitmew/systemprompt.review-merge.md`. This file gives you full control over the AI's persona, structure, and output format.
+
+2.  **Custom Review Rules**: To add specific, project-level rules *on top of* the default system prompt, create `.gitmew/code-review-rule.md`. This is useful for defining project-specific conventions, style guides, or areas to check.
+
+**Example structure:**
+```
+your-project/
+├── .gitmew/
+│   ├── systemprompt.generate-commit.md  # Custom rules for commit messages
+│   ├── systemprompt.review-merge.md     # (Optional) Overrides default review prompt
+│   └── code-review-rule.md              # (Optional) Adds specific rules to the review
+├── src/
+└── ...
+```
+
 ## Extension Settings
 
 This extension contributes the following settings:
 
-* `git-mew.llmProvider`: Select the LLM provider (openai, claude, or gemini)
-* `git-mew.llmModel.openai`: OpenAI model to use (e.g., gpt-4, gpt-3.5-turbo)
-* `git-mew.llmModel.claude`: Claude model to use (e.g., claude-3-opus, claude-3-sonnet)
-* `git-mew.llmModel.gemini`: Gemini model to use (e.g., gemini-pro)
+* `git-mew.llmProvider`: Select the default LLM provider (openai, claude, gemini, or ollama).
+* `git-mew.llmModel.openai`: Default OpenAI model to use.
+* `git-mew.llmModel.claude`: Default Claude model to use.
+* `git-mew.llmModel.gemini`: Default Gemini model to use.
+* `git-mew.reviewMerge.provider`: (Internal) Stores the last used provider for Review Merge.
+* `git-mew.reviewMerge.model`: (Internal) Stores the last used model for Review Merge.
+* `git-mew.reviewMerge.language`: (Internal) Stores the last used language for Review Merge.
 
 ## Supported LLM Providers
 
 ### OpenAI
-- GPT-4
-- GPT-3.5 Turbo
-- And other OpenAI models
+- GPT-5, GPT-5 Mini, GPT-5 Nano, GPT-4.1
 
 ### Anthropic Claude
-- Claude 3 Opus
-- Claude 3 Sonnet
-- Claude 3 Haiku
+- Claude Sonnet 4.5
 
 ### Google Gemini
-- Gemini Pro
-- And other Gemini models
+- Gemini 2.5 Pro, Gemini 2.5 Flash
+
+### Ollama
+- Supports any model you have running locally.
 
 ## Privacy & Security
 

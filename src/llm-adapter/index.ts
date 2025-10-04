@@ -6,35 +6,48 @@
 // Export interfaces
 export {
   GenerateOptions,
-  GenerateResponse, ILLMAdapter,
+  GenerateResponse,
+  ILLMAdapter,
   LLMAdapterConfig
 } from './adapterInterface';
 
 // Export adapter implementations
 export { ClaudeAdapter } from './claude/ClaudeAdapter';
 export { GeminiAdapter } from './gemini/GeminiAdapter';
+export { OllamaAdapter } from './ollama/OllamaAdapter';
 export { OpenAIAdapter } from './openai/OpenAIAdapter';
-// Export constants
+
+// Export constants from centralized location
 export {
   API_BASE_URLS,
-  API_VERSIONS, CLAUDE_MODELS, DEFAULT_CONFIG, DEFAULT_MODELS, GEMINI_MODELS, MODEL_CAPABILITIES, OPENAI_MODELS, type ClaudeModel,
+  API_VERSIONS,
+  CLAUDE_MODELS,
+  DEFAULT_CONFIG,
+  DEFAULT_MODELS,
+  GEMINI_MODELS,
+  MODEL_CAPABILITIES,
+  OPENAI_MODELS,
+  type ClaudeModel,
   type GeminiModel,
-  type LLMModel, type LLMProvider,
+  type LLMModel,
+  type LLMProvider,
+  type OllamaModel,
   type OpenAIModel
-} from './constants';
+} from '../constant/llm';
 
 
 // Import for internal use
 import { ILLMAdapter } from './adapterInterface';
 import { ClaudeAdapter } from './claude/ClaudeAdapter';
 import { GeminiAdapter } from './gemini/GeminiAdapter';
+import { OllamaAdapter } from './ollama/OllamaAdapter';
 import { OpenAIAdapter } from './openai/OpenAIAdapter';
 
 /**
  * Adapter factory function
  * Creates an adapter instance based on the provider name
  */
-export function createAdapter(provider: 'openai' | 'claude' | 'gemini'): ILLMAdapter {
+export function createAdapter(provider: 'openai' | 'claude' | 'gemini' | 'ollama'): ILLMAdapter {
   switch (provider.toLowerCase()) {
     case 'openai':
       return new OpenAIAdapter();
@@ -42,7 +55,9 @@ export function createAdapter(provider: 'openai' | 'claude' | 'gemini'): ILLMAda
       return new ClaudeAdapter();
     case 'gemini':
       return new GeminiAdapter();
+    case 'ollama':
+      return new OllamaAdapter();
     default:
-      throw new Error(`Unknown provider: ${provider}. Supported providers: openai, claude, gemini`);
+      throw new Error(`Unknown provider: ${provider}. Supported providers: openai, claude, gemini, ollama`);
   }
 }

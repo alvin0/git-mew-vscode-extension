@@ -1,5 +1,5 @@
+import { API_BASE_URLS, DEFAULT_CONFIG, DEFAULT_MODELS } from '../../constant/llm';
 import { GenerateOptions, GenerateResponse, ILLMAdapter, LLMAdapterConfig } from '../adapterInterface';
-import { API_BASE_URLS, DEFAULT_CONFIG, DEFAULT_MODELS } from '../constants';
 
 /**
  * OpenAI API Adapter
@@ -19,8 +19,6 @@ export class OpenAIAdapter implements ILLMAdapter {
       ...config,
       model: config.model || this.defaultModel,
       baseURL: config.baseURL || this.defaultBaseURL,
-      maxTokens: config.maxTokens || DEFAULT_CONFIG.MAX_TOKENS,
-      temperature: config.temperature ?? DEFAULT_CONFIG.TEMPERATURE,
       timeout: config.timeout || DEFAULT_CONFIG.TIMEOUT,
     };
   }

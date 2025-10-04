@@ -2,7 +2,7 @@
   "name": "git-mew",
   "displayName": "Git Mew",
   "description": "Your AI kitty for Git chaos - Generate intelligent commit messages using AI",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "icon": "resources/images/logo.png",
   "publisher": "GitMew",
   "engines": {
@@ -21,6 +21,7 @@
     "openai",
     "claude",
     "gemini",
+    "ollama",
     "commit message"
   ],
   "repository": {
@@ -41,15 +42,30 @@
         "icon": "$(sparkle)"
       },
       {
+        "command": "git-mew.cancel-generate",
+        "title": "git-mew: Cancel Generation",
+        "icon": "$(debug-pause)"
+      },
+      {
         "command": "git-mew.setupModel",
         "title": "git-mew: Setup Model"
+      },
+      {
+        "command": "git-mew.review-merge",
+        "title": "git-mew: Review Merge",
+        "icon": "$(git-merge)"
       }
     ],
     "menus": {
       "scm/title": [
         {
           "command": "git-mew.generate-commit",
-          "when": "scmProvider == git",
+          "when": "scmProvider == git && !git-mew.isGenerating",
+          "group": "navigation"
+        },
+        {
+          "command": "git-mew.cancel-generate",
+          "when": "scmProvider == git && git-mew.isGenerating",
           "group": "navigation"
         }
       ]
@@ -59,11 +75,12 @@
       "properties": {
         "git-mew.llmProvider": {
           "type": "string",
-          "enum": ["openai", "claude", "gemini"],
+          "enum": ["openai", "claude", "gemini", "ollama"],
           "enumDescriptions": [
             "OpenAI GPT models",
             "Anthropic Claude models",
-            "Google Gemini models"
+            "Google Gemini models",
+            "Ollama local models"
           ],
           "description": "Select the LLM provider to use for generating commit messages"
         },
@@ -78,6 +95,25 @@
         "git-mew.llmModel.gemini": {
           "type": "string",
           "description": "Gemini model to use"
+        },
+        "git-mew.llmModel.ollama": {
+          "type": "string",
+          "description": "Ollama model to use"
+        },
+        "git-mew.reviewMerge.provider": {
+          "type": "string",
+          "enum": ["openai", "claude", "gemini", "ollama"],
+          "description": "Last used LLM provider for Review Merge (separate from commit generation)"
+        },
+        "git-mew.reviewMerge.model": {
+          "type": "string",
+          "description": "Last used model for Review Merge (separate from commit generation)"
+        },
+        "git-mew.reviewMerge.language": {
+          "type": "string",
+          "default": "Vietnamese",
+          "enum": ["English", "Vietnamese", "Japanese", "Korean", "Chinese", "French", "German", "Spanish"],
+          "description": "Last used response language for Review Merge"
         }
       }
     }

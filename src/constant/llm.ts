@@ -1,6 +1,7 @@
 /**
  * LLM Model Constants
- * Centralized model definitions for all supported LLM providers
+ * Single source of truth for all LLM provider configurations
+ * Centralized model definitions, UI metadata, and capabilities
  */
 
 /**
@@ -34,7 +35,75 @@ export const GEMINI_MODELS = {
 } as const;
 
 /**
+ * UI Metadata for Models
+ * Used in quick pick menus and user-facing displays
+ */
+export const MODEL_UI_METADATA = {
+  // OpenAI Models
+  [OPENAI_MODELS.GPT_5]: {
+    displayName: 'GPT-5',
+    description: 'Most capable model',
+  },
+  [OPENAI_MODELS.GPT_5_MINI]: {
+    displayName: 'GPT-5 Mini',
+    description: 'Balanced performance',
+  },
+  [OPENAI_MODELS.GPT_5_NANO]: {
+    displayName: 'GPT-5 Nano',
+    description: 'Fast and efficient',
+  },
+  [OPENAI_MODELS.GPT_4_1]: {
+    displayName: 'GPT-4.1',
+    description: 'Previous generation',
+  },
+  
+  // Claude Models
+  [CLAUDE_MODELS.CLAUDE_SONNET_4_5]: {
+    displayName: 'Claude Sonnet 4.5',
+    description: 'Latest model',
+  },
+  
+  // Gemini Models
+  [GEMINI_MODELS.GEMINI_2_5_PRO]: {
+    displayName: 'Gemini 2.5 Pro',
+    description: 'Most capable',
+  },
+  [GEMINI_MODELS.GEMINI_2_5_FLASH]: {
+    displayName: 'Gemini 2.5 Flash',
+    description: 'Fast responses',
+  },
+} as const;
+
+/**
+ * Provider UI Metadata
+ * Used in provider selection quick pick
+ */
+export const PROVIDER_UI_METADATA = {
+  openai: {
+    displayName: 'OpenAI',
+    icon: '$(cloud)',
+    description: 'GPT-5, GPT-4.1 models',
+  },
+  claude: {
+    displayName: 'Claude',
+    icon: '$(robot)',
+    description: 'Claude Sonnet 4.5',
+  },
+  gemini: {
+    displayName: 'Gemini',
+    icon: '$(sparkle)',
+    description: 'Gemini 2.5 Pro, Flash',
+  },
+  ollama: {
+    displayName: 'Ollama',
+    icon: '$(server)',
+    description: 'Local models (Llama, Mistral, etc.)',
+  },
+} as const;
+
+/**
  * Default models for each provider
+ * Note: Ollama doesn't have a default model as it uses dynamic model discovery
  */
 export const DEFAULT_MODELS = {
   OPENAI: OPENAI_MODELS.GPT_5_MINI,
@@ -49,6 +118,7 @@ export const API_BASE_URLS = {
   OPENAI: 'https://api.openai.com/v1',
   CLAUDE: 'https://api.anthropic.com/v1',
   GEMINI: 'https://generativelanguage.googleapis.com/v1beta',
+  OLLAMA: 'http://localhost:11434/api',
 } as const;
 
 /**
@@ -62,8 +132,6 @@ export const API_VERSIONS = {
  * Default Configuration Values
  */
 export const DEFAULT_CONFIG = {
-  MAX_TOKENS: 2000,
-  TEMPERATURE: 0.7,
   TIMEOUT: 120000, // 120 seconds
 } as const;
 
@@ -101,7 +169,7 @@ export const MODEL_CAPABILITIES = {
 /**
  * Provider Types
  */
-export type LLMProvider = 'openai' | 'claude' | 'gemini';
+export type LLMProvider = 'openai' | 'claude' | 'gemini' | 'ollama';
 
 /**
  * Model Types
@@ -109,4 +177,5 @@ export type LLMProvider = 'openai' | 'claude' | 'gemini';
 export type OpenAIModel = typeof OPENAI_MODELS[keyof typeof OPENAI_MODELS];
 export type ClaudeModel = typeof CLAUDE_MODELS[keyof typeof CLAUDE_MODELS];
 export type GeminiModel = typeof GEMINI_MODELS[keyof typeof GEMINI_MODELS];
-export type LLMModel = OpenAIModel | ClaudeModel | GeminiModel;
+export type OllamaModel = string; // Ollama models are dynamic, so we use string type
+export type LLMModel = OpenAIModel | ClaudeModel | GeminiModel | OllamaModel;
