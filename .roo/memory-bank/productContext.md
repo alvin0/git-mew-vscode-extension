@@ -41,21 +41,32 @@ If user clicks generate without setup:
 - Automatically starts setup flow
 - Returns to generation after setup complete
 
-### Review Merge
+### Review Merge & MR Description
 1. User runs "git-mew: Review Merge" command
 2. System opens a webview with options:
    - Base branch selection
    - Compare branch selection
    - LLM provider and model selection
    - Output language selection
-3. User selects branches and options, then clicks "Generate Review"
+   - Optional task/issue context
+3. User can choose between two actions:
+   - **Generate Review:** Creates comprehensive code review
+   - **Generate Description:** Creates MR/PR description
 4. Git Mew analyzes the diff between the two branches
-5. AI generates a comprehensive code review report with:
+5. For **Review**, AI generates:
    - Summary of changes
    - Code quality assessment
    - Improvement suggestions
-6. The review is displayed in a new editor tab
-7. User can view the raw diff in a separate tab
+   - Security considerations
+6. For **Description**, AI generates:
+   - Smart template selection (default/release/hotfix)
+   - Structured MR description with:
+     - Problem/feature summary
+     - Changes made (grouped by scope)
+     - Related issues
+     - Checklists
+7. Results displayed in new editor tabs
+8. User can view raw diff in separate tab
 
 ## Key User Benefits
 
@@ -64,12 +75,16 @@ If user clicks generate without setup:
 - **Better history:** Consistent, descriptive messages
 - **Learn patterns:** See how AI describes changes
 - **Flexibility:** Choose preferred AI provider
+- **Quality reviews:** Get AI-powered code review insights
+- **Professional MRs:** Generate polished merge request descriptions
 
 ### For Teams
 - **Standardization:** Conventional commit format enforced
 - **Better changelogs:** Structured messages enable automation
-- **Code review:** Clear commit messages aid review process
+- **Code review:** Clear commit messages and AI reviews aid review process
 - **Onboarding:** New developers see good commit examples
+- **Consistent MRs:** Template-based descriptions ensure completeness
+- **Custom rules:** Project-specific guidelines via `.gitmew/` folder
 
 ## Commit Message Format
 ```

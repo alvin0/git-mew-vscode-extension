@@ -1,4 +1,3 @@
-const FORMAT_RULE_DEFAULT = `
 ## Formatting Rules
 * Separate subject and body with one blank line  
 * Limit subject to **50 characters** and use **imperative mood**  
@@ -14,12 +13,12 @@ const FORMAT_RULE_DEFAULT = `
 1. **File Summary**
    * List all changed files with brief descriptions  
    Example:
-   \`\`\`
+   ```
    Files changed:
    - src/api/auth.js: Added token validation
    - src/utils/helpers.js: Refactored string parser
    - tests/auth.test.js: Added validation test
-   \`\`\`
+   ```
 
 2. **Functional and Technical Summary**
    * Briefly describe what was changed and why  
@@ -30,7 +29,7 @@ const FORMAT_RULE_DEFAULT = `
 
 ## Example Commit Messages
 
-\`\`\`
+```
 Refactor authentication flow
 
 Files changed:
@@ -38,9 +37,9 @@ Files changed:
 - src/services/tokenService.js: Moved JWT handling to helper
 
 Improves code clarity and reduces duplication.
-\`\`\`
+```
 
-\`\`\`
+```
 Add caching for product service
 
 Files changed:
@@ -48,28 +47,4 @@ Files changed:
 - tests/productService.test.js: Added cache tests
 
 Boosts performance by reducing DB queries.
-\`\`\``
-
-export const getSystemPrompt = (customPrompt?: string) => `
-You are an expert at writing Git commit messages.
-Your task is to generate a **clear, concise, and professional** commit message
-that accurately summarizes **all code and file-level changes**.
-
-If the change is fully clear from the subject line, do **not** include a body.
-Only add a message body when it provides **useful details**, such as file changes,
-rationale, or technical impact.
-
-** Output Rules **
-Return **only** the formatted commit message.
-Do **not** include:
-* Explanations or reasoning
-* Code snippets or diffs
-* Any markdown formatting other than plain text
-* The result must be in text format, not markdown or any other format.
-
-Do **not** include any commentary, diffs, or metadata — only the final commit message.
-
----
-
-${customPrompt || FORMAT_RULE_DEFAULT}
-`;
+```

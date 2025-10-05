@@ -10,12 +10,14 @@ Git Mew helps you write better commit messages by analyzing your staged changes 
 
 - 🤖 **AI-Powered Commit Messages**: Automatically generate commit messages based on your staged changes.
 - 🔍 **AI-Powered Code Review**: Generate comprehensive code reviews for merge requests/pull requests by comparing any two branches.
+- 📝 **AI-Powered MR Descriptions**: Generate professional merge request descriptions with smart template selection (default, release, hotfix).
 - 🎯 **Multiple LLM Providers**: Support for OpenAI, Claude, Gemini, and Ollama.
 - ⚡ **Quick Access**: Generate commit messages directly from the Source Control panel.
 - 🎨 **Conventional Commits & Rich Reviews**: Follows conventional commit format and generates detailed code review reports.
-- 🔧 **Customizable**: Configure your preferred AI model and provider for both commit generation and code review.
-- 📝 **Custom Rules**: Define project-specific rules for both commit messages and code reviews.
-- 🌍 **Multi-Language Support**: Get code reviews in your preferred language.
+- 🔧 **Customizable**: Configure your preferred AI model and provider for commit generation, code review, and MR descriptions.
+- 📝 **Custom Rules**: Define project-specific rules for commit messages, code reviews, and MR descriptions.
+- 🌍 **Multi-Language Support**: Get code reviews and MR descriptions in your preferred language.
+- 📤 **Easy Template Publishing**: Use the publish command to copy template files to your project.
 
 ### How to Use
 
@@ -25,13 +27,21 @@ Git Mew helps you write better commit messages by analyzing your staged changes 
 3. Git Mew will analyze your changes and generate a commit message.
 4. Review and commit!
 
-#### Generating a Code Review
+#### Generating a Code Review or MR Description
 1. Ensure you have committed your changes to your feature branch.
 2. Run the command `git-mew: Review Merge`.
 3. A webview will open. Select your base branch (e.g., `main`) and your compare branch (your feature branch).
 4. Choose your preferred LLM provider, model, and output language.
-5. Click "Generate Review".
-6. A detailed code review report will open in a new tab.
+5. Optionally, add task/issue context for better results.
+6. Click either:
+   - **"Generate Review"** for a comprehensive code review
+   - **"Generate Description"** for a merge request description
+7. The result will open in a new tab.
+
+**MR Description Templates:**
+- **Default**: Standard feature/bugfix descriptions
+- **Release**: For release branches with changelog links
+- **Hotfix**: For urgent fixes with incident tracking
 
 ## Requirements
 
@@ -51,26 +61,40 @@ Git Mew helps you write better commit messages by analyzing your staged changes 
 
 Git Mew allows you to customize how AI generates content by creating rule files in a `.gitmew` folder in your repository root.
 
-### Customizing Commit Message Rules
+### Publishing Template Files
 
-1.  Create a file: `.gitmew/systemprompt.generate-commit.md`
-2.  Define your custom commit message rules in this file. The AI will use these instructions instead of the default prompt.
+The easiest way to get started with customization:
 
-### Customizing Code Review Rules
+1. Run the command `git-mew: Publish Files`
+2. Select which template files you want to copy to your project
+3. Edit the files in `.gitmew/` to match your project needs
 
-You can customize the code review process at two levels:
+### Available Customization Files
 
-1.  **Custom System Prompt**: To completely replace the default review instructions, create `.gitmew/systemprompt.review-merge.md`. This file gives you full control over the AI's persona, structure, and output format.
+1. **Commit Message Rules** (`.gitmew/commit-rule.generate-commit.md`)
+   - Define custom rules for commit message generation
+   - The AI will use these instructions instead of the default prompt
 
-2.  **Custom Review Rules**: To add specific, project-level rules *on top of* the default system prompt, create `.gitmew/code-review-rule.md`. This is useful for defining project-specific conventions, style guides, or areas to check.
+2. **Code Review System Prompt** (`.gitmew/system-prompt.review-merge.md`)
+   - Completely replace the default review instructions
+   - Full control over AI's persona, structure, and output format
+
+3. **Code Review Rules** (`.gitmew/code-rule.review-merge.md`)
+   - Add specific, project-level rules on top of the default system prompt
+   - Define project-specific conventions, style guides, or areas to check
+
+4. **MR Description System Prompt** (`.gitmew/system-prompt.description-merge.md`)
+   - Customize the merge request description generation
+   - Control template selection logic and output format
 
 **Example structure:**
 ```
 your-project/
 ├── .gitmew/
-│   ├── systemprompt.generate-commit.md  # Custom rules for commit messages
-│   ├── systemprompt.review-merge.md     # (Optional) Overrides default review prompt
-│   └── code-review-rule.md              # (Optional) Adds specific rules to the review
+│   ├── commit-rule.generate-commit.md        # Custom commit rules
+│   ├── system-prompt.review-merge.md         # Custom review prompt
+│   ├── code-rule.review-merge.md             # Custom review rules
+│   └── system-prompt.description-merge.md    # Custom MR description prompt
 ├── src/
 └── ...
 ```
@@ -113,6 +137,26 @@ This extension contributes the following settings:
 - Some binary file changes may not be analyzed properly
 
 ## Release Notes
+
+### 0.0.4
+
+Enhanced features and customization:
+- Added MR description generation with smart templates
+- Added publish command for easy template distribution
+- Enhanced webview UI with description generation
+- Added auto-reload prompt after extension updates
+- Improved error handling and API key management
+
+### 0.0.3
+
+Bug fixes and improvements
+
+### 0.0.2
+
+Added code review feature:
+- AI-powered merge request/pull request reviews
+- Branch comparison and diff analysis
+- Multi-language support
 
 ### 0.0.1
 

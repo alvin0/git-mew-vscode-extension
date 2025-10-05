@@ -4,6 +4,24 @@ All notable changes to the "Git Mew" extension will be documented in this file.
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [0.0.4] - 2025-10-05
+
+### Added
+- **Publish Command**: New `git-mew: Publish Files` command to easily copy template files to `.gitmew/` folder
+- **MR Description Generation**: Generate professional merge request descriptions alongside code reviews
+- **Smart Template Selection**: Automatic routing between default, release, and hotfix templates based on branch names and context
+- **Description System Prompt**: New customizable template file `system-prompt.description-merge.md`
+- **Task Context Support**: Optional task/issue context field in webview for better AI understanding
+- **Auto-Reload Prompt**: Extension now prompts users to reload window after updates
+- **Enhanced Webview UI**: Added "Generate Description" button alongside "Generate Review"
+
+### Improved
+- **Error Handling**: Better API key management with inline prompts during workflow
+- **Configuration Management**: Separate settings for review/description independent from commit generation
+- **User Experience**: More intuitive webview interface with clearer action buttons
+- **Documentation**: Updated README with MR description feature and publish command usage
+
+
 ## [0.0.3] - 2025-10-05
 
 ### Fixed

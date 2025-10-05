@@ -3,7 +3,7 @@
 ## Project Identity
 **Name:** Git Mew  
 **Tagline:** Your AI kitty for Git chaos - Generate intelligent commit messages using AI  
-**Version:** 0.0.1  
+**Version:** 0.0.4
 **Type:** VS Code Extension
 
 ## Core Purpose
@@ -24,14 +24,21 @@ Git Mew is a VS Code extension that automatically generates meaningful, conventi
 ## Key Features
 - 🤖 AI-powered commit message generation from staged changes
 - 🔍 AI-powered merge request/pull request code review
+- 📝 AI-powered merge request description generation
 - 🎯 Support for OpenAI (GPT-5, GPT-4.1), Claude (Sonnet 4.5), Gemini (2.5 Pro/Flash), and Ollama
 - ⚡ Quick access via sparkle icon in Source Control panel
 - 🎨 Conventional commit format with file summaries
-- 📝 Comprehensive code review reports with quality assessment
-- � Secure API key storage in VS Code secrets
+- 📊 Comprehensive code review reports with quality assessment
+- 📄 Smart MR description templates (default, release, hotfix)
+- 🔒 Secure API key storage in VS Code secrets
 - 🔍 Advanced binary file detection using FileTypeDetector
-- 🌍 Multi-language support for code reviews
-- 📋 Custom commit and review rules via `.gitmew/` configuration files
+- 🌍 Multi-language support for code reviews and descriptions
+- 📋 Custom rules via `.gitmew/` configuration files:
+  - `commit-rule.generate-commit.md` - Custom commit message rules
+  - `system-prompt.review-merge.md` - Custom review system prompt
+  - `code-rule.review-merge.md` - Custom review rules
+  - `system-prompt.description-merge.md` - Custom MR description prompt
+- 📤 Publish command to easily copy template files to your project
 
 ## Technical Scope
 - **Platform:** VS Code Extension (requires VS Code 1.104.0+)

@@ -8,7 +8,7 @@ export function registerSetupModelCommand(
 	context: vscode.ExtensionContext,
 	llmService: LLMService
 ): vscode.Disposable {
-	return vscode.commands.registerCommand('git-mew.setupModel', async () => {
+	return vscode.commands.registerCommand('git-mew.setupModelGenerateCommit', async () => {
 		try {
 			const configured = await llmService.configureAndSelectModel();
 			if (configured) {

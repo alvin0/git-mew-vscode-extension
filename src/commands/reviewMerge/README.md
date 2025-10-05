@@ -6,7 +6,7 @@ This module handles the "Review Merge" functionality, which allows users to gene
 
 - **Webview Interface**: Provides a user-friendly webview to select base and compare branches, LLM provider, model, and output language.
 - **AI-Powered Review**: Analyzes the diff between the selected branches and generates a comprehensive code review report.
-- **Custom Rules**: Supports project-specific review guidelines through `.gitmew/systemprompt.review-merge.md` and `.gitmew/code-review-rule.md`.
+- **Custom Rules**: Supports project-specific review guidelines through `.gitmew/system-prompt.review-merge.md` and `.gitmew/code-review-rule.md`.
 - **Multi-Provider Support**: Integrates with OpenAI, Claude, Gemini, and Ollama.
 - **Configuration Management**: Saves the user's last-used settings for convenience.
 

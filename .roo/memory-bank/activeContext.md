@@ -1,56 +1,67 @@
 # Active Context: Git Mew
 
 ## Current Status
-**Project State:** Initial release (v0.0.1) - Feature complete and functional  
-**Last Updated:** 2025-10-04  
-**Active Work:** Documenting new "Review Merge" feature
+**Project State:** v0.0.4 - Stable Release
+**Last Updated:** 2025-10-05
+**Active Work:** Documentation maintenance and memory bank updates.
 
-## Recent Changes
-- Added "Review Merge" command to generate AI-powered code reviews for branches.
-- Implemented a webview UI for selecting branches, models, and languages.
-- Added support for custom review rules via `.gitmew/systemprompt.review-merge.md` and `.gitmew/code-review-rule.md`.
-- Refactored the `reviewMerge` module for better separation of concerns.
-- Added Ollama support.
+## Recent Changes (v0.0.4)
+- ✅ Added "Publish" command (`git-mew.publish`) to copy template files to `.gitmew/` folder
+- ✅ Added MR Description generation feature alongside code review
+- ✅ Implemented smart template selection (default, release, hotfix) for MR descriptions
+- ✅ Added `system-prompt.description-merge.md` template file
+- ✅ Enhanced webview UI with description generation capability
+- ✅ Added automatic window reload prompt after extension updates
+- ✅ Improved configuration management with separate settings for review merge
+- ✅ Added support for task context in review and description generation
+- ✅ Enhanced error handling with API key prompts in webview flow
 
 ## What's Working
 
 ### Core Functionality ✅
-- **Commit Message Generation:** Fully functional with OpenAI, Claude, Gemini.
-- **Code Review Generation:** Fully functional for branch diffs.
-- **Multi-Provider Support:** OpenAI, Claude, Gemini, and Ollama all working.
-- **Configuration Flow:** 3-step setup for commit generation, separate config for code review.
-- **Git Integration:** Seamless integration with VS Code SCM panel and branch operations.
-- **Binary Detection:** Advanced FileTypeDetector with multiple heuristics.
-- **Security:** API keys stored in VS Code Secret Storage.
+- **Commit Message Generation:** Fully functional with OpenAI, Claude, Gemini, Ollama
+- **Code Review Generation:** Comprehensive branch diff analysis with quality assessment
+- **MR Description Generation:** Smart template-based descriptions (default, release, hotfix)
+- **Multi-Provider Support:** OpenAI, Claude, Gemini, and Ollama all working
+- **Configuration Flow:** 3-step setup for commit generation, separate config for review/description
+- **Git Integration:** Seamless integration with VS Code SCM panel and branch operations
+- **Binary Detection:** Advanced FileTypeDetector with multiple heuristics
+- **Security:** API keys stored in VS Code Secret Storage
+- **Custom Rules:** Support for project-specific prompts and rules via `.gitmew/` folder
 
 ### User Experience ✅
 - **Auto-Configuration:** Detects missing config and guides setup
 - **Progress Indicators:** Shows progress during generation
-- **Error Handling:** Clear, actionable error messages
-- **Quick Access:** Sparkle icon in Source Control panel
+- **Error Handling:** Clear, actionable error messages with inline API key prompts
+- **Quick Access:** Sparkle icon and merge icon in Source Control panel
+- **Publish Command:** Easy template file distribution to projects
+- **Auto-Reload:** Prompts for window reload after extension updates
+- **Webview UI:** Rich interface for branch/model/language selection
 
 ### Technical Implementation ✅
 - **Adapter Pattern:** Clean abstraction for LLM providers
-- **Service Layer:** Separation of concerns (Git, Config, LLM)
+- **Service Layer:** Separation of concerns (Git, Config, LLM, ReviewMerge)
 - **Type Safety:** Full TypeScript with strict mode
-- **No External Dependencies:** Uses only VS Code and Node.js APIs
+- **No External Dependencies:** Uses only VS Code and Node.js APIs (except markdown rendering)
+- **Modular Architecture:** Clear separation in reviewMerge module
 
 ## Current Focus
-**Memory Bank Initialization** - Documenting project for AI agent continuity
+**Documentation Maintenance** - Keeping memory bank, README, and CHANGELOG synchronized with v0.0.4 features
 
 ## Next Steps
 
-### Immediate (If Requested)
-1. Complete remaining Memory Bank files:
-   - `progress.md` - Track what's built and what's left
-   - Any additional context files if needed
+### Immediate
+1. ✅ Update memory bank with v0.0.4 features
+2. ✅ Update README with MR description generation
+3. ✅ Update CHANGELOG with detailed v0.0.4 changes
 
 ### Future Enhancements (Not Currently Planned)
-1. **Custom Templates:** Allow users to define commit message format
-2. **Multi-Repository:** Support multiple Git repositories
-3. **History Learning:** Learn from user's commit history
-4. **Offline Mode:** Support local LLM models
+1. **Automated Testing:** Add unit and integration tests
+2. **Marketplace Publishing:** Package and publish extension
+3. **Multi-Repository:** Support multiple Git repositories
+4. **Streaming Responses:** Real-time generation feedback
 5. **Team Conventions:** Share configuration across team
+6. **Custom API Endpoints:** Support for self-hosted LLM services
 
 ## Active Decisions & Patterns
 
@@ -59,18 +70,24 @@
 2. **Adapter Pattern:** Easy to add new LLM providers
 3. **Progressive Enhancement:** Auto-setup if configuration missing
 4. **Fail Fast:** No retry logic, let user retry manually
+5. **Separate Configurations:** Review/Description settings independent from commit generation
+6. **Template-Based Generation:** Smart routing for MR descriptions (default/release/hotfix)
 
 ### Code Patterns
 1. **Service Layer:** All business logic in services, not extension.ts
 2. **Type Safety:** Explicit types for all functions and variables
 3. **Error Boundaries:** Try-catch at command level with user messages
 4. **Single Responsibility:** Each class/function has one clear purpose
+5. **Modular Commands:** Each feature in its own command file
+6. **Webview Separation:** Content generation, message handling, and service logic separated
 
 ### User Experience Patterns
 1. **Guided Setup:** Step-by-step with clear titles
 2. **Visual Indicators:** Icons (✓, ✗, ⚠) in messages
 3. **Context Preservation:** Show current selection in Quick Picks
 4. **Non-Blocking:** Progress notifications, not modal dialogs
+5. **Inline API Key Prompts:** Request keys during workflow if missing
+6. **Template Publishing:** Easy distribution of customization files
 
 ## Important Learnings
 
@@ -84,6 +101,7 @@
 - **OpenAI:** Uses chat completions with messages array
 - **Claude:** Uses messages API with separate system parameter
 - **Gemini:** Uses generateContent with contents array
+- **Ollama:** Local models, no API key required, streaming support
 - All require different authentication methods
 
 ### VS Code Extension Patterns
@@ -91,12 +109,21 @@
 - Git Extension API is stable and reliable
 - Progress notifications better than status bar for long operations
 - Command palette integration is essential
+- Webview for complex UIs provides better UX than Quick Picks
+- Extension updates should prompt for reload
 
 ### Configuration Management
 - Store provider/model in settings (visible, shareable)
 - Store API keys in secrets (encrypted, private)
 - Cache adapter instance for performance
 - Clear cache when configuration changes
+- Separate configs for different features (commit vs review) improves UX
+
+### Template-Based Generation
+- Smart routing based on branch names and context improves relevance
+- Three templates (default, release, hotfix) cover most use cases
+- Language detection from task context enhances localization
+- Custom prompts allow project-specific adaptations
 
 ## Known Issues & Limitations
 
@@ -168,10 +195,11 @@
 - Update documentation when changing behavior
 
 ## Memory Bank Status
-- ✅ `projectbrief.md` - Created
-- ✅ `productContext.md` - Created
-- ✅ `systemPatterns.md` - Created
-- ✅ `techContext.md` - Created
-- ✅ `activeContext.md` - Created (this file)
-- ✅ `progress.md` - Created
-- ✅ README.md - Updated with correct model versions
+- ✅ `projectbrief.md` - Updated to v0.0.4
+- ✅ `productContext.md` - Updated with MR description feature
+- ✅ `systemPatterns.md` - Updated with new patterns
+- ✅ `techContext.md` - Updated with new dependencies
+- ✅ `activeContext.md` - Updated (this file)
+- ✅ `progress.md` - Updated with v0.0.4 completion
+- ✅ README.md - Updated with all features
+- ✅ CHANGELOG.md - Updated with v0.0.4 details

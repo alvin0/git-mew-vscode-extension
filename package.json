@@ -2,7 +2,7 @@
   "name": "git-mew",
   "displayName": "Git Mew",
   "description": "Your AI kitty for Git chaos - Generate intelligent commit messages using AI",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "icon": "resources/images/logo.png",
   "publisher": "GitMew",
   "engines": {
@@ -26,13 +26,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/git-mew/git-mew"
+    "url": "https://github.com/alvin0/git-mew-vscode-extension"
   },
   "bugs": {
-    "url": "https://github.com/git-mew/git-mew/issues"
+    "url": "https://github.com/alvin0/git-mew-vscode-extension/issues"
   },
-  "homepage": "https://github.com/git-mew/git-mew#readme",
-  "activationEvents": [],
+  "homepage": "https://github.com/alvin0/git-mew-vscode-extension#readme",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
@@ -47,13 +49,21 @@
         "icon": "$(debug-pause)"
       },
       {
-        "command": "git-mew.setupModel",
-        "title": "git-mew: Setup Model"
+        "command": "git-mew.setupModelGenerateCommit",
+        "title": "git-mew: Setup Model Generate Commit"
       },
       {
         "command": "git-mew.review-merge",
         "title": "git-mew: Review Merge",
         "icon": "$(git-merge)"
+      },
+      {
+        "command": "git-mew.showCommands",
+        "title": "git-mew: Show Commands"
+      },
+      {
+        "command": "git-mew.publish",
+        "title": "git-mew: Publish Files"
       }
     ],
     "menus": {
@@ -80,7 +90,12 @@
       "properties": {
         "git-mew.llmProvider": {
           "type": "string",
-          "enum": ["openai", "claude", "gemini", "ollama"],
+          "enum": [
+            "openai",
+            "claude",
+            "gemini",
+            "ollama"
+          ],
           "enumDescriptions": [
             "OpenAI GPT models",
             "Anthropic Claude models",
@@ -107,7 +122,12 @@
         },
         "git-mew.reviewMerge.provider": {
           "type": "string",
-          "enum": ["openai", "claude", "gemini", "ollama"],
+          "enum": [
+            "openai",
+            "claude",
+            "gemini",
+            "ollama"
+          ],
           "description": "Last used LLM provider for Review Merge (separate from commit generation)"
         },
         "git-mew.reviewMerge.model": {
@@ -117,7 +137,16 @@
         "git-mew.reviewMerge.language": {
           "type": "string",
           "default": "Vietnamese",
-          "enum": ["English", "Vietnamese", "Japanese", "Korean", "Chinese", "French", "German", "Spanish"],
+          "enum": [
+            "English",
+            "Vietnamese",
+            "Japanese",
+            "Korean",
+            "Chinese",
+            "French",
+            "German",
+            "Spanish"
+          ],
           "description": "Last used response language for Review Merge"
         }
       }
@@ -132,14 +161,20 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/vscode": "^1.104.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
+    "@types/vscode": "^1.104.0",
     "@typescript-eslint/eslint-plugin": "^8.45.0",
     "@typescript-eslint/parser": "^8.45.0",
-    "eslint": "^9.36.0",
-    "typescript": "^5.9.3",
     "@vscode/test-cli": "^0.0.11",
-    "@vscode/test-electron": "^2.5.2"
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^9.36.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@types/markdown-it": "^14.1.2",
+    "highlight.js": "^11.11.1",
+    "markdown-it": "^14.1.0",
+    "markdown-it-highlightjs": "^4.2.0"
   }
 }

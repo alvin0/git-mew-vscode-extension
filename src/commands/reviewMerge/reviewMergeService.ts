@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { createAdapter, LLMProvider } from '../../llm-adapter';
+import { SYSTEM_PROMPT_GENERATE_DESCRIPTION_MERGE } from '../../prompts/systemPromptGenerateDescriptionMerge';
 import { SYSTEM_PROMPT_GENERATE_REVIEW_MERGE } from '../../prompts/systemPromptGenerateReviewMerge';
 import { LLMService } from '../../services/llm';
 import { ReviewMergeConfigManager } from '../../services/llm/ReviewMergeConfigManager';
@@ -9,6 +10,12 @@ export interface ReviewResult {
     success: boolean;
     review?: string;
     diff?: string;
+    error?: string;
+}
+
+export interface DescriptionResult {
+    success: boolean;
+    description?: string;
     error?: string;
 }
 
@@ -39,7 +46,8 @@ export class ReviewMergeService {
         compareBranch: string,
         provider: LLMProvider,
         model: string,
-        language: string
+        language: string,
+        taskInfo?: string
     ): Promise<ReviewResult> {
         try {
             // Save configuration for next time
@@ -62,10 +70,10 @@ export class ReviewMergeService {
             await tempAdapter.initialize({ apiKey, model });
 
             // Get custom system prompt and review rules if available
-            const customSystemPrompt = await this.gitService.getCustomSystemPrompt();
-            const customRules = await this.gitService.getCustomReviewRules();
+            const customSystemPrompt = await this.gitService.getCustomReviewMergeSystemPrompt();
+            const customRules = await this.gitService.getCustomReviewMergeRules();
             
-            const prompt = this.buildPrompt(baseBranch, compareBranch, diff);
+            const prompt = this.buildReviewPrompt(baseBranch, compareBranch, diff, taskInfo);
             const response = await tempAdapter.generateText(prompt, {
                 systemMessage: SYSTEM_PROMPT_GENERATE_REVIEW_MERGE(language, customSystemPrompt, customRules),
             });
@@ -76,6 +84,58 @@ export class ReviewMergeService {
                 success: true,
                 review: aiReview,
                 diff: diff
+            };
+
+        } catch (error) {
+            return {
+                success: false,
+                error: `${error}`
+            };
+        }
+    }
+
+    /**
+     * Generate a merge request description
+     */
+    async generateDescription(
+        baseBranch: string,
+        compareBranch: string,
+        provider: LLMProvider,
+        model: string,
+        language: string,
+        taskInfo?: string,
+        diff?: string
+    ): Promise<DescriptionResult> {
+        try {
+            // Get API key
+            const apiKey = await this.getApiKey(provider);
+            if (!apiKey) {
+                return {
+                    success: false,
+                    error: `No API key found for ${provider.toUpperCase()}. Please configure it first using "Git Mew: Setup Model".`
+                };
+            }
+
+            // Get branch diff if not provided
+            const branchDiff = diff || await this.gitService.getBranchDiff(baseBranch, compareBranch);
+
+            // Initialize adapter and generate description
+            const tempAdapter = createAdapter(provider);
+            await tempAdapter.initialize({ apiKey, model });
+
+            // Get custom system prompt and review rules if available
+            const customSystemPrompt = await this.gitService.getCustomDescriptionMergeSystemPrompt();
+            
+            const prompt = this.buildDescriptionPrompt(baseBranch, compareBranch, branchDiff, taskInfo);
+            const response = await tempAdapter.generateText(prompt, {
+                systemMessage: SYSTEM_PROMPT_GENERATE_DESCRIPTION_MERGE(language, customSystemPrompt, ''),
+            });
+
+            const description = response.text.trim();
+
+            return {
+                success: true,
+                description: description
             };
 
         } catch (error) {
@@ -132,16 +192,34 @@ export class ReviewMergeService {
     /**
      * Build the prompt for the LLM
      */
-    private buildPrompt(baseBranch: string, compareBranch: string, diff: string): string {
+    private buildReviewPrompt(baseBranch: string, compareBranch: string, diff: string, taskInfo?: string): string {
         return `# Merge Request Review
 
 **Base Branch:** ${baseBranch}
 **Compare Branch:** ${compareBranch}
+${taskInfo ? `\n**Task Context:** ${taskInfo}\n` : ''}
 
 ## Changes:
 
 ${diff}
 
 Please analyze these changes and provide a comprehensive merge request review.`;
+    }
+
+    /**
+     * Build the prompt for generating MR description
+     */
+    private buildDescriptionPrompt(baseBranch: string, compareBranch: string, diff: string, taskInfo?: string): string {
+        return `# Generate Merge Request Description
+
+**Base Branch:** ${baseBranch}
+**Compare Branch:** ${compareBranch}
+${taskInfo ? `\n**Task Info:** ${taskInfo}\n` : ''}
+
+## Changes:
+
+${diff}
+
+Please generate a comprehensive merge request description following the template guidelines.`;
     }
 }

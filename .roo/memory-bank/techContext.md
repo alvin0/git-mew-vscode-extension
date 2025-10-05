@@ -24,10 +24,20 @@
 ```
 
 ### Runtime Dependencies
-**None** - Extension uses only:
+```json
+{
+  "@types/markdown-it": "^14.1.2",
+  "highlight.js": "^11.11.1",
+  "markdown-it": "^14.1.0",
+  "markdown-it-highlightjs": "^4.2.0"
+}
+```
+
+**Core Dependencies:**
 - VS Code built-in APIs
 - Node.js standard library
 - Native fetch API (no axios/node-fetch)
+- Markdown rendering for review/description display
 
 ## Project Structure
 
@@ -35,10 +45,16 @@
 git-mew/
 ├── src/
 │   ├── extension.ts              # Entry point, command registration
+│   ├── statusBar.ts              # Status bar item creation
 │   ├── commands/
+│   │   ├── index.ts              # Command registration
 │   │   ├── generateCommitCommand.ts
 │   │   ├── reviewMergeCommand.ts
-│   │   └── setupModelCommand.ts
+│   │   ├── setupModelGenerateCommitCommand.ts
+│   │   ├── publishCommand.ts
+│   │   ├── markdownViewerCommand.ts
+│   │   ├── markdownViewer/
+│   │   │   └── webviewContentGenerator.ts
 │   │   └── reviewMerge/
 │   │       ├── index.ts
 │   │       ├── modelProvider.ts
@@ -47,8 +63,12 @@ git-mew/
 │   │       └── webviewMessageHandler.ts
 │   ├── services/
 │   │   ├── llm/
+│   │   │   ├── index.ts
 │   │   │   ├── LLMService.ts
+│   │   │   ├── LLMAdapterService.ts
 │   │   │   ├── LLMConfigManager.ts
+│   │   │   ├── LLMGenerationCommitMessageService.ts
+│   │   │   ├── LLMUIService.ts
 │   │   │   └── ReviewMergeConfigManager.ts
 │   │   └── utils/
 │   │       ├── gitService.ts
@@ -57,12 +77,24 @@ git-mew/
 │   │   ├── index.ts
 │   │   ├── adapterInterface.ts
 │   │   ├── claude/
+│   │   │   └── ClaudeAdapter.ts
 │   │   ├── openai/
+│   │   │   └── OpenAIAdapter.ts
 │   │   ├── gemini/
+│   │   │   └── GeminiAdapter.ts
 │   │   └── ollama/
+│   │       └── OllamaAdapter.ts
 │   ├── prompts/
 │   │   ├── systemPromptGenerateCommit.ts
-│   │   └── systemPromptGenerateReviewMerge.ts
+│   │   ├── systemPromptGenerateReviewMerge.ts
+│   │   └── systemPromptGenerateDescriptionMerge.ts
+│   ├── publish-files/
+│   │   ├── commit-rule.generate-commit.md
+│   │   ├── system-prompt.review-merge.md
+│   │   ├── code-rule.review-merge.md
+│   │   └── system-prompt.description-merge.md
+│   ├── constant/
+│   │   └── llm.ts
 │   └── test/
 │       └── extension.test.ts
 ├── resources/

@@ -9,7 +9,8 @@
 │  extension.ts (Entry Point)                             │
 │  ├─ Command: git-mew.generate-commit                    │
 │  ├─ Command: git-mew.setupModel                         │
-│  └─ Command: git-mew.review-merge (Webview)              │
+│  ├─ Command: git-mew.review-merge (Webview)             │
+│  └─ Command: git-mew.publish                            │
 └─────────────────────────────────────────────────────────┘
                            │
          ┌─────────────────┴─────────────────┐
@@ -19,9 +20,19 @@
  │                │                 │                 │
  │ - Get staged   │                 │ - Provider mgmt │
  │ - Get diffs    │                 │ - API key store │
- │ - Detect binary│                 │ - Model select  │
- │ - Format output│                 │ - Generate text │
+ │ - Branch diffs │                 │ - Model select  │
+ │ - Detect binary│                 │ - Generate text │
+ │ - Format output│                 │                 │
+ │ - Custom rules │                 │                 │
  └────────────────┘                 └────────┬────────┘
+                                              │
+                                    ┌─────────▼─────────┐
+                                    │ ReviewMergeService│
+                                    │                   │
+                                    │ - Generate review │
+                                    │ - Generate desc   │
+                                    │ - Config mgmt     │
+                                    └───────────────────┘
                                               │
                             ┌─────────────────┴─────────────────┐
                             │      LLM Adapter Layer            │
@@ -185,7 +196,32 @@ User runs setup command
   → Show success message
 ```
 
-### Path 3: Binary File Detection
+### Path 3: Review Merge / Generate Description
+```
+User runs review-merge command
+  → Open webview with UI
+  → User selects branches, provider, model, language
+  → User clicks "Generate Review" or "Generate Description"
+  → Webview sends message to handler
+  → Handler calls ReviewMergeService
+  → Service gets branch diff (GitService)
+  → Service loads custom rules if available
+  → Service generates review/description (LLMAdapter)
+  → Result displayed in new editor tab
+```
+
+### Path 4: Publish Templates
+```
+User runs publish command
+  → List available template files
+  → User selects files to publish
+  → Check for existing files in .gitmew/
+  → Prompt for overwrite confirmation if needed
+  → Copy files to .gitmew/ folder
+  → Show success message
+```
+
+### Path 5: Binary File Detection
 ```
 Get staged file diff
   → Check for Git binary markers

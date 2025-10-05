@@ -513,17 +513,21 @@ export class GitService {
             for (const change of changes) {
                 const uri = change.uri;
                 const status = this.getStatusString(change.status);
-                const filePath = uri.fsPath.split('/').pop() || uri.fsPath;
-                
-                diffContent += `\n## ${status}: ${filePath}\n`;
-                diffContent += `Path: ${uri.fsPath}\n`;
+                const workspaceRoot = repository.rootUri.fsPath;
+                const relativePath = uri.fsPath.replace(workspaceRoot + '/', '');
+
+                diffContent += `\n## ${status}: ${relativePath}\n`;
                 
                 // Try to get the actual diff content for this file
                 try {
                     const fileDiff = await repository.diffBetween(baseBranch, compareBranch, uri.fsPath);
                     if (fileDiff) {
                         diffContent += '\n```diff\n';
-                        diffContent += fileDiff;
+                        // Sanitize file paths in the diff content
+                        const sanitizedDiff = fileDiff.replace(/^(diff --git a\/.* b\/.*)$/gm, (match: string, p1: string) => {
+                            return p1.replace(/a\//, './').replace(/b\//, './');
+                        });
+                        diffContent += sanitizedDiff;
                         diffContent += '\n```\n';
                     }
                 } catch (err) {
@@ -566,7 +570,7 @@ export class GitService {
      * Get custom code review rules from .gitmew/code-rule.review-merge.md
      * @returns Custom rules content or undefined if file doesn't exist
      */
-    public async getCustomReviewRules(): Promise<string | undefined> {
+    public async getCustomReviewMergeRules(): Promise<string | undefined> {
         try {
             const repository = this.getRepository();
             const workspaceRoot = repository.rootUri.fsPath;
@@ -587,15 +591,39 @@ export class GitService {
     }
 
     /**
-     * Get custom system prompt from .gitmew/systemprompt.review-merge.md
+     * Get custom system prompt from .gitmew/system-prompt.review-merge.md
      * @returns Custom system prompt content or undefined if file doesn't exist
      */
-    public async getCustomSystemPrompt(): Promise<string | undefined> {
+    public async getCustomReviewMergeSystemPrompt(): Promise<string | undefined> {
         try {
             const repository = this.getRepository();
             const workspaceRoot = repository.rootUri.fsPath;
-            const promptPath = path.join(workspaceRoot, '.gitmew', 'systemprompt.review-merge.md');
+            const promptPath = path.join(workspaceRoot, '.gitmew', 'system-prompt.review-merge.md');
             
+            // Check if file exists
+            if (!fs.existsSync(promptPath)) {
+                return undefined;
+            }
+            
+            // Read file content
+            const content = fs.readFileSync(promptPath, 'utf-8');
+            return content.trim();
+        } catch (error) {
+            console.error('Error reading custom system prompt:', error);
+            return undefined;
+        }
+    }
+
+    /**
+     * Get custom system prompt from .gitmew/system-prompt.review-merge.md
+     * @returns Custom system prompt content or undefined if file doesn't exist
+     */
+    public async getCustomDescriptionMergeSystemPrompt(): Promise<string | undefined> {
+        try {
+            const repository = this.getRepository();
+            const workspaceRoot = repository.rootUri.fsPath;
+            const promptPath = path.join(workspaceRoot, '.gitmew', 'system-prompt.description-merge.md');
+
             // Check if file exists
             if (!fs.existsSync(promptPath)) {
                 return undefined;

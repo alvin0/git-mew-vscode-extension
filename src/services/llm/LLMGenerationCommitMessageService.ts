@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { SYSTEM_PROMPT_GENERATE_COMMIT } from "../../prompts/systemPromptGenerateCommit";
+import { getSystemPrompt } from "../../prompts/systemPromptGenerateCommit";
 import { SYSTEM_PROMPT_GENERATE_REVIEW_MERGE } from "../../prompts/systemPromptGenerateReviewMerge";
 import { LLMAdapterService } from "./LLMAdapterService";
 import { LLMUIService } from "./LLMUIService";
@@ -64,18 +64,18 @@ export class LLMGenerationService {
 
     if (customPrompt) {
       console.log("Using custom commit rules from .gitmew/commit-rule.generate-commit.md");
-      return customPrompt;
+    } else {
+      console.log("Using default system prompt");
     }
 
-    // Fall back to default system prompt
-    console.log("Using default system prompt");
-    return SYSTEM_PROMPT_GENERATE_COMMIT;
+    // Return the prompt, with or without custom rules
+    return getSystemPrompt(customPrompt ?? undefined);
   }
 
   /**
    * Generate commit message using LLM
    */
-  async generateCommitMessage(stagedChanges: string): Promise<string | null> {
+  async generateCommitMessage(stagedChanges: string, currentBranch: string): Promise<string | null> {
     const adapter = await this.adapterService.getAdapter();
     if (!adapter) {
       return null;
@@ -83,6 +83,8 @@ export class LLMGenerationService {
 
     try {
       const prompt = `
+## Current Branch: ${currentBranch}
+## Staged Changes:
       ${stagedChanges}`;
 
       // Get dynamic system prompt (custom or default)

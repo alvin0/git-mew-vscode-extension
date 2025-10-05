@@ -2,8 +2,8 @@
 
 ## Project Timeline
 - **Started:** Initial development (pre-v0.0.1)
-- **Current Version:** 0.0.1
-- **Status:** Feature complete for initial release
+- **Current Version:** 0.0.4
+- **Status:** Ongoing development
 
 ## Completed Features ✅
 
@@ -42,6 +42,7 @@
 ### User Interface
 - [x] Command: "git-mew: Generate Commit Message"
 - [x] Command: "git-mew: Setup Model"
+- [x] Command: "git-mew: Publish"
 - [x] Sparkle icon in Source Control panel
 - [x] Progress notifications during generation
 - [x] Success/warning/error messages
@@ -64,9 +65,14 @@
 - [x] Review Merge feature
 - [x] Webview UI for branch/model/language selection
 - [x] AI-powered code review generation
+- [x] AI-powered MR description generation
 - [x] Custom review rules support
+- [x] Custom description prompt support
 - [x] Ollama provider support
 - [x] Separate configuration management
+- [x] Publish command for template distribution
+- [x] Auto-reload prompt after updates
+- [x] Smart template routing (default/release/hotfix)
 
 ## What's Working Well
 
@@ -163,7 +169,7 @@ Current codebase is clean with no known technical debt.
 ## Deployment Status
 
 ### Current State
-- **Version:** 0.0.1
+- **Version:** 0.0.4
 - **Published:** Not yet published to marketplace
 - **Distribution:** Development only
 
@@ -242,8 +248,10 @@ All initial architectural decisions have proven sound.
 **Ready for initial release** - All core features complete and working.
 
 ## Memory Bank Status
-- ✅ All core files created
-- ✅ Project fully documented
+- ✅ All core files created and updated to v0.0.4
+- ✅ Project fully documented with latest features
 - ✅ Model versions updated to match code
 - ✅ README.md synchronized with actual implementation
+- ✅ CHANGELOG.md updated with v0.0.4 details
+- ✅ All custom rule files documented
 - ✅ Ready for AI agent continuity

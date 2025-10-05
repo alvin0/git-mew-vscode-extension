@@ -71,6 +71,9 @@ export function registerGenerateCommitCommand(
 			// Get formatted staged changes
 			const formattedChanges = await gitService.getFormattedStagedChanges();
 			
+			// Get current branch
+			const currentBranch = await gitService.getCurrentBranch() || 'unknown';
+			
 			// Get current provider and model for display
 			const currentProvider = llmService.getProvider();
 			const currentModel = currentProvider ? llmService.getModel(currentProvider) : undefined;
@@ -88,7 +91,7 @@ export function registerGenerateCommitCommand(
 				if (token.isCancellationRequested) {
 					return null;
 				}
-				return await llmService.generateCommitMessage(formattedChanges);
+				return await llmService.generateCommitMessage(formattedChanges, currentBranch);
 			});
 
 			// Check if cancelled after generation

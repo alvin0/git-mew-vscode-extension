@@ -2,8 +2,10 @@ import * as vscode from 'vscode';
 import { LLMService } from '../services/llm';
 import { GitService } from '../services/utils/gitService';
 import { registerCancelGenerateCommand, registerGenerateCommitCommand } from './generateCommitCommand';
+import { registerMarkdownViewerCommand } from './markdownViewerCommand';
+import { createPublishCommand } from './publishCommand';
 import { registerReviewMergeCommand } from './reviewMergeCommand';
-import { registerSetupModelCommand } from './setupModelCommand';
+import { registerSetupModelCommand } from './setupModelGenerateCommitCommand';
 
 /**
  * Register all extension commands
@@ -18,7 +20,9 @@ export function registerAllCommands(
 		registerGenerateCommitCommand(context, gitService, llmService),
 		registerCancelGenerateCommand(),
 		registerSetupModelCommand(context, llmService),
-		registerReviewMergeCommand(context, gitService, llmService)
+		registerReviewMergeCommand(context, gitService, llmService),
+		createPublishCommand(context),
+		registerMarkdownViewerCommand(context)
 	];
 
 	// Add all commands to subscriptions

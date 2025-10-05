@@ -131,8 +131,8 @@ export class LLMService {
   /**
    * Generate commit message using LLM
    */
-  async generateCommitMessage(stagedChanges: string): Promise<string | null> {
-    return await this.generationService.generateCommitMessage(stagedChanges);
+  async generateCommitMessage(stagedChanges: string, currentBranch: string): Promise<string | null> {
+    return await this.generationService.generateCommitMessage(stagedChanges, currentBranch);
   }
 
   /**
