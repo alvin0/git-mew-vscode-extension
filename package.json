@@ -2,7 +2,7 @@
   "name": "git-mew",
   "displayName": "Git Mew",
   "description": "Your AI kitty for Git chaos - Generate intelligent commit messages using AI",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "icon": "resources/images/logo.png",
   "publisher": "GitMew",
   "engines": {
@@ -158,7 +158,8 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "build:package": "vsce package"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
