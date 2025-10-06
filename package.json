@@ -2,7 +2,7 @@
   "name": "git-mew",
   "displayName": "Git Mew",
   "description": "Your AI kitty for Git chaos - Generate intelligent commit messages using AI",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "icon": "resources/images/logo.png",
   "publisher": "GitMew",
   "engines": {

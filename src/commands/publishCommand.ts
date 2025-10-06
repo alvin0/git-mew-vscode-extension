@@ -12,7 +12,7 @@ export function createPublishCommand(context: vscode.ExtensionContext): vscode.D
 
     // Use URI for cross-platform compatibility
     const projectRoot = workspaceFolders[0].uri.fsPath;
-    const sourceDir = path.join(context.extensionPath, "src", "publish-files");
+    const sourceDir = path.join(context.extensionPath, "publish-files");
     const destDir = path.join(projectRoot, ".gitmew");
 
     try {

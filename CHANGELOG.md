@@ -1,8 +1,9 @@
 # Change Log
 
-All notable changes to the "Git Mew" extension will be documented in this file.
+## [0.0.6] - 2025-10-06
 
-The format is based on [Keep a Changelog](http://keepachangelog.com/).
+### Fixed
+- **File Path References**: Updated `publishCommand.ts` to reference the new `publish-files` location
 
 ## [0.0.5] - 2025-10-06
 
