@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
+import { GenerateOptions } from "../../llm-adapter";
 import { getSystemPrompt } from "../../prompts/systemPromptGenerateCommit";
 import { SYSTEM_PROMPT_GENERATE_REVIEW_MERGE } from "../../prompts/systemPromptGenerateReviewMerge";
 import { LLMAdapterService } from "./LLMAdapterService";
@@ -32,7 +33,11 @@ export class LLMGenerationService {
       }
 
       const workspaceRoot = workspaceFolders[0].uri.fsPath;
-      const customRulePath = path.join(workspaceRoot, ".gitmew", "commit-rule.generate-commit.md");
+      const customRulePath = path.join(
+        workspaceRoot,
+        ".gitmew",
+        "commit-rule.generate-commit.md"
+      );
 
       // Check if custom rule file exists
       if (!fs.existsSync(customRulePath)) {
@@ -63,7 +68,9 @@ export class LLMGenerationService {
     const customPrompt = await this.loadCustomCommitRules();
 
     if (customPrompt) {
-      console.log("Using custom commit rules from .gitmew/commit-rule.generate-commit.md");
+      console.log(
+        "Using custom commit rules from .gitmew/commit-rule.generate-commit.md"
+      );
     } else {
       console.log("Using default system prompt");
     }
@@ -73,15 +80,44 @@ export class LLMGenerationService {
   }
 
   /**
+   * Configure options for GPT-5 models
+   * @param adapter - The LLM adapter instance
+   * @param options - Current generation options
+   * @returns Updated options with GPT-5 specific settings if applicable
+   */
+  private configureGPT5Options(
+    adapter: any,
+    options: GenerateOptions
+  ): GenerateOptions {
+    if (
+      adapter.getProvider() === "openai" &&
+      adapter.getModel().startsWith("gpt-5")
+    ) {
+      return {
+        ...options,
+        reasoning_effort: "minimal",
+        verbosity: "low",
+      };
+    }
+    return options;
+  }
+
+  /**
    * Generate commit message using LLM
    */
-  async generateCommitMessage(stagedChanges: string, currentBranch: string): Promise<string | null> {
+  async generateCommitMessage(
+    stagedChanges: string,
+    currentBranch: string
+  ): Promise<string | null> {
     const adapter = await this.adapterService.getAdapter();
     if (!adapter) {
       return null;
     }
 
     try {
+      let optionRequest: GenerateOptions = {};
+      optionRequest = this.configureGPT5Options(adapter, optionRequest);
+
       const prompt = `
 ## Current Branch: ${currentBranch}
 ## Staged Changes:
@@ -89,16 +125,15 @@ export class LLMGenerationService {
 
       // Get dynamic system prompt (custom or default)
       const systemPrompt = await this.getSystemPrompt();
-
-      const response = await adapter.generateText(prompt, {
+      optionRequest = {
+        ...optionRequest,
         systemMessage: systemPrompt,
-      });
+      };
+      const response = await adapter.generateText(prompt, optionRequest);
 
       return response.text.trim();
     } catch (error) {
-      this.uiService.showError(
-        `Failed to generate commit message: ${error}`
-      );
+      this.uiService.showError(`Failed to generate commit message: ${error}`);
       return null;
     }
   }
@@ -135,9 +170,7 @@ Please analyze these changes and provide a comprehensive merge request review.`;
 
       return response.text.trim();
     } catch (error) {
-      this.uiService.showError(
-        `Failed to generate merge review: ${error}`
-      );
+      this.uiService.showError(`Failed to generate merge review: ${error}`);
       return null;
     }
   }

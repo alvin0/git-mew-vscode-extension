@@ -47,6 +47,12 @@ export class ClaudeAdapter implements ILLMAdapter {
       requestBody.stop_sequences = options.stop;
     }
 
+    // Merge additional options into requestBody (excluding known properties)
+    if (options) {
+      const { maxTokens, temperature, stop, systemMessage, ...additionalOptions } = options;
+      Object.assign(requestBody, additionalOptions);
+    }
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
 
@@ -97,6 +103,10 @@ export class ClaudeAdapter implements ILLMAdapter {
 
   getModel(): string {
     return this.config?.model || this.defaultModel;
+  }
+
+  getProvider(): string {
+    return 'claude';
   }
 
   async testConnection(): Promise<boolean> {

@@ -48,14 +48,16 @@ export class GeminiAdapter implements ILLMAdapter {
 
     const requestBody: any = {
       contents,
-      generationConfig: {
-        temperature: options?.temperature ?? this.config.temperature,
-        maxOutputTokens: options?.maxTokens || this.config.maxTokens,
-      },
     };
 
     if (options?.stop) {
       requestBody.generationConfig.stopSequences = options.stop;
+    }
+
+    // Merge additional options into requestBody (excluding known properties)
+    if (options) {
+      const { maxTokens, temperature, stop, systemMessage, ...additionalOptions } = options;
+      Object.assign(requestBody, additionalOptions);
     }
 
     const controller = new AbortController();
@@ -111,6 +113,10 @@ export class GeminiAdapter implements ILLMAdapter {
 
   getModel(): string {
     return this.config?.model || this.defaultModel;
+  }
+
+  getProvider(): string {
+    return 'gemini';
   }
 
   async testConnection(): Promise<boolean> {

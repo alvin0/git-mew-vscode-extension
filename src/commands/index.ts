@@ -5,6 +5,7 @@ import { registerCancelGenerateCommand, registerGenerateCommitCommand } from './
 import { registerMarkdownViewerCommand } from './markdownViewerCommand';
 import { createPublishCommand } from './publishCommand';
 import { registerReviewMergeCommand } from './reviewMergeCommand';
+import { registerReviewStagedChangesCommand } from './reviewStagedChangesCommand';
 import { registerSetupModelCommand } from './setupModelGenerateCommitCommand';
 
 /**
@@ -21,6 +22,7 @@ export function registerAllCommands(
 		registerCancelGenerateCommand(),
 		registerSetupModelCommand(context, llmService),
 		registerReviewMergeCommand(context, gitService, llmService),
+		registerReviewStagedChangesCommand(context, gitService, llmService),
 		createPublishCommand(context),
 		registerMarkdownViewerCommand(context)
 	];

@@ -56,9 +56,18 @@ export function registerGenerateCommitCommand(
 
 			// Check if model is configured
 			const provider = llmService.getProvider();
-			const hasApiKey = provider ? await llmService.getApiKey(provider) : false;
 			const hasModel = provider ? llmService.getModel(provider) : false;
-
+			
+			// For Ollama, API key is not required
+			let hasApiKey = false;
+			if (provider) {
+				if (provider === 'ollama') {
+					hasApiKey = true; // Ollama doesn't need API key
+				} else {
+					hasApiKey = !!(await llmService.getApiKey(provider));
+				}
+			}
+	
 			// If not configured, run setup
 			if (!provider || !hasApiKey || !hasModel) {
 				vscode.window.showInformationMessage('Model not configured. Starting setup...');

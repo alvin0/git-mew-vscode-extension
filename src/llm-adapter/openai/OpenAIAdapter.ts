@@ -36,11 +36,18 @@ export class OpenAIAdapter implements ILLMAdapter {
     
     messages.push({ role: 'user', content: prompt });
 
-    const requestBody = {
+    // Build base request body
+    const requestBody: any = {
       model: this.config.model,
       messages,
       ...(options?.stop && { stop: options.stop }),
     };
+
+    // Merge additional options into requestBody (excluding known properties)
+    if (options) {
+      const { maxTokens, temperature, stop, systemMessage, ...additionalOptions } = options;
+      Object.assign(requestBody, additionalOptions);
+    }
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
@@ -91,6 +98,10 @@ export class OpenAIAdapter implements ILLMAdapter {
 
   getModel(): string {
     return this.config?.model || this.defaultModel;
+  }
+
+  getProvider(): string {
+    return 'openai';
   }
 
   async testConnection(): Promise<boolean> {

@@ -1,5 +1,14 @@
 # Change Log
 
+## [0.0.7] - 2025-10-08
+
+### Added
+- **Review Staged Changes Command**: New `git-mew: Review Staged Changes` command to review staged files before committing
+
+### Improved
+- **Ollama Support**: Fixed API key requirement for Ollama - no longer requires API key configuration
+
+
 ## [0.0.6] - 2025-10-06
 
 ### Fixed

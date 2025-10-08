@@ -78,6 +78,12 @@ export class OllamaAdapter implements ILLMAdapter {
       requestBody.options.stop = options.stop;
     }
 
+    // Merge additional options into requestBody (excluding known properties)
+    if (options) {
+      const { maxTokens, temperature, stop, systemMessage, ...additionalOptions } = options;
+      Object.assign(requestBody, additionalOptions);
+    }
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
 
@@ -130,6 +136,10 @@ export class OllamaAdapter implements ILLMAdapter {
 
   getModel(): string {
     return this.config?.model || '';
+  }
+
+  getProvider(): string {
+    return 'ollama';
   }
 
   async testConnection(): Promise<boolean> {

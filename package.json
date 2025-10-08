@@ -2,7 +2,7 @@
   "name": "git-mew",
   "displayName": "Git Mew",
   "description": "Your AI kitty for Git chaos - Generate intelligent commit messages using AI",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "icon": "resources/images/logo.png",
   "publisher": "GitMew",
   "engines": {
@@ -58,6 +58,11 @@
         "icon": "$(git-merge)"
       },
       {
+        "command": "git-mew.review-staged-changes",
+        "title": "git-mew: Review Staged Changes",
+        "icon": "$(eye)"
+      },
+      {
         "command": "git-mew.showCommands",
         "title": "git-mew: Show Commands"
       },
@@ -80,6 +85,11 @@
         },
         {
           "command": "git-mew.review-merge",
+          "when": "scmProvider == git",
+          "group": "navigation"
+        },
+        {
+          "command": "git-mew.review-staged-changes",
           "when": "scmProvider == git",
           "group": "navigation"
         }

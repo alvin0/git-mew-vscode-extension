@@ -18,6 +18,8 @@ export interface LLMAdapterConfig {
 
 /**
  * Options for text generation
+ * Any additional properties will be merged into the API request body,
+ * allowing for provider-specific parameters to override or extend defaults
  */
 export interface GenerateOptions {
   /** Maximum tokens in response */
@@ -28,6 +30,8 @@ export interface GenerateOptions {
   stop?: string[];
   /** System message to set context */
   systemMessage?: string;
+  /** Any additional properties to merge into the request body */
+  [key: string]: any;
 }
 
 /**
@@ -78,6 +82,12 @@ export interface ILLMAdapter {
    * @returns Model name
    */
   getModel(): string;
+
+  /**
+   * Get the provider name
+   * @returns Provider name (e.g., "openai", "claude", "gemini", "ollama")
+   */
+  getProvider(): string;
 
   /**
    * Test the connection to the LLM service
