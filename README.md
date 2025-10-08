@@ -9,15 +9,17 @@ Git Mew helps you write better commit messages by analyzing your staged changes 
 ### Key Features
 
 - 🤖 **AI-Powered Commit Messages**: Automatically generate commit messages based on your staged changes.
+- 👀 **AI-Powered Staged Changes Review**: Review your staged changes before committing with AI analysis and suggestions.
 - 🔍 **AI-Powered Code Review**: Generate comprehensive code reviews for merge requests/pull requests by comparing any two branches.
 - 📝 **AI-Powered MR Descriptions**: Generate professional merge request descriptions with smart template selection (default, release, hotfix).
-- 🎯 **Multiple LLM Providers**: Support for OpenAI, Claude, Gemini, and Ollama.
-- ⚡ **Quick Access**: Generate commit messages directly from the Source Control panel.
+- 🎯 **Multiple LLM Providers**: Support for OpenAI, Claude, Gemini, and Ollama (no API key required for Ollama).
+- ⚡ **Quick Access**: Generate commit messages and review changes directly from the Source Control panel.
 - 🎨 **Conventional Commits & Rich Reviews**: Follows conventional commit format and generates detailed code review reports.
 - 🔧 **Customizable**: Configure your preferred AI model and provider for commit generation, code review, and MR descriptions.
 - 📝 **Custom Rules**: Define project-specific rules for commit messages, code reviews, and MR descriptions.
 - 🌍 **Multi-Language Support**: Get code reviews and MR descriptions in your preferred language.
 - 📤 **Easy Template Publishing**: Use the publish command to copy template files to your project.
+- 🚀 **GPT-5 Support**: Automatic optimization for GPT-5 models with reasoning capabilities.
 
 ### How to Use
 
@@ -26,6 +28,13 @@ Git Mew helps you write better commit messages by analyzing your staged changes 
 2. Click the sparkle icon (✨) in the Source Control panel, or run the command `git-mew: Generate Commit Message`.
 3. Git Mew will analyze your changes and generate a commit message.
 4. Review and commit!
+
+#### Reviewing Staged Changes
+1. Stage your changes in Git.
+2. Click the eye icon (👁️) in the Source Control panel, or run the command `git-mew: Review Staged Changes`.
+3. A webview will open. Select your preferred LLM provider, model, and output language.
+4. Click **"Generate Review"** to get AI-powered analysis of your staged changes.
+5. Review the suggestions and insights before committing.
 
 #### Generating a Code Review or MR Description
 1. Ensure you have committed your changes to your feature branch.
@@ -48,14 +57,25 @@ Git Mew helps you write better commit messages by analyzing your staged changes 
 - Visual Studio Code 1.104.0 or higher
 - Git installed and configured
 - API key for your chosen LLM provider (OpenAI, Claude, or Gemini)
+  - **Note**: Ollama does not require an API key - just have it running locally
 
 ## Setup
 
 1. Install the extension
 2. Run the command `git-mew: Setup Model` to configure your AI provider
-3. Select your preferred LLM provider (OpenAI, Claude, or Gemini)
-4. Enter your API key when prompted
+3. Select your preferred LLM provider (OpenAI, Claude, Gemini, or Ollama)
+4. Enter your API key when prompted (not required for Ollama)
 5. Choose your preferred model
+
+### Using Ollama (Local AI)
+
+Ollama allows you to run AI models locally without requiring an API key:
+
+1. Install [Ollama](https://ollama.ai/) on your machine
+2. Pull a model: `ollama pull llama2` (or any other model)
+3. Make sure Ollama is running
+4. Select "Ollama" as your provider in Git Mew
+5. Choose your installed model
 
 ## Customizing Rules
 
@@ -136,36 +156,6 @@ This extension contributes the following settings:
 - Large diffs may take longer to process
 - Some binary file changes may not be analyzed properly
 
-## Release Notes
-
-### 0.0.4
-
-Enhanced features and customization:
-- Added MR description generation with smart templates
-- Added publish command for easy template distribution
-- Enhanced webview UI with description generation
-- Added auto-reload prompt after extension updates
-- Improved error handling and API key management
-
-### 0.0.3
-
-Bug fixes and improvements
-
-### 0.0.2
-
-Added code review feature:
-- AI-powered merge request/pull request reviews
-- Branch comparison and diff analysis
-- Multi-language support
-
-### 0.0.1
-
-Initial release of Git Mew:
-- AI-powered commit message generation
-- Support for OpenAI, Claude, and Gemini
-- Conventional commit format
-- Source Control panel integration
-
 ## Contributing
 
 Found a bug or have a feature request? Please open an issue on our [GitHub repository](https://github.com/git-mew/git-mew).
@@ -175,5 +165,11 @@ Found a bug or have a feature request? Please open an issue on our [GitHub repos
 See LICENSE file for details.
 
 ---
+
+## Author
+
+Châu Lâm Đình Ái (alvin0)
+GitHub: https://github.com/alvin0
+Email: chaulamdinhai@gmail.com
 
 **Enjoy using Git Mew! 🐱✨**
