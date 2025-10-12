@@ -7,10 +7,14 @@
 │                    VS Code Extension                     │
 ├─────────────────────────────────────────────────────────┤
 │  extension.ts (Entry Point)                             │
-│  ├─ Command: git-mew.generate-commit                    │
-│  ├─ Command: git-mew.setupModel                         │
-│  ├─ Command: git-mew.review-merge (Webview)             │
-│  └─ Command: git-mew.publish                            │
+│  ├─ Commands:                                           │
+│  │   git-mew.generate-commit / git-mew.cancel-generate  │
+│  │   git-mew.setupModelGenerateCommit                   │
+│  │   git-mew.review-merge (Webview)                     │
+│  │   git-mew.review-staged-changes (Webview)            │
+│  │   git-mew.publish                                    │
+│  │   git-mew.markdownViewer                             │
+│  │   git-mew.showCommands (status bar)                  │
 └─────────────────────────────────────────────────────────┘
                            │
          ┌─────────────────┴─────────────────┐
@@ -18,20 +22,23 @@
  ┌───────▼────────┐                 ┌────────▼────────┐
  │  GitService    │                 │ LLMService      │
  │                │                 │                 │
- │ - Get staged   │                 │ - Provider mgmt │
- │ - Get diffs    │                 │ - API key store │
- │ - Branch diffs │                 │ - Model select  │
- │ - Detect binary│                 │ - Generate text │
- │ - Format output│                 │                 │
+ │ - Stage checks │                 │ - Provider mgmt │
+ │ - Stage all    │                 │ - API key store │
+ │ - Get diffs    │                 │ - Model select  │
+ │ - Branch diffs │                 │ - Generate text │
+ │ - Detect binary│                 │ - UI guidance   │
+ │ - Format output│                 │ - Test connect  │
  │ - Custom rules │                 │                 │
+ │ - Custom prompt│                 │                 │
  └────────────────┘                 └────────┬────────┘
                                               │
                                     ┌─────────▼─────────┐
-                                    │ ReviewMergeService│
+                                    │ Review Services   │
                                     │                   │
-                                    │ - Generate review │
-                                    │ - Generate desc   │
-                                    │ - Config mgmt     │
+                                    │ - ReviewMerge     │
+                                    │   - Reviews + desc│
+                                    │ - ReviewStaged    │
+                                    │   - Pre-commit AI │
                                     └───────────────────┘
                                               │
                             ┌─────────────────┴─────────────────┐
@@ -108,6 +115,33 @@ User Input → Validation → Storage → Adapter Initialization → Cached Inst
 3. Check for configuration → Auto-setup if missing
 4. Generate commit message
 5. Insert into SCM input box
+
+### 5. Cancellation Context Pattern
+**Purpose:** Allow users to interrupt in-flight commit message generation
+
+**Implementation:**
+- Global `CancellationTokenSource` scoped to the command
+- VS Code context key `git-mew.isGenerating` toggles toolbar buttons
+- Paired cancel command disposes token and resets UI state
+
+**Benefits:**
+- Prevents duplicate generations
+- Enables responsive UI feedback (e.g., disable buttons, show message)
+- Sets foundation for future cancellable operations
+
+### 6. Review Webview Pattern
+**Purpose:** Share UI/logic between merge review and staged changes review
+
+**Implementation:**
+- Dedicated service classes (`ReviewMergeService`, `ReviewStagedChangesService`)
+- Webview generators with provider/model metadata pulled from constants
+- Message handlers for generate/cancel/view diff actions
+- Persisted configuration via `ReviewMergeConfigManager`
+
+**Benefits:**
+- Consistent review experience across workflows
+- Easy to extend with new actions (copy review, open diff)
+- Reuses existing Git formatting and custom prompt loaders
 
 ## Key Technical Decisions
 
@@ -210,7 +244,20 @@ User runs review-merge command
   → Result displayed in new editor tab
 ```
 
-### Path 4: Publish Templates
+### Path 4: Review Staged Changes
+```
+User triggers review-staged-changes
+  → Ensure staged files exist (auto prompt if empty)
+  → Load persisted provider/model/language (ReviewMergeConfigManager)
+  → Render webview with provider metadata & model list
+  → Handle generate command (webview message handler)
+  → Fetch staged diff via GitService
+  → Prepare prompts (custom review rules + language)
+  → Create temporary adapter and call generateText
+  → Return review & raw diff to webview (copy/view diff)
+```
+
+### Path 5: Publish Templates
 ```
 User runs publish command
   → List available template files
@@ -221,7 +268,7 @@ User runs publish command
   → Show success message
 ```
 
-### Path 5: Binary File Detection
+### Path 6: Binary File Detection
 ```
 Get staged file diff
   → Check for Git binary markers

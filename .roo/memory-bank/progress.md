@@ -2,7 +2,7 @@
 
 ## Project Timeline
 - **Started:** Initial development (pre-v0.0.1)
-- **Current Version:** 0.0.4
+- **Current Version:** 0.0.7
 - **Status:** Ongoing development
 
 ## Completed Features ✅
@@ -14,6 +14,9 @@
 - [x] Diff formatting (Add/Edit/Remove categories)
 - [x] Commit message generation via LLM
 - [x] Message insertion into Git SCM input box
+- [x] Automatic stage-all fallback when no files are staged
+- [x] Cancel command to stop commit generation mid-flight
+- [x] Review staged changes workflow with AI feedback
 
 ### LLM Provider Support
 - [x] OpenAI adapter
@@ -42,11 +45,17 @@
 ### User Interface
 - [x] Command: "git-mew: Generate Commit Message"
 - [x] Command: "git-mew: Setup Model"
+- [x] Command: "git-mew: Review Merge"
+- [x] Command: "git-mew: Review Staged Changes"
+- [x] Command: "git-mew: Cancel Generation"
+- [x] Command: "git-mew: Show Commands"
 - [x] Command: "git-mew: Publish"
 - [x] Sparkle icon in Source Control panel
+- [x] Status bar quick menu for Git Mew commands
 - [x] Progress notifications during generation
 - [x] Success/warning/error messages
 - [x] Current selection indicators in Quick Picks
+- [x] Review webview actions (copy review, view raw diff)
 
 ### Error Handling
 - [x] No staged files warning
@@ -63,6 +72,7 @@
 - [x] LLM adapter README
 - [x] Memory Bank initialization
 - [x] Review Merge feature
+- [x] Review staged changes feature
 - [x] Webview UI for branch/model/language selection
 - [x] AI-powered code review generation
 - [x] AI-powered MR description generation
@@ -73,6 +83,7 @@
 - [x] Publish command for template distribution
 - [x] Auto-reload prompt after updates
 - [x] Smart template routing (default/release/hotfix)
+- [x] Cancel/auto-stage workflow documentation
 
 ## What's Working Well
 
@@ -89,6 +100,8 @@
 - **Clear Feedback:** Informative messages at every step
 - **Flexible:** Support for multiple AI providers
 - **Non-Intrusive:** Integrates naturally into Git workflow
+- **Pre-Commit Review:** Staged changes webview provides immediate AI feedback
+- **Auto Staging:** Automatic fallback prevents empty commit attempts
 
 ### Code Quality
 - **Maintainable:** Clear patterns and structure
@@ -169,7 +182,7 @@ Current codebase is clean with no known technical debt.
 ## Deployment Status
 
 ### Current State
-- **Version:** 0.0.4
+- **Version:** 0.0.7
 - **Published:** Not yet published to marketplace
 - **Distribution:** Development only
 
@@ -228,6 +241,7 @@ All initial architectural decisions have proven sound.
 ✅ API keys are secure  
 ✅ Extension feels native to VS Code  
 ✅ Code is maintainable and extensible  
+✅ Pre-commit review covers staged changes with copy/diff actions  
 
 ### What Could Be Better
 ⚠️ No automated tests  
@@ -248,10 +262,9 @@ All initial architectural decisions have proven sound.
 **Ready for initial release** - All core features complete and working.
 
 ## Memory Bank Status
-- ✅ All core files created and updated to v0.0.4
-- ✅ Project fully documented with latest features
-- ✅ Model versions updated to match code
-- ✅ README.md synchronized with actual implementation
-- ✅ CHANGELOG.md updated with v0.0.4 details
-- ✅ All custom rule files documented
+- ✅ Core files refreshed through v0.0.7
+- ✅ Review staged changes and cancel flow captured
+- ✅ Model/version lists kept in sync with constants
+- ⚠️ README.md/CHANGELOG need verification for 0.0.7 highlights
+- ✅ Custom rule templates documented
 - ✅ Ready for AI agent continuity

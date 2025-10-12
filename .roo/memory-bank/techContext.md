@@ -50,11 +50,17 @@ git-mew/
 │   │   ├── index.ts              # Command registration
 │   │   ├── generateCommitCommand.ts
 │   │   ├── reviewMergeCommand.ts
+│   │   ├── reviewStagedChangesCommand.ts
 │   │   ├── setupModelGenerateCommitCommand.ts
 │   │   ├── publishCommand.ts
 │   │   ├── markdownViewerCommand.ts
 │   │   ├── markdownViewer/
 │   │   │   └── webviewContentGenerator.ts
+│   │   ├── reviewStagedChanges/
+│   │   │   ├── index.ts
+│   │   │   ├── reviewStagedChangesService.ts
+│   │   │   ├── webviewContentGenerator.ts
+│   │   │   └── webviewMessageHandler.ts
 │   │   └── reviewMerge/
 │   │       ├── index.ts
 │   │       ├── modelProvider.ts
@@ -120,6 +126,7 @@ npm run watch          # Watch mode for development
 npm run lint           # Run ESLint
 npm run test           # Run tests
 npm run vscode:prepublish  # Pre-publish build
+npm run build:package  # Package extension via vsce
 ```
 
 ### TypeScript Configuration
@@ -198,10 +205,14 @@ npm run vscode:prepublish  # Pre-publish build
 ### VS Code Settings (settings.json)
 ```json
 {
-  "git-mew.llmProvider": "openai|claude|gemini",
+  "git-mew.llmProvider": "openai|claude|gemini|ollama",
   "git-mew.llmModel.openai": "gpt-5",
   "git-mew.llmModel.claude": "claude-sonnet-4.5",
-  "git-mew.llmModel.gemini": "gemini-2.5-pro"
+  "git-mew.llmModel.gemini": "gemini-2.5-pro",
+  "git-mew.llmModel.ollama": "llama3.1",
+  "git-mew.reviewMerge.provider": "openai|claude|gemini|ollama",
+  "git-mew.reviewMerge.model": "gpt-5",
+  "git-mew.reviewMerge.language": "Vietnamese"
 }
 ```
 
@@ -210,6 +221,7 @@ npm run vscode:prepublish  # Pre-publish build
 Key: llmApiKey.openai
 Key: llmApiKey.claude
 Key: llmApiKey.gemini
+(Ollama runs locally and skips secret storage)
 ```
 
 ## Error Handling

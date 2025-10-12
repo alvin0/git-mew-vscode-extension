@@ -23,23 +23,31 @@ Git Mew analyzes staged Git changes and uses AI to generate clear, conventional 
 
 ### Daily Usage
 1. User stages changes in Git (standard workflow)
-2. User clicks sparkle icon (✨) in Source Control panel
-3. Git Mew analyzes staged changes:
+2. User clicks sparkle icon (✨) in Source Control panel or uses the status bar menu
+3. If nothing is staged, Git Mew offers to stage all changes automatically
+4. Git Mew analyzes staged changes:
    - Detects file types (text vs binary)
    - Generates formatted diff markdown
    - Categorizes changes (Add/Edit/Remove)
-4. AI generates commit message with:
+5. AI generates commit message with:
    - Conventional commit subject line (≤50 chars)
    - File-by-file change summary
    - Brief functional/technical description (≤50 words)
-5. Message appears in Git SCM input box
-6. User reviews and commits
+6. Message appears in Git SCM input box
+7. User reviews (cancel if needed) and commits
 
 ### Auto-Configuration
 If user clicks generate without setup:
 - System detects missing configuration
 - Automatically starts setup flow
 - Returns to generation after setup complete
+
+### Pre-Commit Review
+1. User runs "git-mew: Review Staged Changes" command (SCM toolbar or Command Palette)
+2. Webview opens with provider/model selection, response language, and optional task context
+3. User clicks **Generate Review** to produce AI feedback on staged files
+4. User can copy the review or open the raw diff directly from the panel
+5. Review settings persist between sessions via dedicated configuration storage
 
 ### Review Merge & MR Description
 1. User runs "git-mew: Review Merge" command
@@ -72,6 +80,7 @@ If user clicks generate without setup:
 
 ### For Individual Developers
 - **Save time:** No more staring at blank commit message box
+- **Catch issues early:** Run AI review on staged files before committing
 - **Better history:** Consistent, descriptive messages
 - **Learn patterns:** See how AI describes changes
 - **Flexibility:** Choose preferred AI provider
@@ -80,6 +89,7 @@ If user clicks generate without setup:
 
 ### For Teams
 - **Standardization:** Conventional commit format enforced
+- **Safer commits:** Pre-commit reviews highlight risky changes
 - **Better changelogs:** Structured messages enable automation
 - **Code review:** Clear commit messages and AI reviews aid review process
 - **Onboarding:** New developers see good commit examples
