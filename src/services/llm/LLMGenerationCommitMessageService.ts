@@ -112,8 +112,10 @@ export class LLMGenerationService {
     ) {
       return {
         ...options,
-        reasoning_effort: "minimal",
-        // verbosity: "low",
+        reasoning: {
+          effort: "low",
+        },
+        // text: { verbosity: "low" },
       };
     }
     return options;
@@ -126,7 +128,8 @@ export class LLMGenerationService {
     stagedChanges: UnifiedDiffFile[],
     renderedDiff: string,
     currentBranch: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onProgress?: (message: string) => void
   ): Promise<string | null> {
     const adapter = await this.adapterService.getAdapter();
     if (!adapter) {
@@ -147,6 +150,7 @@ export class LLMGenerationService {
         changes: stagedChanges,
         task: taskSpec,
         signal,
+        onProgress,
       });
     } catch (error) {
       if (error instanceof GenerationCancelledError) {

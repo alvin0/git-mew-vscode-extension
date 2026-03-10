@@ -36,6 +36,8 @@ export enum GitStatus {
 export class GitService {
     private gitExtension: any;
     private git: any;
+    private readonly commitMessageSyncRetries = 20;
+    private readonly commitMessageSyncDelayMs = 100;
 
     constructor() {
         this.initializeGit();
@@ -381,9 +383,30 @@ export class GitService {
         try {
             const repository = this.getRepository();
             repository.inputBox.value = message;
+
+            // SCM input can be reset by repository refreshes right after staging/generation.
+            // Re-apply only when it gets cleared, so we do not overwrite user edits.
+            for (let attempt = 0; attempt < this.commitMessageSyncRetries; attempt += 1) {
+                await this.delay(this.commitMessageSyncDelayMs);
+
+                if (repository.inputBox.value === message) {
+                    continue;
+                }
+
+                if (repository.inputBox.value.trim().length === 0) {
+                    repository.inputBox.value = message;
+                    continue;
+                }
+
+                return;
+            }
         } catch (error) {
             throw new Error(`Failed to set commit message: ${error}`);
         }
+    }
+
+    private async delay(ms: number): Promise<void> {
+        await new Promise((resolve) => setTimeout(resolve, ms));
     }
 
     /**

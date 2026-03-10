@@ -20,6 +20,7 @@
 
 ### LLM Provider Support
 - [x] OpenAI adapter
+  - Responses API migration for newer OpenAI models
   - GPT-5 (gpt-5-2025-08-07)
   - GPT-5 Mini (gpt-5-mini-2025-08-07)
   - GPT-5 Nano (gpt-5-nano-2025-08-07)

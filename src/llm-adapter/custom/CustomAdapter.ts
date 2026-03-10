@@ -59,7 +59,7 @@ export class CustomAdapter implements ILLMAdapter {
     const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
 
     try {
-      const response = await fetch(`${this.config.baseURL}/chat/completions`, {
+      const response = await fetch(`${this.config.baseURL}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

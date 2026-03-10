@@ -1,5 +1,18 @@
 # Change Log
 
+## [0.1.0] - 2026-03-10
+
+### Added
+- **Hierarchical Context Pipeline**: Large diffs are now split into chunks and reduced before final commit/review generation to avoid context overflow
+- **Live Review Logs**: Review Merge and Review Staged Changes now show execution logs and API responses while the workflow is running
+- **Custom Provider Support**: Added a `custom` OpenAI-compatible provider with configurable base URL
+- **Custom Model Configuration**: All providers now allow manual model name input, with configurable context window and max output tokens for custom models
+
+### Improved
+- **Large Diff Handling**: Commit generation now uses a faster hierarchical profile for big staged changes
+- **Token Budgeting**: Context estimation now uses tokenizer-backed counting with safer budgeting behavior
+- **Provider Management**: API key management now includes the custom provider and its endpoint configuration
+
 ## [0.0.7] - 2025-10-08
 
 ### Added

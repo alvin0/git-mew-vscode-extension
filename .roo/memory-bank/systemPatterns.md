@@ -52,7 +52,7 @@
               │ OpenAIAdapter  │    │ ClaudeAdapter   │        │ GeminiAdapter     │
               │                │    │                 │        │                   │
               │ - GPT-5/4.1    │    │ - Claude 4.5    │        │ - Gemini 2.5 Pro  │
-              │ - Chat API     │    │ - Messages API  │        │ - Generate API    │
+              │ - Responses API│    │ - Messages API  │        │ - Generate API    │
               └────────────────┘    └─────────────────┘        └───────────────────┘
                                                                          │
                                                                  ┌───────▼────────┐

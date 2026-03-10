@@ -95,7 +95,7 @@ export function registerGenerateCommitCommand(
 				location: vscode.ProgressLocation.Notification,
 				title: `Generating commit message using ${modelInfo}...`,
 				cancellable: false
-			}, async () => {
+			}, async (progress) => {
 				// Check for cancellation during generation
 				if (signal.aborted) {
 					return null;
@@ -104,7 +104,10 @@ export function registerGenerateCommitCommand(
 					stagedChanges,
 					formattedChanges,
 					currentBranch,
-					signal
+					signal,
+					(message) => {
+						progress.report({ message });
+					}
 				);
 			});
 

@@ -209,13 +209,15 @@ export class LLMService {
     stagedChanges: UnifiedDiffFile[],
     renderedDiff: string,
     currentBranch: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onProgress?: (message: string) => void
   ): Promise<string | null> {
     return await this.generationService.generateCommitMessage(
       stagedChanges,
       renderedDiff,
       currentBranch,
-      signal
+      signal,
+      onProgress
     );
   }
 

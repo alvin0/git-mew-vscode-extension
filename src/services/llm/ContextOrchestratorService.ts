@@ -907,8 +907,10 @@ ${this.renderAnalyses(analyses)}`;
     ) {
       return {
         ...options,
-        reasoning_effort: "minimal",
-        // verbosity: "low",
+        reasoning: {
+          effort: "low",
+        },
+        // text: { verbosity: "low" },
       };
     }
 

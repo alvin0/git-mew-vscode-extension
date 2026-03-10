@@ -2,10 +2,15 @@
 
 ## Current Status
 **Project State:** v0.0.7 - Stable Release
-**Last Updated:** 2025-10-08
-**Active Work:** Documenting new review tooling, polishing UX details, and keeping memory bank aligned.
+**Last Updated:** 2026-03-10
+**Active Work:** Keeping provider integrations current, including OpenAI Responses API migration for newer models.
 
 ## Recent Changes
+### 2026-03-10
+- ✅ Migrated `OpenAIAdapter` from `/chat/completions` to `/responses`
+- ✅ Mapped Responses API usage fields back into the shared `GenerateResponse` contract
+- ✅ Added tolerant text extraction from `output_text` and structured `output[].content[]`
+
 ### v0.0.7
 - ✅ Added "Review Staged Changes" command with rich webview (provider/model/language/task context, copy review, open raw diff)
 - ✅ Introduced cancel command tied to commit generation with context key `git-mew.isGenerating`
@@ -119,7 +124,7 @@
 - FileTypeDetector provides confidence scores
 
 ### LLM Provider Differences
-- **OpenAI:** Uses chat completions with messages array
+- **OpenAI:** Uses Responses API with `input` and optional `instructions`
 - **Claude:** Uses messages API with separate system parameter
 - **Gemini:** Uses generateContent with contents array
 - **Ollama:** Local models, no API key required, streaming support

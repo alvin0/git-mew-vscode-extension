@@ -1,5 +1,15 @@
-import { API_BASE_URLS, DEFAULT_CONFIG, DEFAULT_MODELS, MODEL_CAPABILITIES } from '../../constant/llm';
-import { GenerateOptions, GenerateResponse, ILLMAdapter, LLMAdapterConfig } from '../adapterInterface';
+import {
+  API_BASE_URLS,
+  DEFAULT_CONFIG,
+  DEFAULT_MODELS,
+  MODEL_CAPABILITIES,
+} from "../../constant/llm";
+import {
+  GenerateOptions,
+  GenerateResponse,
+  ILLMAdapter,
+  LLMAdapterConfig,
+} from "../adapterInterface";
 
 /**
  * OpenAI API Adapter
@@ -12,7 +22,7 @@ export class OpenAIAdapter implements ILLMAdapter {
 
   async initialize(config: LLMAdapterConfig): Promise<void> {
     if (!config.apiKey) {
-      throw new Error('OpenAI API key is required');
+      throw new Error("OpenAI API key is required");
     }
 
     this.config = {
@@ -23,35 +33,39 @@ export class OpenAIAdapter implements ILLMAdapter {
     };
   }
 
-  async generateText(prompt: string, options?: GenerateOptions): Promise<GenerateResponse> {
+  async generateText(
+    prompt: string,
+    options?: GenerateOptions,
+  ): Promise<GenerateResponse> {
     if (!this.config) {
-      throw new Error('Adapter not initialized. Call initialize() first.');
+      throw new Error("Adapter not initialized. Call initialize() first.");
     }
 
-    const isGPT5Model = this.config.model?.startsWith('gpt-5');
+    const normalizedOptions = this.normalizeResponsesOptions(options);
 
-    const messages: Array<{ role: string; content: string }> = [];
-    
-    if (options?.systemMessage) {
-      messages.push({ role: 'system', content: options.systemMessage });
-    }
-    
-    messages.push({ role: 'user', content: prompt });
-
-    // Build base request body
     const requestBody: any = {
       model: this.config.model,
-      messages,
-      ...(options?.maxTokens && { max_completion_tokens: options.maxTokens }),
-      ...(!isGPT5Model && options?.temperature !== undefined && {
-        temperature: options.temperature,
+      input: prompt,
+      ...(normalizedOptions?.systemMessage && {
+        instructions: normalizedOptions.systemMessage,
       }),
-      ...(options?.stop && { stop: options.stop }),
+      ...(normalizedOptions?.maxTokens && {
+        max_output_tokens: normalizedOptions.maxTokens,
+      }),
+      ...(normalizedOptions?.temperature !== undefined && {
+        temperature: normalizedOptions.temperature,
+      }),
+      ...(normalizedOptions?.stop && { stop: normalizedOptions.stop }),
     };
 
-    // Merge additional options into requestBody (excluding known properties)
-    if (options) {
-      const { maxTokens, temperature, stop, systemMessage, ...additionalOptions } = options;
+    if (normalizedOptions) {
+      const {
+        maxTokens,
+        temperature,
+        stop,
+        systemMessage,
+        ...additionalOptions
+      } = normalizedOptions;
       Object.assign(requestBody, additionalOptions);
     }
 
@@ -59,11 +73,11 @@ export class OpenAIAdapter implements ILLMAdapter {
     const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
 
     try {
-      const response = await fetch(`${this.config.baseURL}/chat/completions`, {
-        method: 'POST',
+      const response = await fetch(`${this.config.baseURL}/responses`, {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.config.apiKey}`,
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.config.apiKey}`,
         },
         body: JSON.stringify(requestBody),
         signal: controller.signal,
@@ -72,29 +86,33 @@ export class OpenAIAdapter implements ILLMAdapter {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const error: any = await response.json().catch(() => ({ error: { message: response.statusText } }));
-        throw new Error(`OpenAI API error: ${error.error?.message || response.statusText}`);
+        const error: any = await response
+          .json()
+          .catch(() => ({ error: { message: response.statusText } }));
+        throw new Error(
+          `OpenAI API error: ${error.error?.message || response.statusText}`,
+        );
       }
 
       const data: any = await response.json();
 
       return {
-        text: data.choices[0]?.message?.content || '',
-        model: data.model,
-        promptTokens: data.usage?.prompt_tokens,
-        completionTokens: data.usage?.completion_tokens,
+        text: this.extractResponseText(data),
+        model: data.model || this.config.model || this.defaultModel,
+        promptTokens: data.usage?.input_tokens,
+        completionTokens: data.usage?.output_tokens,
         totalTokens: data.usage?.total_tokens,
-        finishReason: data.choices[0]?.finish_reason,
+        finishReason: this.extractFinishReason(data),
       };
     } catch (error) {
       clearTimeout(timeoutId);
       if (error instanceof Error) {
-        if (error.name === 'AbortError') {
-          throw new Error('Request timeout');
+        if (error.name === "AbortError") {
+          throw new Error("Request timeout");
         }
         throw error;
       }
-      throw new Error('Unknown error occurred');
+      throw new Error("Unknown error occurred");
     }
   }
 
@@ -107,26 +125,115 @@ export class OpenAIAdapter implements ILLMAdapter {
   }
 
   getProvider(): string {
-    return 'openai';
+    return "openai";
+  }
+
+  private normalizeResponsesOptions(
+    options?: GenerateOptions,
+  ): GenerateOptions | undefined {
+    if (!options) {
+      return undefined;
+    }
+
+    const normalizedOptions: GenerateOptions = { ...options };
+    const legacyReasoningEffort = normalizedOptions.reasoning_effort;
+    const legacyVerbosity = normalizedOptions.verbosity;
+
+    if (legacyReasoningEffort !== undefined) {
+      if (normalizedOptions.reasoning === undefined) {
+        normalizedOptions.reasoning = {
+          effort: legacyReasoningEffort,
+        };
+      }
+
+      delete normalizedOptions.reasoning_effort;
+    }
+
+    if (legacyVerbosity !== undefined) {
+      if (normalizedOptions.text === undefined) {
+        normalizedOptions.text = {
+          verbosity: legacyVerbosity,
+        };
+      }
+
+      delete normalizedOptions.verbosity;
+    }
+
+    return normalizedOptions;
+  }
+
+  private extractResponseText(data: any): string {
+    if (typeof data?.output_text === "string" && data.output_text.length > 0) {
+      return data.output_text;
+    }
+
+    if (!Array.isArray(data?.output)) {
+      return "";
+    }
+
+    return data.output
+      .flatMap((item: any) =>
+        Array.isArray(item?.content) ? item.content : [],
+      )
+      .map((content: any) => {
+        if (
+          content?.type === "output_text" &&
+          typeof content?.text === "string"
+        ) {
+          return content.text;
+        }
+
+        if (typeof content?.text === "string") {
+          return content.text;
+        }
+
+        if (typeof content?.output_text === "string") {
+          return content.output_text;
+        }
+
+        return "";
+      })
+      .filter((text: string) => text.length > 0)
+      .join("\n");
+  }
+
+  private extractFinishReason(data: any): string | undefined {
+    if (
+      typeof data?.status === "string" &&
+      data.status.length > 0 &&
+      data.status !== "completed"
+    ) {
+      return data.status;
+    }
+
+    if (typeof data?.incomplete_details?.reason === "string") {
+      return data.incomplete_details.reason;
+    }
+
+    return "stop";
   }
 
   getContextWindow(): number {
     const model = this.getModel();
-    return (MODEL_CAPABILITIES.CONTEXT_WINDOWS as Record<string, number>)[model]
-      ?? this.config?.contextWindow
-      ?? DEFAULT_CONFIG.CUSTOM_MODEL_CONTEXT_WINDOW;
+    return (
+      (MODEL_CAPABILITIES.CONTEXT_WINDOWS as Record<string, number>)[model] ??
+      this.config?.contextWindow ??
+      DEFAULT_CONFIG.CUSTOM_MODEL_CONTEXT_WINDOW
+    );
   }
 
   getMaxOutputTokens(): number {
     const model = this.getModel();
-    return (MODEL_CAPABILITIES.MAX_OUTPUT_TOKENS as Record<string, number>)[model]
-      ?? this.config?.maxOutputTokens
-      ?? DEFAULT_CONFIG.CUSTOM_MODEL_MAX_OUTPUT_TOKENS;
+    return (
+      (MODEL_CAPABILITIES.MAX_OUTPUT_TOKENS as Record<string, number>)[model] ??
+      this.config?.maxOutputTokens ??
+      DEFAULT_CONFIG.CUSTOM_MODEL_MAX_OUTPUT_TOKENS
+    );
   }
 
   async testConnection(): Promise<boolean> {
     try {
-      await this.generateText('Hello', { maxTokens: 5 });
+      await this.generateText("Hello", { maxTokens: 5 });
       return true;
     } catch {
       return false;

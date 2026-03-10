@@ -166,15 +166,15 @@ npm run build:package  # Package extension via vsce
 ## LLM Provider APIs
 
 ### OpenAI API
-- **Endpoint:** `https://api.openai.com/v1/chat/completions`
+- **Endpoint:** `https://api.openai.com/v1/responses`
 - **Authentication:** Bearer token in Authorization header
 - **Models:**
   - GPT-5 (gpt-5-2025-08-07)
   - GPT-5 Mini (gpt-5-mini-2025-08-07)
   - GPT-5 Nano (gpt-5-nano-2025-08-07)
   - GPT-4.1 (gpt-4.1-2025-04-14)
-- **Request Format:** Chat completion with messages array
-- **Response:** JSON with choices array
+- **Request Format:** Responses API with `input`, optional `instructions`, and `max_output_tokens`
+- **Response:** JSON with `output_text` and structured `output` items
 
 ### Claude API (Anthropic)
 - **Endpoint:** `https://api.anthropic.com/v1/messages`
