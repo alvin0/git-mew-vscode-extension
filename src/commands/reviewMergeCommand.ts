@@ -37,14 +37,24 @@ export function registerReviewMergeCommand(
             const savedProvider = ReviewMergeConfigManager.getProvider();
             const savedModel = ReviewMergeConfigManager.getModel();
             const savedLanguage = ReviewMergeConfigManager.getLanguage();
+            const savedContextStrategy = ReviewMergeConfigManager.getContextStrategy();
             
             // Fallback to main LLM config if no Review Merge config exists
             const currentProvider = savedProvider || llmService.getProvider();
             const currentModel = savedModel || (currentProvider ? llmService.getModel(currentProvider) : undefined);
 
             // Get available providers and models
-            const providers: LLMProvider[] = ['openai', 'claude', 'gemini', 'ollama'];
+            const providers: LLMProvider[] = ['openai', 'claude', 'gemini', 'ollama', 'custom'];
             const availableModels = await ModelProvider.getAvailableModels();
+            const customModelSettings = Object.fromEntries(
+                providers.map((provider) => [
+                    provider,
+                    {
+                        contextWindow: llmService.getCustomModelContextWindow(provider),
+                        maxOutputTokens: llmService.getCustomModelMaxOutputTokens(provider),
+                    }
+                ])
+            );
 
             // Create and show webview panel
             const panel = vscode.window.createWebviewPanel(
@@ -65,7 +75,9 @@ export function registerReviewMergeCommand(
                 availableModels,
                 currentProvider,
                 currentModel,
-                savedLanguage
+                savedLanguage,
+                savedContextStrategy,
+                customModelSettings
             );
 
             // Create services

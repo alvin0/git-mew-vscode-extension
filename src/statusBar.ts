@@ -16,6 +16,11 @@ export function createStatusBarItem(context: vscode.ExtensionContext) {
                 command: 'git-mew.setupModelGenerateCommit'
             },
             {
+                label: '$(key) Manage API Keys',
+                description: 'Update stored API keys for AI providers',
+                command: 'git-mew.manage-api-keys'
+            },
+            {
                 label: '$(rocket) Publish',
                 description: 'Publish your project',
                 command: 'git-mew.publish'

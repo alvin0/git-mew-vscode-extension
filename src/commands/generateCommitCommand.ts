@@ -2,8 +2,8 @@ import * as vscode from 'vscode';
 import { LLMService } from '../services/llm';
 import { GitService } from '../services/utils/gitService';
 
-// Global cancellation token source
-let currentCancellationTokenSource: vscode.CancellationTokenSource | null = null;
+// Global abort controller for commit generation
+let currentAbortController: AbortController | null = null;
 
 /**
  * Set the generating state context
@@ -24,12 +24,12 @@ export function registerGenerateCommitCommand(
 		// Set generating state to true
 		setGeneratingState(true);
 		
-		// Create new cancellation token source
-		currentCancellationTokenSource = new vscode.CancellationTokenSource();
-		const token = currentCancellationTokenSource.token;
+		currentAbortController?.abort();
+		currentAbortController = new AbortController();
+		const { signal } = currentAbortController;
 		try {
 			// Check if cancelled before starting
-			if (token.isCancellationRequested) {
+			if (signal.aborted) {
 				setGeneratingState(false);
 				return;
 			}
@@ -77,8 +77,8 @@ export function registerGenerateCommitCommand(
 				}
 			}
 
-			// Get formatted staged changes
-			const formattedChanges = await gitService.getFormattedStagedChanges();
+			const stagedChanges = await gitService.getStagedDiffFiles();
+			const formattedChanges = gitService.renderStagedDiffFiles(stagedChanges);
 			
 			// Get current branch
 			const currentBranch = await gitService.getCurrentBranch() || 'unknown';
@@ -97,16 +97,21 @@ export function registerGenerateCommitCommand(
 				cancellable: false
 			}, async () => {
 				// Check for cancellation during generation
-				if (token.isCancellationRequested) {
+				if (signal.aborted) {
 					return null;
 				}
-				return await llmService.generateCommitMessage(formattedChanges, currentBranch);
+				return await llmService.generateCommitMessage(
+					stagedChanges,
+					formattedChanges,
+					currentBranch,
+					signal
+				);
 			});
 
 			// Check if cancelled after generation
-			if (token.isCancellationRequested || !commitMessage) {
+			if (signal.aborted || !commitMessage) {
 				setGeneratingState(false);
-				if (token.isCancellationRequested) {
+				if (signal.aborted) {
 					vscode.window.showInformationMessage('Commit message generation cancelled');
 				}
 				return;
@@ -125,8 +130,9 @@ export function registerGenerateCommitCommand(
 		} finally {
 			// Always reset generating state
 			setGeneratingState(false);
-			currentCancellationTokenSource?.dispose();
-			currentCancellationTokenSource = null;
+			if (currentAbortController === null || currentAbortController.signal === signal) {
+				currentAbortController = null;
+			}
 		}
 	});
 }
@@ -136,10 +142,9 @@ export function registerGenerateCommitCommand(
 	*/
 export function registerCancelGenerateCommand(): vscode.Disposable {
 	return vscode.commands.registerCommand('git-mew.cancel-generate', async () => {
-		if (currentCancellationTokenSource) {
-			currentCancellationTokenSource.cancel();
-			currentCancellationTokenSource.dispose();
-			currentCancellationTokenSource = null;
+		if (currentAbortController) {
+			currentAbortController.abort();
+			currentAbortController = null;
 			setGeneratingState(false);
 			vscode.window.showInformationMessage('Commit message generation cancelled');
 		}

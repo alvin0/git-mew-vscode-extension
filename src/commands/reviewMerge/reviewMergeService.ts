@@ -1,8 +1,16 @@
 import * as vscode from 'vscode';
+import { CLAUDE_MODELS, GEMINI_MODELS, OPENAI_MODELS } from '../../constant/llm';
 import { createAdapter, LLMProvider } from '../../llm-adapter';
 import { SYSTEM_PROMPT_GENERATE_DESCRIPTION_MERGE } from '../../prompts/systemPromptGenerateDescriptionMerge';
 import { SYSTEM_PROMPT_GENERATE_REVIEW_MERGE } from '../../prompts/systemPromptGenerateReviewMerge';
-import { LLMService } from '../../services/llm';
+import {
+    ContextOrchestratorService,
+    ContextStrategy,
+    ContextTaskSpec,
+    GenerationCancelledError,
+    LLMService,
+    UnifiedDiffFile
+} from '../../services/llm';
 import { ReviewMergeConfigManager } from '../../services/llm/ReviewMergeConfigManager';
 import { GitService } from '../../services/utils/gitService';
 
@@ -10,12 +18,14 @@ export interface ReviewResult {
     success: boolean;
     review?: string;
     diff?: string;
+    changes?: UnifiedDiffFile[];
     error?: string;
 }
 
 export interface DescriptionResult {
     success: boolean;
     description?: string;
+    diff?: string;
     error?: string;
 }
 
@@ -23,6 +33,9 @@ export interface DescriptionResult {
  * Service for handling review merge operations
  */
 export class ReviewMergeService {
+    private readonly contextOrchestrator = new ContextOrchestratorService();
+    private currentAbortController: AbortController | null = null;
+
     constructor(
         private gitService: GitService,
         private llmService: LLMService
@@ -32,9 +45,8 @@ export class ReviewMergeService {
      * Cancel the review generation
      */
     cancel() {
-        // Currently, there's no long-running process to cancel on the backend.
-        // The cancellation is primarily handled on the client-side to reset the UI.
-        // This method is a placeholder for potential future backend cancellation logic.
+        this.currentAbortController?.abort();
+        this.currentAbortController = null;
         console.log('Review generation cancelled by user.');
     }
 
@@ -47,11 +59,21 @@ export class ReviewMergeService {
         provider: LLMProvider,
         model: string,
         language: string,
-        taskInfo?: string
+        strategy: ContextStrategy,
+        taskInfo?: string,
+        contextWindow?: number,
+        maxOutputTokens?: number,
+        onProgress?: (message: string) => void,
+        onLog?: (message: string) => void
     ): Promise<ReviewResult> {
+        this.currentAbortController?.abort();
+        const abortController = new AbortController();
+        this.currentAbortController = abortController;
+
         try {
             // Save configuration for next time
-            await this.saveConfiguration(provider, model, language);
+            await this.saveConfiguration(provider, model, language, strategy);
+            await this.saveCustomModelCapabilities(provider, model, contextWindow, maxOutputTokens);
 
             // Get API key
             const apiKey = await this.getApiKey(provider);
@@ -62,35 +84,68 @@ export class ReviewMergeService {
                 };
             }
 
-            // Get branch diff
-            const diff = await this.gitService.getBranchDiff(baseBranch, compareBranch);
+            const baseURL = await this.getBaseURL(provider);
+            if (provider === 'custom' && !baseURL) {
+                return {
+                    success: false,
+                    error: 'No custom base URL configured. The endpoint must support OpenAI-compatible /chat/completions.'
+                };
+            }
+
+            const branchDiff = await this.getBranchDiffPreview(baseBranch, compareBranch);
 
             // Initialize adapter and generate review
             const tempAdapter = createAdapter(provider);
-            await tempAdapter.initialize({ apiKey, model });
+            await tempAdapter.initialize({
+                apiKey,
+                model,
+                baseURL,
+                contextWindow: this.isCustomModel(provider, model) ? this.llmService.getCustomModelContextWindow(provider) : undefined,
+                maxOutputTokens: this.isCustomModel(provider, model) ? this.llmService.getCustomModelMaxOutputTokens(provider) : undefined
+            });
 
             // Get custom system prompt and review rules if available
             const customSystemPrompt = await this.gitService.getCustomReviewMergeSystemPrompt();
             const customRules = await this.gitService.getCustomReviewMergeRules();
             
-            const prompt = this.buildReviewPrompt(baseBranch, compareBranch, diff, taskInfo);
-            const response = await tempAdapter.generateText(prompt, {
-                systemMessage: SYSTEM_PROMPT_GENERATE_REVIEW_MERGE(language, customSystemPrompt, customRules),
+            const review = await this.contextOrchestrator.generate({
+                adapter: tempAdapter,
+                strategy,
+                changes: branchDiff.changes,
+                signal: abortController.signal,
+                onProgress,
+                onLog,
+                task: this.buildReviewTaskSpec(
+                    baseBranch,
+                    compareBranch,
+                    branchDiff.diff,
+                    taskInfo,
+                    SYSTEM_PROMPT_GENERATE_REVIEW_MERGE(language, customSystemPrompt, customRules)
+                ),
             });
-
-            const aiReview = response.text.trim();
 
             return {
                 success: true,
-                review: aiReview,
-                diff: diff
+                review,
+                diff: branchDiff.diff,
+                changes: branchDiff.changes
             };
 
         } catch (error) {
+            if (error instanceof GenerationCancelledError) {
+                return {
+                    success: false,
+                    error: 'Review generation cancelled.'
+                };
+            }
             return {
                 success: false,
                 error: `${error}`
             };
+        } finally {
+            if (this.currentAbortController === abortController) {
+                this.currentAbortController = null;
+            }
         }
     }
 
@@ -103,10 +158,23 @@ export class ReviewMergeService {
         provider: LLMProvider,
         model: string,
         language: string,
+        strategy: ContextStrategy,
         taskInfo?: string,
-        diff?: string
+        diff?: string,
+        changes?: UnifiedDiffFile[],
+        contextWindow?: number,
+        maxOutputTokens?: number,
+        onProgress?: (message: string) => void,
+        onLog?: (message: string) => void
     ): Promise<DescriptionResult> {
+        this.currentAbortController?.abort();
+        const abortController = new AbortController();
+        this.currentAbortController = abortController;
+
         try {
+            await this.saveConfiguration(provider, model, language, strategy);
+            await this.saveCustomModelCapabilities(provider, model, contextWindow, maxOutputTokens);
+
             // Get API key
             const apiKey = await this.getApiKey(provider);
             if (!apiKey) {
@@ -116,34 +184,78 @@ export class ReviewMergeService {
                 };
             }
 
-            // Get branch diff if not provided
-            const branchDiff = diff || await this.gitService.getBranchDiff(baseBranch, compareBranch);
+            const baseURL = await this.getBaseURL(provider);
+            if (provider === 'custom' && !baseURL) {
+                return {
+                    success: false,
+                    error: 'No custom base URL configured. The endpoint must support OpenAI-compatible /chat/completions.'
+                };
+            }
+
+            const branchDiff = changes && diff
+                ? { changes, diff }
+                : await this.getBranchDiffPreview(baseBranch, compareBranch);
 
             // Initialize adapter and generate description
             const tempAdapter = createAdapter(provider);
-            await tempAdapter.initialize({ apiKey, model });
+            await tempAdapter.initialize({
+                apiKey,
+                model,
+                baseURL,
+                contextWindow: this.isCustomModel(provider, model) ? this.llmService.getCustomModelContextWindow(provider) : undefined,
+                maxOutputTokens: this.isCustomModel(provider, model) ? this.llmService.getCustomModelMaxOutputTokens(provider) : undefined
+            });
 
             // Get custom system prompt and review rules if available
             const customSystemPrompt = await this.gitService.getCustomDescriptionMergeSystemPrompt();
             
-            const prompt = this.buildDescriptionPrompt(baseBranch, compareBranch, branchDiff, taskInfo);
-            const response = await tempAdapter.generateText(prompt, {
-                systemMessage: SYSTEM_PROMPT_GENERATE_DESCRIPTION_MERGE(language, customSystemPrompt, ''),
+            const description = await this.contextOrchestrator.generate({
+                adapter: tempAdapter,
+                strategy,
+                changes: branchDiff.changes,
+                signal: abortController.signal,
+                onProgress,
+                onLog,
+                task: this.buildDescriptionTaskSpec(
+                    baseBranch,
+                    compareBranch,
+                    branchDiff.diff,
+                    taskInfo,
+                    SYSTEM_PROMPT_GENERATE_DESCRIPTION_MERGE(language, customSystemPrompt, '')
+                ),
             });
-
-            const description = response.text.trim();
 
             return {
                 success: true,
-                description: description
+                description,
+                diff: branchDiff.diff
             };
 
         } catch (error) {
+            if (error instanceof GenerationCancelledError) {
+                return {
+                    success: false,
+                    error: 'Description generation cancelled.'
+                };
+            }
             return {
                 success: false,
                 error: `${error}`
             };
+        } finally {
+            if (this.currentAbortController === abortController) {
+                this.currentAbortController = null;
+            }
         }
+    }
+
+    /**
+     * Get branch diff in both structured and rendered form
+     */
+    async getBranchDiffPreview(baseBranch: string, compareBranch: string): Promise<{ changes: UnifiedDiffFile[]; diff: string; }> {
+        const changes = await this.gitService.getBranchDiffFiles(baseBranch, compareBranch);
+        const diff = this.gitService.renderBranchDiffFiles(changes);
+        return { changes, diff };
     }
 
     /**
@@ -152,11 +264,32 @@ export class ReviewMergeService {
     private async saveConfiguration(
         provider: LLMProvider,
         model: string,
-        language: string
+        language: string,
+        strategy: ContextStrategy
     ): Promise<void> {
         await ReviewMergeConfigManager.setProvider(provider);
         await ReviewMergeConfigManager.setModel(model);
         await ReviewMergeConfigManager.setLanguage(language);
+        await ReviewMergeConfigManager.setContextStrategy(strategy);
+    }
+
+    private async saveCustomModelCapabilities(
+        provider: LLMProvider,
+        model: string,
+        contextWindow?: number,
+        maxOutputTokens?: number
+    ): Promise<void> {
+        if (!this.isCustomModel(provider, model)) {
+            return;
+        }
+
+        if (contextWindow) {
+            await this.llmService.setCustomModelContextWindow(provider, contextWindow);
+        }
+
+        if (maxOutputTokens) {
+            await this.llmService.setCustomModelMaxOutputTokens(provider, maxOutputTokens);
+        }
     }
 
     /**
@@ -189,6 +322,59 @@ export class ReviewMergeService {
         return key;
     }
 
+    private async getBaseURL(provider: LLMProvider): Promise<string | undefined> {
+        if (provider !== 'custom') {
+            return undefined;
+        }
+
+        vscode.window.showWarningMessage(
+            'Custom provider must expose an OpenAI-compatible /chat/completions interface.'
+        );
+
+        let baseURL = this.llmService.getBaseURL(provider);
+        if (!baseURL) {
+            const newBaseURL = await vscode.window.showInputBox({
+                prompt: 'Enter Custom provider base URL',
+                placeHolder: 'https://your-endpoint.example.com/v1',
+                ignoreFocusOut: true,
+                validateInput: (value) => {
+                    if (!value || value.trim().length === 0) {
+                        return 'Base URL cannot be empty';
+                    }
+
+                    try {
+                        new URL(value.trim());
+                        return null;
+                    } catch {
+                        return 'Base URL must be a valid URL';
+                    }
+                },
+            });
+
+            if (newBaseURL) {
+                await this.llmService.setBaseURL(provider, newBaseURL.trim());
+                baseURL = newBaseURL.trim();
+            }
+        }
+
+        return baseURL;
+    }
+
+    private isCustomModel(provider: LLMProvider, model: string): boolean {
+        if (provider === 'custom') {
+            return true;
+        }
+
+        const knownModelsByProvider: Partial<Record<LLMProvider, string[]>> = {
+            openai: Object.values(OPENAI_MODELS),
+            claude: Object.values(CLAUDE_MODELS),
+            gemini: Object.values(GEMINI_MODELS),
+        };
+
+        const knownModels = knownModelsByProvider[provider] || [];
+        return !knownModels.includes(model);
+    }
+
     /**
      * Build the prompt for the LLM
      */
@@ -206,6 +392,37 @@ ${diff}
 Please analyze these changes and provide a comprehensive merge request review.`;
     }
 
+    private buildReviewTaskSpec(
+        baseBranch: string,
+        compareBranch: string,
+        diff: string,
+        taskInfo: string | undefined,
+        systemMessage: string
+    ): ContextTaskSpec {
+        return {
+            kind: 'mergeReview',
+            label: 'merge request review',
+            systemMessage,
+            directPrompt: this.buildReviewPrompt(baseBranch, compareBranch, diff, taskInfo),
+            buildCoordinatorPrompt: ({ changedFilesSummary, analysesSummary }) => `# Merge Request Review
+
+**Base Branch:** ${baseBranch}
+**Compare Branch:** ${compareBranch}
+${taskInfo ? `\n**Task Context:** ${taskInfo}\n` : ''}
+
+## Changed Files:
+
+${changedFilesSummary}
+
+## Hierarchical Chunk Summaries:
+
+${analysesSummary}
+
+Please analyze these changes and provide a comprehensive merge request review.
+Do not mention that the diff was summarized in multiple stages.`
+        };
+    }
+
     /**
      * Build the prompt for generating MR description
      */
@@ -221,5 +438,36 @@ ${taskInfo ? `\n**Task Info:** ${taskInfo}\n` : ''}
 ${diff}
 
 Please generate a comprehensive merge request description following the template guidelines.`;
+    }
+
+    private buildDescriptionTaskSpec(
+        baseBranch: string,
+        compareBranch: string,
+        diff: string,
+        taskInfo: string | undefined,
+        systemMessage: string
+    ): ContextTaskSpec {
+        return {
+            kind: 'mrDescription',
+            label: 'merge request description generation',
+            systemMessage,
+            directPrompt: this.buildDescriptionPrompt(baseBranch, compareBranch, diff, taskInfo),
+            buildCoordinatorPrompt: ({ changedFilesSummary, analysesSummary }) => `# Generate Merge Request Description
+
+**Base Branch:** ${baseBranch}
+**Compare Branch:** ${compareBranch}
+${taskInfo ? `\n**Task Info:** ${taskInfo}\n` : ''}
+
+## Changed Files:
+
+${changedFilesSummary}
+
+## Hierarchical Chunk Summaries:
+
+${analysesSummary}
+
+Please generate a comprehensive merge request description following the template guidelines.
+Do not mention that the diff was summarized in multiple stages.`
+        };
     }
 }

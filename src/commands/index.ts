@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { LLMService } from '../services/llm';
 import { GitService } from '../services/utils/gitService';
 import { registerCancelGenerateCommand, registerGenerateCommitCommand } from './generateCommitCommand';
+import { registerManageApiKeysCommand } from './manageApiKeysCommand';
 import { registerMarkdownViewerCommand } from './markdownViewerCommand';
 import { createPublishCommand } from './publishCommand';
 import { registerReviewMergeCommand } from './reviewMergeCommand';
@@ -20,6 +21,7 @@ export function registerAllCommands(
 	const commands = [
 		registerGenerateCommitCommand(context, gitService, llmService),
 		registerCancelGenerateCommand(),
+		registerManageApiKeysCommand(llmService),
 		registerSetupModelCommand(context, llmService),
 		registerReviewMergeCommand(context, gitService, llmService),
 		registerReviewStagedChangesCommand(context, gitService, llmService),

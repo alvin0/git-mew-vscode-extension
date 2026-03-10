@@ -1,4 +1,4 @@
-import { API_BASE_URLS, DEFAULT_CONFIG, DEFAULT_MODELS } from '../../constant/llm';
+import { API_BASE_URLS, DEFAULT_CONFIG, DEFAULT_MODELS, MODEL_CAPABILITIES } from '../../constant/llm';
 import { GenerateOptions, GenerateResponse, ILLMAdapter, LLMAdapterConfig } from '../adapterInterface';
 
 /**
@@ -28,6 +28,8 @@ export class OpenAIAdapter implements ILLMAdapter {
       throw new Error('Adapter not initialized. Call initialize() first.');
     }
 
+    const isGPT5Model = this.config.model?.startsWith('gpt-5');
+
     const messages: Array<{ role: string; content: string }> = [];
     
     if (options?.systemMessage) {
@@ -40,6 +42,10 @@ export class OpenAIAdapter implements ILLMAdapter {
     const requestBody: any = {
       model: this.config.model,
       messages,
+      ...(options?.maxTokens && { max_completion_tokens: options.maxTokens }),
+      ...(!isGPT5Model && options?.temperature !== undefined && {
+        temperature: options.temperature,
+      }),
       ...(options?.stop && { stop: options.stop }),
     };
 
@@ -102,6 +108,20 @@ export class OpenAIAdapter implements ILLMAdapter {
 
   getProvider(): string {
     return 'openai';
+  }
+
+  getContextWindow(): number {
+    const model = this.getModel();
+    return (MODEL_CAPABILITIES.CONTEXT_WINDOWS as Record<string, number>)[model]
+      ?? this.config?.contextWindow
+      ?? DEFAULT_CONFIG.CUSTOM_MODEL_CONTEXT_WINDOW;
+  }
+
+  getMaxOutputTokens(): number {
+    const model = this.getModel();
+    return (MODEL_CAPABILITIES.MAX_OUTPUT_TOKENS as Record<string, number>)[model]
+      ?? this.config?.maxOutputTokens
+      ?? DEFAULT_CONFIG.CUSTOM_MODEL_MAX_OUTPUT_TOKENS;
   }
 
   async testConnection(): Promise<boolean> {

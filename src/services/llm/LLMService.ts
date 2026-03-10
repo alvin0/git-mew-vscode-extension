@@ -1,5 +1,7 @@
 import * as vscode from "vscode";
+import { DEFAULT_CONFIG } from "../../constant/llm";
 import { LLMProvider } from "../../llm-adapter";
+import { ContextStrategy, UnifiedDiffFile } from "./contextTypes";
 import { LLMAdapterService } from "./LLMAdapterService";
 import { LLMConfigManager } from "./LLMConfigManager";
 import { LLMGenerationService } from "./LLMGenerationCommitMessageService";
@@ -54,7 +56,43 @@ export class LLMService {
    * Set API key for a provider
    */
   async setApiKey(provider: LLMProvider, apiKey: string): Promise<void> {
-    return await this.configManager.setApiKey(provider, apiKey);
+    await this.configManager.setApiKey(provider, apiKey);
+    this.adapterService.clearAdapter();
+  }
+
+  getBaseURL(provider: LLMProvider): string | undefined {
+    return this.configManager.getBaseURL(provider);
+  }
+
+  async setBaseURL(provider: LLMProvider, baseURL: string): Promise<void> {
+    await this.configManager.setBaseURL(provider, baseURL);
+    this.adapterService.clearAdapter();
+  }
+
+  getCustomModelContextWindow(provider: LLMProvider): number {
+    return this.configManager.getCustomModelContextWindow(provider)
+      ?? DEFAULT_CONFIG.CUSTOM_MODEL_CONTEXT_WINDOW;
+  }
+
+  async setCustomModelContextWindow(
+    provider: LLMProvider,
+    value: number
+  ): Promise<void> {
+    await this.configManager.setCustomModelContextWindow(provider, value);
+    this.adapterService.clearAdapter();
+  }
+
+  getCustomModelMaxOutputTokens(provider: LLMProvider): number {
+    return this.configManager.getCustomModelMaxOutputTokens(provider)
+      ?? DEFAULT_CONFIG.CUSTOM_MODEL_MAX_OUTPUT_TOKENS;
+  }
+
+  async setCustomModelMaxOutputTokens(
+    provider: LLMProvider,
+    value: number
+  ): Promise<void> {
+    await this.configManager.setCustomModelMaxOutputTokens(provider, value);
+    this.adapterService.clearAdapter();
   }
 
   /**
@@ -100,6 +138,19 @@ export class LLMService {
         }
       }
 
+      if (provider === 'custom') {
+        this.uiService.showWarning(
+          'Custom provider must expose an OpenAI-compatible chat/completions interface.'
+        );
+        const currentBaseURL = this.configManager.getBaseURL(provider);
+        const baseURL = await this.uiService.promptBaseURL(provider, currentBaseURL);
+        if (!baseURL) {
+          this.uiService.showWarning("Base URL is required to continue");
+          return false;
+        }
+        await this.configManager.setBaseURL(provider, baseURL);
+      }
+
       // Step 3: Select Model
       const currentModel = this.configManager.getModel(provider);
       const model = await this.uiService.selectModel(provider, currentModel);
@@ -107,6 +158,29 @@ export class LLMService {
         return false;
       }
       await this.configManager.setModel(provider, model);
+
+      if (this.uiService.isCustomModel(provider, model)) {
+        const contextWindow = await this.uiService.promptContextWindow(
+          provider,
+          this.getCustomModelContextWindow(provider)
+        );
+        if (!contextWindow) {
+          this.uiService.showWarning("Context window is required to continue");
+          return false;
+        }
+
+        const maxOutputTokens = await this.uiService.promptMaxOutputTokens(
+          provider,
+          this.getCustomModelMaxOutputTokens(provider)
+        );
+        if (!maxOutputTokens) {
+          this.uiService.showWarning("Max output tokens is required to continue");
+          return false;
+        }
+
+        await this.setCustomModelContextWindow(provider, contextWindow);
+        await this.setCustomModelMaxOutputTokens(provider, maxOutputTokens);
+      }
 
       // Clear cached adapter to force re-initialization with new config
       this.adapterService.clearAdapter();
@@ -131,8 +205,18 @@ export class LLMService {
   /**
    * Generate commit message using LLM
    */
-  async generateCommitMessage(stagedChanges: string, currentBranch: string): Promise<string | null> {
-    return await this.generationService.generateCommitMessage(stagedChanges, currentBranch);
+  async generateCommitMessage(
+    stagedChanges: UnifiedDiffFile[],
+    renderedDiff: string,
+    currentBranch: string,
+    signal?: AbortSignal
+  ): Promise<string | null> {
+    return await this.generationService.generateCommitMessage(
+      stagedChanges,
+      renderedDiff,
+      currentBranch,
+      signal
+    );
   }
 
   /**
@@ -157,5 +241,12 @@ export class LLMService {
     await this.configManager.resetAllConfiguration();
     this.adapterService.clearAdapter();
     this.uiService.showInfo("LLM configuration has been reset");
+  }
+
+  /**
+   * Get the context strategy for commit generation
+   */
+  getCommitContextStrategy(): ContextStrategy {
+    return this.configManager.getCommitContextStrategy();
   }
 }

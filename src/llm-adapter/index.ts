@@ -13,6 +13,7 @@ export {
 
 // Export adapter implementations
 export { ClaudeAdapter } from './claude/ClaudeAdapter';
+export { CustomAdapter } from './custom/CustomAdapter';
 export { GeminiAdapter } from './gemini/GeminiAdapter';
 export { OllamaAdapter } from './ollama/OllamaAdapter';
 export { OpenAIAdapter } from './openai/OpenAIAdapter';
@@ -39,6 +40,7 @@ export {
 // Import for internal use
 import { ILLMAdapter } from './adapterInterface';
 import { ClaudeAdapter } from './claude/ClaudeAdapter';
+import { CustomAdapter } from './custom/CustomAdapter';
 import { GeminiAdapter } from './gemini/GeminiAdapter';
 import { OllamaAdapter } from './ollama/OllamaAdapter';
 import { OpenAIAdapter } from './openai/OpenAIAdapter';
@@ -47,7 +49,7 @@ import { OpenAIAdapter } from './openai/OpenAIAdapter';
  * Adapter factory function
  * Creates an adapter instance based on the provider name
  */
-export function createAdapter(provider: 'openai' | 'claude' | 'gemini' | 'ollama'): ILLMAdapter {
+export function createAdapter(provider: 'openai' | 'claude' | 'gemini' | 'ollama' | 'custom'): ILLMAdapter {
   switch (provider.toLowerCase()) {
     case 'openai':
       return new OpenAIAdapter();
@@ -57,7 +59,9 @@ export function createAdapter(provider: 'openai' | 'claude' | 'gemini' | 'ollama
       return new GeminiAdapter();
     case 'ollama':
       return new OllamaAdapter();
+    case 'custom':
+      return new CustomAdapter();
     default:
-      throw new Error(`Unknown provider: ${provider}. Supported providers: openai, claude, gemini, ollama`);
+      throw new Error(`Unknown provider: ${provider}. Supported providers: openai, claude, gemini, ollama, custom`);
   }
 }

@@ -1,6 +1,8 @@
 import * as vscode from "vscode";
 import {
+  API_BASE_URLS,
   CLAUDE_MODELS,
+  DEFAULT_CONFIG,
   GEMINI_MODELS,
   LLMProvider,
   MODEL_UI_METADATA,
@@ -14,13 +16,14 @@ import { OllamaAdapter } from "../../llm-adapter/ollama/OllamaAdapter";
  * (Quick picks, input boxes, notifications)
  */
 export class LLMUIService {
+  private static readonly CUSTOM_MODEL_SENTINEL = "__custom_model__";
   /**
    * Show provider selection quick pick with current selection indicator
    */
   async selectProvider(
     currentProvider?: LLMProvider
   ): Promise<LLMProvider | undefined> {
-    const providers: LLMProvider[] = ['openai', 'claude', 'gemini', 'ollama'];
+    const providers: LLMProvider[] = ['openai', 'claude', 'gemini', 'ollama', 'custom'];
     const items: vscode.QuickPickItem[] = providers.map((provider) => {
       const metadata = PROVIDER_UI_METADATA[provider];
       const isSelected = currentProvider === provider;
@@ -75,10 +78,21 @@ export class LLMUIService {
             picked: isSelected,
           };
         });
+
+        items.push({
+          label: currentModel && !availableModels.includes(currentModel)
+            ? `$(check) Custom model: ${currentModel}`
+            : "Custom model...",
+          description: "Enter an Ollama model name manually",
+          detail: LLMUIService.CUSTOM_MODEL_SENTINEL,
+          picked: Boolean(currentModel && !availableModels.includes(currentModel)),
+        });
       } catch (error) {
         this.showError(`Failed to fetch Ollama models: ${error}`);
         return undefined;
       }
+    } else if (provider === "custom") {
+      return await this.promptCustomModelName(provider, currentModel);
     } else {
       // For other providers, use predefined models
       switch (provider) {
@@ -108,13 +122,30 @@ export class LLMUIService {
       });
     }
 
+    items.push({
+      label: currentModel && !availableModels.includes(currentModel)
+        ? `$(check) Custom model: ${currentModel}`
+        : "Custom model...",
+      description: "Enter a model name manually",
+      detail: LLMUIService.CUSTOM_MODEL_SENTINEL,
+      picked: Boolean(currentModel && !availableModels.includes(currentModel)),
+    });
+
     const selected = await vscode.window.showQuickPick(items, {
       placeHolder: `Select ${provider} model`,
       title: `Step 3: Choose ${provider.toUpperCase()} Model`,
       ignoreFocusOut: true,
     });
 
-    return selected?.detail;
+    if (!selected) {
+      return undefined;
+    }
+
+    if (selected.detail === LLMUIService.CUSTOM_MODEL_SENTINEL) {
+      return await this.promptCustomModelName(provider, currentModel);
+    }
+
+    return selected.detail;
   }
 
   /**
@@ -136,6 +167,120 @@ export class LLMUIService {
     });
 
     return apiKey;
+  }
+
+  async promptBaseURL(
+    provider: LLMProvider,
+    currentValue?: string
+  ): Promise<string | undefined> {
+    const defaultValue = currentValue || (provider === "custom" ? API_BASE_URLS.CUSTOM : "");
+    const baseURL = await vscode.window.showInputBox({
+      prompt: `Enter the ${provider.toUpperCase()} base URL`,
+      placeHolder: "https://your-endpoint.example.com/v1",
+      value: defaultValue,
+      title: `Configure ${provider.toUpperCase()} Base URL`,
+      ignoreFocusOut: true,
+      validateInput: (value) => {
+        if (!value || value.trim().length === 0) {
+          return "Base URL cannot be empty";
+        }
+
+        try {
+          new URL(value.trim());
+          return null;
+        } catch {
+          return "Base URL must be a valid URL";
+        }
+      },
+    });
+
+    return baseURL?.trim();
+  }
+
+  async promptContextWindow(
+    provider: LLMProvider,
+    currentValue?: number
+  ): Promise<number | undefined> {
+    const value = await vscode.window.showInputBox({
+      prompt: `Enter the ${provider.toUpperCase()} custom model context window`,
+      placeHolder: String(DEFAULT_CONFIG.CUSTOM_MODEL_CONTEXT_WINDOW),
+      value: String(currentValue ?? DEFAULT_CONFIG.CUSTOM_MODEL_CONTEXT_WINDOW),
+      title: `Configure ${provider.toUpperCase()} Custom Model Context Window`,
+      ignoreFocusOut: true,
+      validateInput: (input) => this.validatePositiveInteger(input, 1024),
+    });
+
+    return value ? Number(value.trim()) : undefined;
+  }
+
+  async promptMaxOutputTokens(
+    provider: LLMProvider,
+    currentValue?: number
+  ): Promise<number | undefined> {
+    const value = await vscode.window.showInputBox({
+      prompt: `Enter the ${provider.toUpperCase()} custom model max output tokens`,
+      placeHolder: String(DEFAULT_CONFIG.CUSTOM_MODEL_MAX_OUTPUT_TOKENS),
+      value: String(currentValue ?? DEFAULT_CONFIG.CUSTOM_MODEL_MAX_OUTPUT_TOKENS),
+      title: `Configure ${provider.toUpperCase()} Custom Model Max Output Tokens`,
+      ignoreFocusOut: true,
+      validateInput: (input) => this.validatePositiveInteger(input, 256),
+    });
+
+    return value ? Number(value.trim()) : undefined;
+  }
+
+  isCustomModel(provider: LLMProvider, model: string): boolean {
+    if (!model) {
+      return false;
+    }
+
+    if (provider === "custom") {
+      return true;
+    }
+
+    const knownModelsByProvider: Record<string, string[]> = {
+      openai: Object.values(OPENAI_MODELS),
+      claude: Object.values(CLAUDE_MODELS),
+      gemini: Object.values(GEMINI_MODELS),
+    };
+
+    const knownModels = knownModelsByProvider[provider] || [];
+    return !knownModels.includes(model);
+  }
+
+  private async promptCustomModelName(
+    provider: LLMProvider,
+    currentModel?: string
+  ): Promise<string | undefined> {
+    const customModel = await vscode.window.showInputBox({
+      prompt: `Enter your ${provider.toUpperCase()} model name`,
+      placeHolder: "gpt-4o-mini, claude-custom, local-model, etc.",
+      value: currentModel,
+      title: `Step 3: Enter ${provider.toUpperCase()} Model`,
+      ignoreFocusOut: true,
+      validateInput: (value) => {
+        if (!value || value.trim().length === 0) {
+          return "Model name cannot be empty";
+        }
+        return null;
+      },
+    });
+
+    return customModel?.trim();
+  }
+
+  private validatePositiveInteger(value: string, min: number): string | null {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return "Value cannot be empty";
+    }
+
+    const parsed = Number(trimmed);
+    if (!Number.isInteger(parsed) || parsed < min) {
+      return `Value must be an integer >= ${min}`;
+    }
+
+    return null;
   }
 
   /**
