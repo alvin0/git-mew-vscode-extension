@@ -1,4 +1,4 @@
-import { API_BASE_URLS, DEFAULT_CONFIG, DEFAULT_MODELS } from '../../constant/llm';
+import { API_BASE_URLS, DEFAULT_CONFIG, DEFAULT_MODELS, MODEL_CAPABILITIES } from '../../constant/llm';
 import { GenerateOptions, GenerateResponse, ILLMAdapter, LLMAdapterConfig } from '../adapterInterface';
 
 /**
@@ -48,10 +48,19 @@ export class GeminiAdapter implements ILLMAdapter {
 
     const requestBody: any = {
       contents,
+      generationConfig: {},
     };
 
     if (options?.stop) {
       requestBody.generationConfig.stopSequences = options.stop;
+    }
+
+    if (options?.maxTokens !== undefined) {
+      requestBody.generationConfig.maxOutputTokens = options.maxTokens;
+    }
+
+    if (options?.temperature !== undefined) {
+      requestBody.generationConfig.temperature = options.temperature;
     }
 
     // Merge additional options into requestBody (excluding known properties)
@@ -117,6 +126,20 @@ export class GeminiAdapter implements ILLMAdapter {
 
   getProvider(): string {
     return 'gemini';
+  }
+
+  getContextWindow(): number {
+    const model = this.getModel();
+    return (MODEL_CAPABILITIES.CONTEXT_WINDOWS as Record<string, number>)[model]
+      ?? this.config?.contextWindow
+      ?? DEFAULT_CONFIG.CUSTOM_MODEL_CONTEXT_WINDOW;
+  }
+
+  getMaxOutputTokens(): number {
+    const model = this.getModel();
+    return (MODEL_CAPABILITIES.MAX_OUTPUT_TOKENS as Record<string, number>)[model]
+      ?? this.config?.maxOutputTokens
+      ?? DEFAULT_CONFIG.CUSTOM_MODEL_MAX_OUTPUT_TOKENS;
   }
 
   async testConnection(): Promise<boolean> {

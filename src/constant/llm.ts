@@ -9,12 +9,9 @@
  */
 export const OPENAI_MODELS = {
   // GPT-5 Models
-  GPT_5: 'gpt-5-2025-08-07',
-  GPT_5_MINI: 'gpt-5-mini-2025-08-07',
+  GPT_5_4: 'gpt-5.4',
+  GPT_5_3: 'gpt-5.3',
   GPT_5_NANO: 'gpt-5-nano-2025-08-07',
-  
-  // GPT-4 Models
-  GPT_4_1: 'gpt-4.1-2025-04-14',
 } as const;
 
 /**
@@ -29,9 +26,9 @@ export const CLAUDE_MODELS = {
  * Google Gemini Models
  */
 export const GEMINI_MODELS = {
-  // Gemini 2.5 Models
-  GEMINI_2_5_PRO: 'gemini-2.5-pro',
-  GEMINI_2_5_FLASH: 'gemini-2.5-flash-preview-09-2025',
+  // Gemini 3.1 Models
+  GEMINI_3_1_PRO: 'gemini-3.1-pro-preview',
+  GEMINI_3_FLASH: 'gemini-3-flash-preview',
 } as const;
 
 /**
@@ -40,21 +37,17 @@ export const GEMINI_MODELS = {
  */
 export const MODEL_UI_METADATA = {
   // OpenAI Models
-  [OPENAI_MODELS.GPT_5]: {
-    displayName: 'GPT-5',
+  [OPENAI_MODELS.GPT_5_4]: {
+    displayName: 'GPT-5.4',
     description: 'Most capable model',
   },
-  [OPENAI_MODELS.GPT_5_MINI]: {
-    displayName: 'GPT-5 Mini',
+  [OPENAI_MODELS.GPT_5_3]: {
+    displayName: 'GPT-5.3',
     description: 'Balanced performance',
   },
   [OPENAI_MODELS.GPT_5_NANO]: {
     displayName: 'GPT-5 Nano',
     description: 'Fast and efficient',
-  },
-  [OPENAI_MODELS.GPT_4_1]: {
-    displayName: 'GPT-4.1',
-    description: 'Previous generation',
   },
   
   // Claude Models
@@ -64,12 +57,12 @@ export const MODEL_UI_METADATA = {
   },
   
   // Gemini Models
-  [GEMINI_MODELS.GEMINI_2_5_PRO]: {
-    displayName: 'Gemini 2.5 Pro',
+  [GEMINI_MODELS.GEMINI_3_1_PRO]: {
+    displayName: 'Gemini 3.1 Pro',
     description: 'Most capable',
   },
-  [GEMINI_MODELS.GEMINI_2_5_FLASH]: {
-    displayName: 'Gemini 2.5 Flash',
+  [GEMINI_MODELS.GEMINI_3_FLASH]: {
+    displayName: 'Gemini 3 Flash',
     description: 'Fast responses',
   },
 } as const;
@@ -99,6 +92,11 @@ export const PROVIDER_UI_METADATA = {
     icon: '$(server)',
     description: 'Local models (Llama, Mistral, etc.)',
   },
+  custom: {
+    displayName: 'Custom',
+    icon: '$(plug)',
+    description: 'OpenAI-compatible custom endpoint',
+  },
 } as const;
 
 /**
@@ -106,9 +104,9 @@ export const PROVIDER_UI_METADATA = {
  * Note: Ollama doesn't have a default model as it uses dynamic model discovery
  */
 export const DEFAULT_MODELS = {
-  OPENAI: OPENAI_MODELS.GPT_5_MINI,
+  OPENAI: OPENAI_MODELS.GPT_5_3,
   CLAUDE: CLAUDE_MODELS.CLAUDE_SONNET_4_5,
-  GEMINI: GEMINI_MODELS.GEMINI_2_5_FLASH,
+  GEMINI: GEMINI_MODELS.GEMINI_3_FLASH,
 } as const;
 
 /**
@@ -119,6 +117,7 @@ export const API_BASE_URLS = {
   CLAUDE: 'https://api.anthropic.com/v1',
   GEMINI: 'https://generativelanguage.googleapis.com/v1beta',
   OLLAMA: 'http://localhost:11434/api',
+  CUSTOM: 'http://localhost:8000/v1',
 } as const;
 
 /**
@@ -133,6 +132,8 @@ export const API_VERSIONS = {
  */
 export const DEFAULT_CONFIG = {
   TIMEOUT: 300000, // 300 seconds
+  CUSTOM_MODEL_CONTEXT_WINDOW: 128000,
+  CUSTOM_MODEL_MAX_OUTPUT_TOKENS: 16384,
 } as const;
 
 /**
@@ -141,35 +142,33 @@ export const DEFAULT_CONFIG = {
 export const MODEL_CAPABILITIES = {
   // Context window sizes (approximate)
   CONTEXT_WINDOWS: {
-    [OPENAI_MODELS.GPT_5]: 400000,
-    [OPENAI_MODELS.GPT_5_MINI]: 400000,
-    [OPENAI_MODELS.GPT_5_NANO]: 400000,
-    [OPENAI_MODELS.GPT_4_1]: 1000000,
+    [OPENAI_MODELS.GPT_5_4]: 200000,
+    [OPENAI_MODELS.GPT_5_3]: 200000,
+    [OPENAI_MODELS.GPT_5_NANO]: 200000,
     
     [CLAUDE_MODELS.CLAUDE_SONNET_4_5]: 200000,
     
-    [GEMINI_MODELS.GEMINI_2_5_PRO]: 2000000,
-    [GEMINI_MODELS.GEMINI_2_5_FLASH]: 1000000,
+    [GEMINI_MODELS.GEMINI_3_1_PRO]: 200000,
+    [GEMINI_MODELS.GEMINI_3_FLASH]: 200000,
   },
   
   // Max output tokens
   MAX_OUTPUT_TOKENS: {
-    [OPENAI_MODELS.GPT_5]: 128000,
-    [OPENAI_MODELS.GPT_5_MINI]: 128000,
+    [OPENAI_MODELS.GPT_5_4]: 128000,
+    [OPENAI_MODELS.GPT_5_3]: 128000,
     [OPENAI_MODELS.GPT_5_NANO]: 128000,
-    [OPENAI_MODELS.GPT_4_1]: 128000,
     
     [CLAUDE_MODELS.CLAUDE_SONNET_4_5]: 128000,
     
-    [GEMINI_MODELS.GEMINI_2_5_PRO]: 128000,
-    [GEMINI_MODELS.GEMINI_2_5_FLASH]: 128000,
+    [GEMINI_MODELS.GEMINI_3_1_PRO]: 128000,
+    [GEMINI_MODELS.GEMINI_3_FLASH]: 128000,
   },
 } as const;
 
 /**
  * Provider Types
  */
-export type LLMProvider = 'openai' | 'claude' | 'gemini' | 'ollama';
+export type LLMProvider = 'openai' | 'claude' | 'gemini' | 'ollama' | 'custom';
 
 /**
  * Model Types

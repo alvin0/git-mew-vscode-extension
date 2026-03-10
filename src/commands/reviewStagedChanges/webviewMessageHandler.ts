@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { LLMProvider } from '../../llm-adapter';
+import { ContextStrategy } from '../../services/llm';
 import { ReviewStagedChangesService } from './reviewStagedChangesService';
 
 export interface ReviewStagedChangesMessage {
@@ -8,6 +9,9 @@ export interface ReviewStagedChangesMessage {
     model?: string;
     taskInfo?: string;
     language?: string;
+    contextStrategy?: ContextStrategy;
+    contextWindow?: number;
+    maxOutputTokens?: number;
     diff?: string;
 }
 
@@ -43,10 +47,10 @@ export class WebviewMessageHandler {
      * Handle the review staged changes request
      */
     private async handleReviewStagedChanges(message: ReviewStagedChangesMessage): Promise<void> {
-        const { provider, model, taskInfo, language } = message;
+        const { provider, model, taskInfo, language, contextStrategy, contextWindow, maxOutputTokens } = message;
 
         // Validate required fields
-        if (!provider || !model || !language) {
+        if (!provider || !model || !language || !contextStrategy) {
             vscode.window.showWarningMessage('Please select all fields.');
             return;
         }
@@ -57,8 +61,27 @@ export class WebviewMessageHandler {
                 provider,
                 model,
                 language,
-                taskInfo
+                contextStrategy,
+                taskInfo,
+                contextWindow,
+                maxOutputTokens,
+                (progressMessage) => {
+                    this.panel.webview.postMessage({
+                        command: 'showProgress',
+                        message: progressMessage
+                    });
+                },
+                (logMessage) => {
+                    this.panel.webview.postMessage({
+                        command: 'showLog',
+                        message: logMessage
+                    });
+                }
             );
+
+            if (!result.success && result.error === 'Review generation cancelled.') {
+                return;
+            }
 
             if (!result.success || !result.review || !result.diff) {
                 // Send error to webview

@@ -1,4 +1,4 @@
-import { API_BASE_URLS, DEFAULT_CONFIG } from '../../constant/llm';
+import { API_BASE_URLS, DEFAULT_CONFIG, MODEL_CAPABILITIES } from '../../constant/llm';
 import { GenerateOptions, GenerateResponse, ILLMAdapter, LLMAdapterConfig } from '../adapterInterface';
 
 /**
@@ -140,6 +140,20 @@ export class OllamaAdapter implements ILLMAdapter {
 
   getProvider(): string {
     return 'ollama';
+  }
+
+  getContextWindow(): number {
+    const model = this.getModel();
+    return (MODEL_CAPABILITIES.CONTEXT_WINDOWS as Record<string, number>)[model]
+      ?? this.config?.contextWindow
+      ?? DEFAULT_CONFIG.CUSTOM_MODEL_CONTEXT_WINDOW;
+  }
+
+  getMaxOutputTokens(): number {
+    const model = this.getModel();
+    return (MODEL_CAPABILITIES.MAX_OUTPUT_TOKENS as Record<string, number>)[model]
+      ?? this.config?.maxOutputTokens
+      ?? DEFAULT_CONFIG.CUSTOM_MODEL_MAX_OUTPUT_TOKENS;
   }
 
   async testConnection(): Promise<boolean> {

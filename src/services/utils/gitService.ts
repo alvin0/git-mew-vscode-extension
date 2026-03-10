@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { UnifiedDiffFile } from '../llm/contextTypes';
 import { FileTypeDetector } from './fileTypeDetector';
 
 export interface GitChange {
@@ -250,87 +251,66 @@ export class GitService {
     }
 
     /**
+     * Get staged changes as a structured diff model shared by all LLM flows
+     */
+    public async getStagedDiffFiles(): Promise<UnifiedDiffFile[]> {
+        const filesWithDiff = await this.getStagedFilesWithDiff();
+        return filesWithDiff.map((file) => this.toUnifiedDiffFile(file));
+    }
+
+    /**
      * Format staged files with diff in markdown format
      * @returns Formatted markdown string
      */
     public async getFormattedStagedChanges(): Promise<string> {
         try {
-            const filesWithDiff = await this.getStagedFilesWithDiff();
-
-            if (filesWithDiff.length === 0) {
-                return 'No staged files found';
-            }
-
-            // Categorize files by their status
-            const addedFiles: StagedFileWithDiff[] = [];
-            const modifiedFiles: StagedFileWithDiff[] = [];
-            const deletedFiles: StagedFileWithDiff[] = [];
-
-            for (const file of filesWithDiff) {
-                if (file.status === GitStatus.INDEX_DELETED) {
-                    deletedFiles.push(file);
-                } else if (file.status === GitStatus.INDEX_ADDED) {
-                    addedFiles.push(file);
-                } else {
-                    // INDEX_MODIFIED, INDEX_RENAMED, INDEX_COPIED, etc.
-                    modifiedFiles.push(file);
-                }
-            }
-
-            let markdown = '';
-
-            // Files Add section
-            if (addedFiles.length > 0) {
-                markdown += '# Files Add:\n\n';
-                for (const file of addedFiles) {
-                    markdown += `## ${file.relativePath}\n\n`;
-                    if (file.isBinary) {
-                        markdown += '**Binary file added**\n\n';
-                    } else {
-                        markdown += '### Description Change\n\n';
-                        markdown += '```diff\n';
-                        markdown += file.diff;
-                        markdown += '\n```\n\n';
-                    }
-                }
-            }
-
-            // Files Edit section
-            if (modifiedFiles.length > 0) {
-                markdown += '# Files Edit:\n\n';
-                for (const file of modifiedFiles) {
-                    markdown += `## ${file.relativePath}\n\n`;
-                    if (file.isBinary) {
-                        markdown += '**Binary file modified**\n\n';
-                    } else {
-                        markdown += '### Description Change\n\n';
-                        markdown += '```diff\n';
-                        markdown += file.diff;
-                        markdown += '\n```\n\n';
-                    }
-                }
-            }
-
-            // Files Remove section
-            if (deletedFiles.length > 0) {
-                markdown += '# Files Remove:\n\n';
-                for (const file of deletedFiles) {
-                    markdown += `## ${file.relativePath}\n\n`;
-                    if (file.isBinary) {
-                        markdown += '**Binary file deleted**\n\n';
-                    } else {
-                        markdown += '### Description Change\n\n';
-                        markdown += '```diff\n';
-                        markdown += file.diff;
-                        markdown += '\n```\n\n';
-                    }
-                }
-            }
-
-            return markdown;
+            const files = await this.getStagedDiffFiles();
+            return this.renderStagedDiffFiles(files);
         } catch (error) {
             throw new Error(`Failed to format staged changes: ${error}`);
         }
+    }
+
+    /**
+     * Render structured staged changes back into the legacy markdown format
+     */
+    public renderStagedDiffFiles(files: UnifiedDiffFile[]): string {
+        if (files.length === 0) {
+            return 'No staged files found';
+        }
+
+        const addedFiles: UnifiedDiffFile[] = [];
+        const modifiedFiles: UnifiedDiffFile[] = [];
+        const deletedFiles: UnifiedDiffFile[] = [];
+
+        for (const file of files) {
+            if (file.status === GitStatus.INDEX_DELETED) {
+                deletedFiles.push(file);
+            } else if (file.status === GitStatus.INDEX_ADDED) {
+                addedFiles.push(file);
+            } else {
+                modifiedFiles.push(file);
+            }
+        }
+
+        let markdown = '';
+
+        if (addedFiles.length > 0) {
+            markdown += '# Files Add:\n\n';
+            markdown += this.renderUnifiedDiffFileList(addedFiles);
+        }
+
+        if (modifiedFiles.length > 0) {
+            markdown += '# Files Edit:\n\n';
+            markdown += this.renderUnifiedDiffFileList(modifiedFiles);
+        }
+
+        if (deletedFiles.length > 0) {
+            markdown += '# Files Remove:\n\n';
+            markdown += this.renderUnifiedDiffFileList(deletedFiles);
+        }
+
+        return markdown.trimEnd();
     }
 
     /**
@@ -496,50 +476,93 @@ export class GitService {
      */
     public async getBranchDiff(baseBranch: string, compareBranch: string): Promise<string> {
         try {
-            const repository = this.getRepository();
-            console.log('Getting diff between:', baseBranch, 'and', compareBranch);
-            
-            // diffBetween returns an array of Change objects, not a string
-            const changes = await repository.diffBetween(baseBranch, compareBranch);
-            console.log('Changes received:', changes);
-            
-            if (!changes || changes.length === 0) {
-                return 'No differences found between the branches.';
-            }
-            
-            // Build diff string from changes
-            let diffContent = '';
-            
-            for (const change of changes) {
-                const uri = change.uri;
-                const status = this.getStatusString(change.status);
-                const workspaceRoot = repository.rootUri.fsPath;
-                const relativePath = uri.fsPath.replace(workspaceRoot + '/', '');
-
-                diffContent += `\n## ${status}: ${relativePath}\n`;
-                
-                // Try to get the actual diff content for this file
-                try {
-                    const fileDiff = await repository.diffBetween(baseBranch, compareBranch, uri.fsPath);
-                    if (fileDiff) {
-                        diffContent += '\n```diff\n';
-                        // Sanitize file paths in the diff content
-                        const sanitizedDiff = fileDiff.replace(/^(diff --git a\/.* b\/.*)$/gm, (match: string, p1: string) => {
-                            return p1.replace(/a\//, './').replace(/b\//, './');
-                        });
-                        diffContent += sanitizedDiff;
-                        diffContent += '\n```\n';
-                    }
-                } catch (err) {
-                    console.log('Could not get file diff:', err);
-                }
-            }
-            
-            return diffContent || 'No detailed diff available.';
+            const files = await this.getBranchDiffFiles(baseBranch, compareBranch);
+            return this.renderBranchDiffFiles(files);
         } catch (error) {
             console.error('Error getting branch diff:', error);
             throw new Error(`Failed to get diff between branches: ${error}`);
         }
+    }
+
+    /**
+     * Get branch changes in the shared structured diff format
+     */
+    public async getBranchDiffFiles(baseBranch: string, compareBranch: string): Promise<UnifiedDiffFile[]> {
+        try {
+            const repository = this.getRepository();
+            console.log('Getting diff between:', baseBranch, 'and', compareBranch);
+
+            const changes = await repository.diffBetween(baseBranch, compareBranch);
+            console.log('Changes received:', changes);
+
+            if (!changes || changes.length === 0) {
+                return [];
+            }
+
+            const workspaceRoot = repository.rootUri.fsPath;
+            const branchDiffFiles: UnifiedDiffFile[] = [];
+
+            for (const change of changes) {
+                const fullPath = change.uri.fsPath;
+                const relativePath = this.toRelativePath(workspaceRoot, fullPath);
+                let diff = '';
+                let isBinary = false;
+
+                try {
+                    const fileDiff = await repository.diffBetween(baseBranch, compareBranch, fullPath);
+                    if (!fileDiff) {
+                        diff = 'No diff available';
+                    } else {
+                        const sanitizedDiff = this.sanitizeDiffContent(fileDiff);
+                        isBinary = await this.isBinaryFile(sanitizedDiff, fullPath);
+                        diff = isBinary ? 'Binary file' : sanitizedDiff;
+                    }
+                } catch (error) {
+                    diff = `Error getting diff: ${error}`;
+                }
+
+                branchDiffFiles.push({
+                    filePath: fullPath,
+                    relativePath,
+                    diff,
+                    status: change.status,
+                    statusLabel: this.getStatusString(change.status),
+                    isDeleted: change.status === GitStatus.INDEX_DELETED || change.status === GitStatus.DELETED,
+                    isBinary,
+                    originalFilePath: change.originalUri?.fsPath
+                });
+            }
+
+            return branchDiffFiles;
+        } catch (error) {
+            throw new Error(`Failed to get structured diff between branches: ${error}`);
+        }
+    }
+
+    /**
+     * Render structured branch diff back into the legacy markdown format
+     */
+    public renderBranchDiffFiles(files: UnifiedDiffFile[]): string {
+        if (files.length === 0) {
+            return 'No differences found between the branches.';
+        }
+
+        return files.map((file) => {
+            let markdown = `\n## ${file.statusLabel}: ${file.relativePath}\n`;
+
+            if (file.isBinary) {
+                markdown += '\nBinary file change\n';
+                return markdown;
+            }
+
+            if (file.diff && file.diff !== 'No diff available') {
+                markdown += '\n```diff\n';
+                markdown += file.diff;
+                markdown += '\n```\n';
+            }
+
+            return markdown;
+        }).join('').trim() || 'No detailed diff available.';
     }
     
     /**
@@ -564,6 +587,53 @@ export class GitService {
             default:
                 return 'Changed';
         }
+    }
+
+    private toUnifiedDiffFile(file: StagedFileWithDiff): UnifiedDiffFile {
+        return {
+            filePath: file.filePath,
+            relativePath: file.relativePath,
+            diff: this.sanitizeDiffContent(file.diff),
+            status: file.status,
+            statusLabel: this.getStatusString(file.status),
+            isDeleted: file.isDeleted,
+            isBinary: file.isBinary
+        };
+    }
+
+    private renderUnifiedDiffFileList(files: UnifiedDiffFile[]): string {
+        return files.map((file) => {
+            let markdown = `## ${file.relativePath}\n\n`;
+
+            if (file.isBinary) {
+                markdown += `**Binary file ${file.statusLabel.toLowerCase()}**\n\n`;
+                return markdown;
+            }
+
+            markdown += '### Description Change\n\n';
+            markdown += '```diff\n';
+            markdown += file.diff;
+            markdown += '\n```\n\n';
+
+            return markdown;
+        }).join('');
+    }
+
+    private sanitizeDiffContent(diff: string): string {
+        if (!diff) {
+            return diff;
+        }
+
+        return diff.replace(/^(diff --git a\/.* b\/.*)$/gm, (match: string, diffHeader: string) => {
+            return diffHeader.replace(/a\//, './').replace(/b\//, './');
+        });
+    }
+
+    private toRelativePath(workspaceRoot: string, fullPath: string): string {
+        const normalizedRoot = workspaceRoot.endsWith(path.sep)
+            ? workspaceRoot
+            : `${workspaceRoot}${path.sep}`;
+        return fullPath.replace(normalizedRoot, '');
     }
 
     /**

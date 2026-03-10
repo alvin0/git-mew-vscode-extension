@@ -14,6 +14,10 @@ export interface LLMAdapterConfig {
   temperature?: number;
   /** Timeout in milliseconds */
   timeout?: number;
+  /** Custom context window override for user-defined models */
+  contextWindow?: number;
+  /** Custom max output tokens override for user-defined models */
+  maxOutputTokens?: number;
 }
 
 /**
@@ -88,6 +92,16 @@ export interface ILLMAdapter {
    * @returns Provider name (e.g., "openai", "claude", "gemini", "ollama")
    */
   getProvider(): string;
+
+  /**
+   * Get the effective context window for the current model
+   */
+  getContextWindow(): number;
+
+  /**
+   * Get the effective maximum output tokens for the current model
+   */
+  getMaxOutputTokens(): number;
 
   /**
    * Test the connection to the LLM service

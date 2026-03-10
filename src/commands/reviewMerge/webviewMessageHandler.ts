@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { LLMProvider } from '../../llm-adapter';
+import { ContextStrategy } from '../../services/llm';
 import { ReviewMergeService } from './reviewMergeService';
 
 export interface ReviewMergeMessage {
@@ -10,6 +11,9 @@ export interface ReviewMergeMessage {
     model?: string;
     taskInfo?: string;
     language?: string;
+    contextStrategy?: ContextStrategy;
+    contextWindow?: number;
+    maxOutputTokens?: number;
     diff?: string;
 }
 
@@ -53,10 +57,10 @@ export class WebviewMessageHandler {
      * Handle the review merge request
      */
     private async handleReviewMerge(message: ReviewMergeMessage, includeDescription: boolean): Promise<void> {
-        const { baseBranch, compareBranch, provider, model, taskInfo, language } = message;
+        const { baseBranch, compareBranch, provider, model, taskInfo, language, contextStrategy, contextWindow, maxOutputTokens } = message;
 
         // Validate required fields
-        if (!baseBranch || !compareBranch || !provider || !model || !language) {
+        if (!baseBranch || !compareBranch || !provider || !model || !language || !contextStrategy) {
             vscode.window.showWarningMessage('Please select all fields.');
             return;
         }
@@ -75,8 +79,27 @@ export class WebviewMessageHandler {
                 provider,
                 model,
                 language,
-                taskInfo
+                contextStrategy,
+                taskInfo,
+                contextWindow,
+                maxOutputTokens,
+                (progressMessage) => {
+                    this.panel.webview.postMessage({
+                        command: 'showProgress',
+                        message: progressMessage
+                    });
+                },
+                (logMessage) => {
+                    this.panel.webview.postMessage({
+                        command: 'showLog',
+                        message: logMessage
+                    });
+                }
             );
+
+            if (!result.success && result.error === 'Review generation cancelled.') {
+                return;
+            }
 
             if (!result.success || !result.review || !result.diff) {
                 // Send error to webview
@@ -96,9 +119,29 @@ export class WebviewMessageHandler {
                     provider,
                     model,
                     language,
+                    contextStrategy,
                     taskInfo,
-                    result.diff
+                    result.diff,
+                    result.changes,
+                    contextWindow,
+                    maxOutputTokens,
+                    (progressMessage) => {
+                        this.panel.webview.postMessage({
+                            command: 'showProgress',
+                            message: progressMessage
+                        });
+                    },
+                    (logMessage) => {
+                        this.panel.webview.postMessage({
+                            command: 'showLog',
+                            message: logMessage
+                        });
+                    }
                 );
+
+                if (!descResult.success && descResult.error === 'Description generation cancelled.') {
+                    return;
+                }
 
                 if (descResult.success && descResult.description) {
                     description = descResult.description;
@@ -143,7 +186,7 @@ export class WebviewMessageHandler {
         try {
             const doc = await vscode.workspace.openTextDocument({
                 content: diffContent,
-                language: 'diff'
+                language: 'markdown'
             });
             await vscode.window.showTextDocument(doc, { preview: false });
         } catch (error) {
@@ -156,10 +199,10 @@ export class WebviewMessageHandler {
      * Handle generating only the description
      */
     private async handleGenerateDescription(message: ReviewMergeMessage): Promise<void> {
-        const { baseBranch, compareBranch, provider, model, taskInfo, language } = message;
+        const { baseBranch, compareBranch, provider, model, taskInfo, language, contextStrategy, contextWindow, maxOutputTokens } = message;
 
         // Validate required fields
-        if (!baseBranch || !compareBranch || !provider || !model || !language) {
+        if (!baseBranch || !compareBranch || !provider || !model || !language || !contextStrategy) {
             vscode.window.showWarningMessage('Please select all fields.');
             return;
         }
@@ -171,8 +214,7 @@ export class WebviewMessageHandler {
         }
 
         try {
-            // Get branch diff first
-            const diff = await this.reviewMergeService['gitService'].getBranchDiff(baseBranch, compareBranch);
+            const branchDiff = await this.reviewMergeService.getBranchDiffPreview(baseBranch, compareBranch);
 
             // Generate description
             const descResult = await this.reviewMergeService.generateDescription(
@@ -181,16 +223,36 @@ export class WebviewMessageHandler {
                 provider,
                 model,
                 language,
+                contextStrategy,
                 taskInfo,
-                diff
+                branchDiff.diff,
+                branchDiff.changes,
+                contextWindow,
+                maxOutputTokens,
+                (progressMessage) => {
+                    this.panel.webview.postMessage({
+                        command: 'showProgress',
+                        message: progressMessage
+                    });
+                },
+                (logMessage) => {
+                    this.panel.webview.postMessage({
+                        command: 'showLog',
+                        message: logMessage
+                    });
+                }
             );
 
-            if (descResult.success && descResult.description) {
+            if (!descResult.success && descResult.error === 'Description generation cancelled.') {
+                return;
+            }
+
+            if (descResult.success && descResult.description && descResult.diff) {
                 // Send success result to webview
                 this.panel.webview.postMessage({
                     command: 'showResult',
                     description: descResult.description,
-                    rawDiff: diff
+                    rawDiff: descResult.diff
                 });
             } else {
                 // Send error to webview

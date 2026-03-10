@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { LLMProvider } from "../../llm-adapter";
+import { ContextStrategy } from "./contextTypes";
 
 /**
  * Manages Review Merge specific configuration storage
@@ -10,6 +11,7 @@ export class ReviewMergeConfigManager {
   private static readonly PROVIDER_KEY = "provider";
   private static readonly MODEL_KEY = "model";
   private static readonly LANGUAGE_KEY = "language";
+  private static readonly CONTEXT_STRATEGY_KEY = "contextStrategy";
 
   /**
    * Get the last used provider for Review Merge
@@ -79,6 +81,34 @@ export class ReviewMergeConfigManager {
     await config.update(
       ReviewMergeConfigManager.LANGUAGE_KEY,
       language,
+      vscode.ConfigurationTarget.Global
+    );
+  }
+
+  /**
+   * Get the last used context strategy for review flows
+   */
+  static getContextStrategy(): ContextStrategy {
+    const config = vscode.workspace.getConfiguration(
+      ReviewMergeConfigManager.CONFIG_SECTION
+    );
+    return (
+      config.get<ContextStrategy>(
+        ReviewMergeConfigManager.CONTEXT_STRATEGY_KEY
+      ) || "auto"
+    );
+  }
+
+  /**
+   * Set the context strategy for review flows
+   */
+  static async setContextStrategy(strategy: ContextStrategy): Promise<void> {
+    const config = vscode.workspace.getConfiguration(
+      ReviewMergeConfigManager.CONFIG_SECTION
+    );
+    await config.update(
+      ReviewMergeConfigManager.CONTEXT_STRATEGY_KEY,
+      strategy,
       vscode.ConfigurationTarget.Global
     );
   }

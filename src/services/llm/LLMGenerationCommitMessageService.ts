@@ -4,6 +4,15 @@ import * as vscode from "vscode";
 import { GenerateOptions } from "../../llm-adapter";
 import { getSystemPrompt } from "../../prompts/systemPromptGenerateCommit";
 import { SYSTEM_PROMPT_GENERATE_REVIEW_MERGE } from "../../prompts/systemPromptGenerateReviewMerge";
+import {
+  ContextOrchestratorService,
+  GenerationCancelledError,
+} from "./ContextOrchestratorService";
+import {
+  ContextStrategy,
+  ContextTaskSpec,
+  UnifiedDiffFile,
+} from "./contextTypes";
 import { LLMAdapterService } from "./LLMAdapterService";
 import { LLMUIService } from "./LLMUIService";
 
@@ -14,11 +23,14 @@ import { LLMUIService } from "./LLMUIService";
 export class LLMGenerationService {
   private customPromptCache: string | null = null;
   private customPromptPath: string | null = null;
+  private readonly contextOrchestrator: ContextOrchestratorService;
 
   constructor(
     private adapterService: LLMAdapterService,
     private uiService: LLMUIService
-  ) {}
+  ) {
+    this.contextOrchestrator = new ContextOrchestratorService();
+  }
 
   /**
    * Load custom commit rules from .gitmew/commit-rule.generate-commit.md
@@ -79,6 +91,11 @@ export class LLMGenerationService {
     return getSystemPrompt(customPrompt ?? undefined);
   }
 
+  private getCommitContextStrategy(): ContextStrategy {
+    const config = vscode.workspace.getConfiguration("git-mew.commit");
+    return config.get<ContextStrategy>("contextStrategy") || "auto";
+  }
+
   /**
    * Configure options for GPT-5 models
    * @param adapter - The LLM adapter instance
@@ -96,7 +113,7 @@ export class LLMGenerationService {
       return {
         ...options,
         reasoning_effort: "minimal",
-        verbosity: "low",
+        // verbosity: "low",
       };
     }
     return options;
@@ -106,8 +123,10 @@ export class LLMGenerationService {
    * Generate commit message using LLM
    */
   async generateCommitMessage(
-    stagedChanges: string,
-    currentBranch: string
+    stagedChanges: UnifiedDiffFile[],
+    renderedDiff: string,
+    currentBranch: string,
+    signal?: AbortSignal
   ): Promise<string | null> {
     const adapter = await this.adapterService.getAdapter();
     if (!adapter) {
@@ -115,27 +134,56 @@ export class LLMGenerationService {
     }
 
     try {
-      let optionRequest: GenerateOptions = {};
-      optionRequest = this.configureGPT5Options(adapter, optionRequest);
-
-      const prompt = `
-## Current Branch: ${currentBranch}
-## Staged Changes:
-      ${stagedChanges}`;
-
-      // Get dynamic system prompt (custom or default)
       const systemPrompt = await this.getSystemPrompt();
-      optionRequest = {
-        ...optionRequest,
-        systemMessage: systemPrompt,
-      };
-      const response = await adapter.generateText(prompt, optionRequest);
+      const taskSpec = this.buildCommitTaskSpec(
+        currentBranch,
+        renderedDiff,
+        systemPrompt
+      );
 
-      return response.text.trim();
+      return await this.contextOrchestrator.generate({
+        adapter,
+        strategy: this.getCommitContextStrategy(),
+        changes: stagedChanges,
+        task: taskSpec,
+        signal,
+      });
     } catch (error) {
+      if (error instanceof GenerationCancelledError) {
+        return null;
+      }
       this.uiService.showError(`Failed to generate commit message: ${error}`);
       return null;
     }
+  }
+
+  private buildCommitTaskSpec(
+    currentBranch: string,
+    renderedDiff: string,
+    systemMessage: string
+  ): ContextTaskSpec {
+    const directPrompt = `
+## Current Branch: ${currentBranch}
+## Staged Changes:
+${renderedDiff}`;
+
+    return {
+      kind: "commit",
+      label: "commit message generation",
+      speedProfile: "fast",
+      systemMessage,
+      directPrompt,
+      buildCoordinatorPrompt: ({ changedFilesSummary, analysesSummary }) => `
+## Current Branch: ${currentBranch}
+## Changed Files:
+${changedFilesSummary}
+
+## Hierarchical Chunk Summaries:
+${analysesSummary}
+
+Generate the final commit message from these summaries.
+Do not mention that the diff was summarized in multiple stages.`,
+    };
   }
 
   /**

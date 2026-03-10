@@ -22,6 +22,7 @@
     "claude",
     "gemini",
     "ollama",
+    "openai-compatible",
     "commit message"
   ],
   "repository": {
@@ -51,6 +52,10 @@
       {
         "command": "git-mew.setupModelGenerateCommit",
         "title": "git-mew: Setup Model Generate Commit"
+      },
+      {
+        "command": "git-mew.manage-api-keys",
+        "title": "git-mew: Manage API Keys"
       },
       {
         "command": "git-mew.review-merge",
@@ -104,13 +109,15 @@
             "openai",
             "claude",
             "gemini",
-            "ollama"
+            "ollama",
+            "custom"
           ],
           "enumDescriptions": [
             "OpenAI GPT models",
             "Anthropic Claude models",
             "Google Gemini models",
-            "Ollama local models"
+            "Ollama local models",
+            "Custom OpenAI-compatible endpoint"
           ],
           "description": "Select the LLM provider to use for generating commit messages"
         },
@@ -130,13 +137,82 @@
           "type": "string",
           "description": "Ollama model to use"
         },
+        "git-mew.llmModel.custom": {
+          "type": "string",
+          "description": "Custom provider model to use"
+        },
+        "git-mew.llmBaseUrl.custom": {
+          "type": "string",
+          "description": "Base URL for the custom OpenAI-compatible provider. The endpoint must support /chat/completions."
+        },
+        "git-mew.llmCustomModelContextWindow.openai": {
+          "type": "number",
+          "default": 128000,
+          "description": "Context window used when entering a custom OpenAI model name."
+        },
+        "git-mew.llmCustomModelMaxOutputTokens.openai": {
+          "type": "number",
+          "default": 16384,
+          "description": "Max output tokens used when entering a custom OpenAI model name."
+        },
+        "git-mew.llmCustomModelContextWindow.claude": {
+          "type": "number",
+          "default": 128000,
+          "description": "Context window used when entering a custom Claude model name."
+        },
+        "git-mew.llmCustomModelMaxOutputTokens.claude": {
+          "type": "number",
+          "default": 16384,
+          "description": "Max output tokens used when entering a custom Claude model name."
+        },
+        "git-mew.llmCustomModelContextWindow.gemini": {
+          "type": "number",
+          "default": 128000,
+          "description": "Context window used when entering a custom Gemini model name."
+        },
+        "git-mew.llmCustomModelMaxOutputTokens.gemini": {
+          "type": "number",
+          "default": 16384,
+          "description": "Max output tokens used when entering a custom Gemini model name."
+        },
+        "git-mew.llmCustomModelContextWindow.ollama": {
+          "type": "number",
+          "default": 128000,
+          "description": "Context window used when entering a custom Ollama model name."
+        },
+        "git-mew.llmCustomModelMaxOutputTokens.ollama": {
+          "type": "number",
+          "default": 16384,
+          "description": "Max output tokens used when entering a custom Ollama model name."
+        },
+        "git-mew.llmCustomModelContextWindow.custom": {
+          "type": "number",
+          "default": 128000,
+          "description": "Context window used for the custom provider model."
+        },
+        "git-mew.llmCustomModelMaxOutputTokens.custom": {
+          "type": "number",
+          "default": 16384,
+          "description": "Max output tokens used for the custom provider model."
+        },
+        "git-mew.commit.contextStrategy": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "direct",
+            "auto",
+            "hierarchical"
+          ],
+          "description": "Context handling strategy for commit generation"
+        },
         "git-mew.reviewMerge.provider": {
           "type": "string",
           "enum": [
             "openai",
             "claude",
             "gemini",
-            "ollama"
+            "ollama",
+            "custom"
           ],
           "description": "Last used LLM provider for Review Merge (separate from commit generation)"
         },
@@ -158,6 +234,16 @@
             "Spanish"
           ],
           "description": "Last used response language for Review Merge"
+        },
+        "git-mew.reviewMerge.contextStrategy": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "direct",
+            "auto",
+            "hierarchical"
+          ],
+          "description": "Context handling strategy for Review Merge and Review Staged Changes"
         }
       }
     }
@@ -184,6 +270,7 @@
   },
   "dependencies": {
     "@types/markdown-it": "^14.1.2",
+    "gpt-tokenizer": "^3.4.0",
     "highlight.js": "^11.11.1",
     "markdown-it": "^14.1.0",
     "markdown-it-highlightjs": "^4.2.0"

@@ -52,6 +52,22 @@ export class LLMAdapterService {
       }
     }
 
+    let baseURL: string | undefined;
+    if (provider === 'custom') {
+      this.uiService.showWarning(
+        'Custom provider must expose an OpenAI-compatible chat/completions interface.'
+      );
+      baseURL = this.configManager.getBaseURL(provider);
+      if (!baseURL) {
+        baseURL = await this.uiService.promptBaseURL(provider);
+        if (!baseURL) {
+          this.uiService.showWarning("No base URL provided");
+          return null;
+        }
+        await this.configManager.setBaseURL(provider, baseURL);
+      }
+    }
+
     // Get model
     let model = this.configManager.getModel(provider);
     if (!model) {
@@ -63,12 +79,23 @@ export class LLMAdapterService {
       await this.configManager.setModel(provider, model);
     }
 
+    const isCustomModel = this.uiService.isCustomModel(provider, model);
+    const contextWindow = isCustomModel
+      ? this.configManager.getCustomModelContextWindow(provider)
+      : undefined;
+    const maxOutputTokens = isCustomModel
+      ? this.configManager.getCustomModelMaxOutputTokens(provider)
+      : undefined;
+
     // Create and initialize adapter
     try {
       this.adapter = createAdapter(provider);
       await this.adapter.initialize({
         apiKey,
         model,
+        baseURL,
+        contextWindow,
+        maxOutputTokens,
       });
 
       return this.adapter;

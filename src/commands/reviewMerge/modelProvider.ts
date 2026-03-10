@@ -1,4 +1,5 @@
 import { CLAUDE_MODELS, GEMINI_MODELS, LLMProvider, OPENAI_MODELS } from '../../constant/llm';
+import * as vscode from 'vscode';
 import { OllamaAdapter } from '../../llm-adapter/ollama/OllamaAdapter';
 
 /**
@@ -9,7 +10,7 @@ export class ModelProvider {
      * Get available models for all providers
      */
     static async getAvailableModels(): Promise<{ [key: string]: string[] }> {
-        const providers: LLMProvider[] = ['openai', 'claude', 'gemini', 'ollama'];
+        const providers: LLMProvider[] = ['openai', 'claude', 'gemini', 'ollama', 'custom'];
         const availableModels: { [key: string]: string[] } = {};
 
         for (const provider of providers) {
@@ -40,6 +41,13 @@ export class ModelProvider {
                     console.error('Failed to fetch Ollama models:', error);
                     return [];
                 }
+
+            case 'custom': {
+                const configuredModel = vscode.workspace
+                    .getConfiguration('git-mew')
+                    .get<string>('llmModel.custom');
+                return configuredModel ? [configuredModel] : ['custom-model'];
+            }
             
             default:
                 return [];
