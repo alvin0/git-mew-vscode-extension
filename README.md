@@ -49,7 +49,7 @@ Git Mew helps you write better commit messages by analyzing your staged changes 
    - **"Generate Review"** for a comprehensive code review
    - **"Generate Description"** for a merge request description
 7. The result will open in a new tab.
-8. Review output can include a PlantUML diagram, observer warnings, and a todo list with at most 4 items.
+8. Review output can include one or more PlantUML diagrams (with titles per issue/flow when needed), observer warnings, and a todo list with at most 4 items.
 
 **MR Description Templates:**
 - **Default**: Standard feature/bugfix descriptions

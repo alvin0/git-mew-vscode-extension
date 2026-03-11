@@ -74,8 +74,20 @@ export class ReviewStagedChangesService extends ReviewWorkflowServiceBase {
                 const customSystemPrompt = await this.gitService.getCustomReviewMergeSystemPrompt();
                 const customAgentInstructions = await this.gitService.getCustomReviewMergeAgentPrompt();
                 const customRules = await this.gitService.getCustomReviewMergeRules();
-                const referenceContext = await this.gitService.buildReviewReferenceContext(preview.changes);
-                const systemPrompt = this.buildStagedReviewSystemPrompt(language, customSystemPrompt, customRules);
+                const systemPrompt = this.withCustomAgentInstructions(
+                    this.buildStagedReviewSystemPrompt(language, customSystemPrompt, customRules),
+                    customAgentInstructions
+                );
+                const basePrompt = this.buildReviewPrompt(preview.diff, taskInfo);
+                const referenceContextResult = await this.gitService.buildReviewReferenceContext(preview.changes, {
+                    strategy,
+                    model: dependencyState.adapter.getModel(),
+                    contextWindow: dependencyState.adapter.getContextWindow(),
+                    mode: 'auto',
+                    systemMessage: systemPrompt,
+                    directPrompt: basePrompt,
+                });
+                this.logReferenceContextMetadata(referenceContextResult.metadata, onLog);
 
                 const review = await this.contextOrchestrator.generate({
                     adapter: dependencyState.adapter,
@@ -87,8 +99,8 @@ export class ReviewStagedChangesService extends ReviewWorkflowServiceBase {
                     task: this.buildStagedReviewTaskSpec(
                         preview.diff,
                         taskInfo,
-                        this.withCustomAgentInstructions(systemPrompt, customAgentInstructions),
-                        referenceContext
+                        systemPrompt,
+                        referenceContextResult.context
                     ),
                 });
 
@@ -235,5 +247,22 @@ Be constructive, specific, and actionable in your feedback.`;
         }
 
         return `${systemPrompt}\n\n## Custom Review Agents\n\n${customAgentInstructions}`;
+    }
+
+    private logReferenceContextMetadata(
+        metadata: {
+            symbolsResolved: number;
+            filesIncluded: number;
+            estimatedTokens: number;
+            triggerReason: string;
+            candidateSymbols: number;
+            triggered: boolean;
+            truncatedByBudget: boolean;
+        },
+        onLog?: (message: string) => void
+    ): void {
+        onLog?.(
+            `[reference] symbols=${metadata.symbolsResolved}/${metadata.candidateSymbols} files=${metadata.filesIncluded} tokens~${metadata.estimatedTokens} trigger=${metadata.triggerReason} expanded=${metadata.triggered} truncated=${metadata.truncatedByBudget}`
+        );
     }
 }

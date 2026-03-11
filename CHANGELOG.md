@@ -1,5 +1,21 @@
 # Change Log
 
+## [0.2.1] - 2026-03-11
+
+### Added
+- **1-hop Context Expansion for Reviews**: Review Staged Changes and Review Merge can now auto-expand context from symbols found in changed diff lines by resolving related definitions via `vscode.executeDefinitionProvider`.
+- **Reference Context Metadata Logging**: Added compact execution-log metadata for reference expansion (`symbols/files/tokens/trigger/truncated`) to make context usage transparent during review runs.
+- **Shared Symbol Resolver Utility**: Introduced reusable symbol-match and definition-resolution helpers for review context expansion and tool reuse.
+
+### Changed
+- **Reference Context API Contract**: `buildReviewReferenceContext(...)` now accepts expansion options (`strategy/model/contextWindow/mode/systemMessage/directPrompt`) and returns `{ context, metadata }`.
+- **Auto Expansion Policy**: In `auto` mode, expansion now triggers when effective strategy is hierarchical, changed file count is at least 3, or base prompt size exceeds 70% of direct input budget.
+- **Expansion Budget Guardrail**: Added hard cap for expanded reference context tokens: `min(4500, floor(contextWindow * 0.25))`.
+
+### Improved
+- **Review Detail Quality**: Review prompts now include richer supporting snippets from related symbol definitions (non-recursive 1-hop), improving flow/risk analysis without changing orchestrator strategy behavior.
+- **Test Coverage**: Added helper-level tests for symbol extraction limits, auto-trigger decisions, and expansion token-cap behavior.
+
 ## [0.2.0] - 2026-03-11
 
 ### Added

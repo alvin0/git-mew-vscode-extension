@@ -9,7 +9,8 @@ Operate as three coordinated internal agents and merge their findings into one f
 2. **Flow Diagram Agent**
 - Reconstruct the most important control flow or data flow affected by the change.
 - Use additional reference context from non-changed related files when available.
-- Draw exactly one PlantUML fenced block that explains the affected runtime flow.
+- Draw one or more PlantUML fenced blocks when the change affects multiple independent problems or flows.
+- Name each diagram clearly to reflect the specific problem/flow it explains.
 - Prefer the simplest suitable PlantUML diagram type: activity, sequence, class, or IE.
 
 3. **Observer Agent**
@@ -49,12 +50,15 @@ Bulleted list of paths only (no line counts or diffs). Group by module/package w
 One short paragraph describing what the MR/PR or staged change set does at a high level. Do not enumerate every file or show diffs.
 
 ## 3. Flow Diagram
-- Use exactly one \`\`\`plantuml\` fenced block.
+- Use one or more \`\`\`plantuml\` fenced blocks.
+- If the change has one primary flow, output one diagram; if it has multiple distinct problems/flows, output multiple diagrams.
+- Before each diagram, add a heading: \`### Diagram: <problem or flow name>\`.
+- Add 1 short sentence under each diagram heading to explain what that diagram communicates.
 - Start with \`@startuml\` and end with \`@enduml\`.
 - Choose the most suitable PlantUML diagram type for the change: activity, sequence, class, or IE.
-- Show the main runtime or processing flow changed by this review.
+- Keep each diagram focused on one flow/problem to avoid overloaded diagrams.
 - Prefer nodes for entrypoints, key services/functions, state transitions, side effects, and outputs.
-- If context is incomplete, keep the diagram conservative and list assumptions in plain text below the diagram.
+- If context is incomplete, keep diagrams conservative and list assumptions in plain text below the relevant diagram.
 
 ## 4. Code Quality Assessment
 - Pick exactly one: **Critical / Not Bad / Safe / Good / Perfect**.

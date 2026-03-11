@@ -3,7 +3,11 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { UnifiedDiffFile } from '../llm/contextTypes';
 import { FileTypeDetector } from './fileTypeDetector';
-import { ReviewReferenceContextProvider } from '../../commands/reviewShared/referenceContextProvider';
+import {
+    ReviewReferenceContextOptions,
+    ReviewReferenceContextProvider,
+    ReviewReferenceContextResult
+} from '../../commands/reviewShared/referenceContextProvider';
 
 export interface GitChange {
     uri: vscode.Uri;
@@ -590,8 +594,11 @@ export class GitService {
         }).join('').trim() || 'No detailed diff available.';
     }
 
-    public async buildReviewReferenceContext(changedFiles: UnifiedDiffFile[]): Promise<string | undefined> {
-        return this.reviewReferenceContextProvider.buildReferenceContext(changedFiles);
+    public async buildReviewReferenceContext(
+        changedFiles: UnifiedDiffFile[],
+        options?: ReviewReferenceContextOptions
+    ): Promise<ReviewReferenceContextResult> {
+        return this.reviewReferenceContextProvider.buildReferenceContext(changedFiles, options);
     }
 
     public normalizeGeneratedPaths(text: string, changedFiles: UnifiedDiffFile[] = []): string {

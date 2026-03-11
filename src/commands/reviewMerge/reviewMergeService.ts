@@ -78,7 +78,22 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                 const customSystemPrompt = await this.gitService.getCustomReviewMergeSystemPrompt();
                 const customAgentInstructions = await this.gitService.getCustomReviewMergeAgentPrompt();
                 const customRules = await this.gitService.getCustomReviewMergeRules();
-                const referenceContext = await this.gitService.buildReviewReferenceContext(branchDiff.changes);
+                const systemMessage = SYSTEM_PROMPT_GENERATE_REVIEW_MERGE(
+                    language,
+                    customSystemPrompt,
+                    customRules,
+                    customAgentInstructions
+                );
+                const basePrompt = this.buildReviewPrompt(baseBranch, compareBranch, branchDiff.diff, taskInfo);
+                const referenceContextResult = await this.gitService.buildReviewReferenceContext(branchDiff.changes, {
+                    strategy,
+                    model: dependencyState.adapter.getModel(),
+                    contextWindow: dependencyState.adapter.getContextWindow(),
+                    mode: 'auto',
+                    systemMessage,
+                    directPrompt: basePrompt,
+                });
+                this.logReferenceContextMetadata(referenceContextResult.metadata, onLog);
 
                 const review = await this.contextOrchestrator.generate({
                     adapter: dependencyState.adapter,
@@ -92,8 +107,8 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                         compareBranch,
                         branchDiff.diff,
                         taskInfo,
-                        SYSTEM_PROMPT_GENERATE_REVIEW_MERGE(language, customSystemPrompt, customRules, customAgentInstructions),
-                        referenceContext
+                        systemMessage,
+                        referenceContextResult.context
                     ),
                 });
 
@@ -149,7 +164,17 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                     ? { changes, diff }
                     : await this.getBranchDiffPreview(baseBranch, compareBranch);
                 const customSystemPrompt = await this.gitService.getCustomDescriptionMergeSystemPrompt();
-                const referenceContext = await this.gitService.buildReviewReferenceContext(branchDiff.changes);
+                const systemMessage = SYSTEM_PROMPT_GENERATE_DESCRIPTION_MERGE(language, customSystemPrompt, '');
+                const basePrompt = this.buildDescriptionPrompt(baseBranch, compareBranch, branchDiff.diff, taskInfo);
+                const referenceContextResult = await this.gitService.buildReviewReferenceContext(branchDiff.changes, {
+                    strategy,
+                    model: dependencyState.adapter.getModel(),
+                    contextWindow: dependencyState.adapter.getContextWindow(),
+                    mode: 'auto',
+                    systemMessage,
+                    directPrompt: basePrompt,
+                });
+                this.logReferenceContextMetadata(referenceContextResult.metadata, onLog);
 
                 const description = await this.contextOrchestrator.generate({
                     adapter: dependencyState.adapter,
@@ -163,8 +188,8 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                         compareBranch,
                         branchDiff.diff,
                         taskInfo,
-                        SYSTEM_PROMPT_GENERATE_DESCRIPTION_MERGE(language, customSystemPrompt, ''),
-                        referenceContext
+                        systemMessage,
+                        referenceContextResult.context
                     ),
                 });
 
@@ -352,5 +377,22 @@ Do not mention that the diff was summarized in multiple stages.`
             success: false,
             error: `${error}`
         };
+    }
+
+    private logReferenceContextMetadata(
+        metadata: {
+            symbolsResolved: number;
+            filesIncluded: number;
+            estimatedTokens: number;
+            triggerReason: string;
+            candidateSymbols: number;
+            triggered: boolean;
+            truncatedByBudget: boolean;
+        },
+        onLog?: (message: string) => void
+    ): void {
+        onLog?.(
+            `[reference] symbols=${metadata.symbolsResolved}/${metadata.candidateSymbols} files=${metadata.filesIncluded} tokens~${metadata.estimatedTokens} trigger=${metadata.triggerReason} expanded=${metadata.triggered} truncated=${metadata.truncatedByBudget}`
+        );
     }
 }

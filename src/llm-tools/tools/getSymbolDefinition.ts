@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { FunctionCall, ToolExecuteResponse, ToolOptional } from '../toolInterface';
 import { formatFileContentResponse } from '../utils';
+import { findSymbolMatches, resolveSymbolDefinitions } from '../../utils/symbolDefinitionResolver';
 
 /**
  * Tool to get symbol definition (function, variable, class, constant)
@@ -52,24 +53,7 @@ export const getSymbolDefinitionTool: FunctionCall = {
       }
 
       const document = editor.document;
-      const text = document.getText();
-
-      // Search for the symbol in the current document
-      const symbolRegex = new RegExp(
-        `\\b${symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`,
-        'g'
-      );
-      const matches: { line: number; column: number; position: vscode.Position }[] = [];
-
-      let match;
-      while ((match = symbolRegex.exec(text)) !== null) {
-        const position = document.positionAt(match.index);
-        matches.push({
-          line: position.line,
-          column: position.character,
-          position,
-        });
-      }
+      const matches = findSymbolMatches(document, symbol);
 
       if (matches.length === 0) {
         return {
@@ -80,11 +64,7 @@ export const getSymbolDefinitionTool: FunctionCall = {
 
       // Try to get definition for the first match
       const firstMatch = matches[0];
-      const definitions = await vscode.commands.executeCommand<vscode.Location[]>(
-        'vscode.executeDefinitionProvider',
-        document.uri,
-        firstMatch.position
-      );
+      const definitions = await resolveSymbolDefinitions(document, symbol, { maxMatches: 1 });
 
       if (!definitions || definitions.length === 0) {
         // If no definition found via LSP, try to extract context from current file
