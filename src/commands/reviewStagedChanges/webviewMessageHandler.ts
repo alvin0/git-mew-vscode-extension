@@ -1,82 +1,76 @@
 import * as vscode from 'vscode';
 import { LLMProvider } from '../../llm-adapter';
 import { ContextStrategy } from '../../services/llm';
+import { openDiffDocument, postError, postLog, postPlantUmlRepairResult, postProgress, postResult } from '../reviewShared/panelMessaging';
 import { ReviewStagedChangesService } from './reviewStagedChangesService';
+import { validateStagedReviewInput } from './validation';
 
 export interface ReviewStagedChangesMessage {
-    command: 'reviewStagedChanges' | 'viewRawDiff' | 'cancel';
+    command: 'reviewStagedChanges' | 'viewRawDiff' | 'cancel' | 'repairPlantUml';
     provider?: LLMProvider;
     model?: string;
+    apiKey?: string;
+    baseURL?: string;
     taskInfo?: string;
     language?: string;
     contextStrategy?: ContextStrategy;
     contextWindow?: number;
     maxOutputTokens?: number;
     diff?: string;
+    content?: string;
+    errorMessage?: string;
+    target?: 'review' | 'description';
+    attempt?: number;
 }
 
-/**
- * Handles messages from the Review Staged Changes webview
- */
 export class WebviewMessageHandler {
     constructor(
         private panel: vscode.WebviewPanel,
         private reviewStagedChangesService: ReviewStagedChangesService
     ) {}
 
-    /**
-     * Handle incoming messages from the webview
-     */
     async handleMessage(message: ReviewStagedChangesMessage): Promise<void> {
         switch (message.command) {
             case 'reviewStagedChanges':
-                await this.handleReviewStagedChanges(message);
+                await this.generateStagedChangesReview(message);
                 break;
-            
             case 'viewRawDiff':
-                await this.handleViewRawDiff(message);
+                await openDiffDocument(message.diff);
                 break;
-
             case 'cancel':
                 this.reviewStagedChangesService.cancel();
+                break;
+            case 'repairPlantUml':
+                await this.repairPlantUmlContent(message);
                 break;
         }
     }
 
-    /**
-     * Handle the review staged changes request
-     */
-    private async handleReviewStagedChanges(message: ReviewStagedChangesMessage): Promise<void> {
-        const { provider, model, taskInfo, language, contextStrategy, contextWindow, maxOutputTokens } = message;
-
-        // Validate required fields
-        if (!provider || !model || !language || !contextStrategy) {
-            vscode.window.showWarningMessage('Please select all fields.');
+    private async generateStagedChangesReview(message: ReviewStagedChangesMessage): Promise<void> {
+        const validationError = validateStagedReviewInput(message);
+        if (validationError) {
+            vscode.window.showWarningMessage(validationError);
             return;
         }
+        const { taskInfo, contextWindow, maxOutputTokens, apiKey, baseURL } = message;
+        const provider = message.provider!;
+        const model = message.model!;
+        const language = message.language!;
+        const contextStrategy = message.contextStrategy!;
 
         try {
-            // Generate the review
             const result = await this.reviewStagedChangesService.generateReview(
                 provider,
                 model,
                 language,
                 contextStrategy,
                 taskInfo,
+                apiKey,
+                baseURL,
                 contextWindow,
                 maxOutputTokens,
-                (progressMessage) => {
-                    this.panel.webview.postMessage({
-                        command: 'showProgress',
-                        message: progressMessage
-                    });
-                },
-                (logMessage) => {
-                    this.panel.webview.postMessage({
-                        command: 'showLog',
-                        message: logMessage
-                    });
-                }
+                (progressMessage) => postProgress(this.panel, progressMessage),
+                (logMessage) => postLog(this.panel, logMessage)
             );
 
             if (!result.success && result.error === 'Review generation cancelled.') {
@@ -84,17 +78,11 @@ export class WebviewMessageHandler {
             }
 
             if (!result.success || !result.review || !result.diff) {
-                // Send error to webview
-                this.panel.webview.postMessage({
-                    command: 'showError',
-                    message: result.error || 'Unknown error occurred'
-                });
+                postError(this.panel, result.error || 'Unknown error occurred');
                 return;
             }
 
-            // Send success result to webview
-            this.panel.webview.postMessage({
-                command: 'showResult',
+            postResult(this.panel, {
                 review: result.review,
                 rawDiff: result.diff
             });
@@ -102,34 +90,38 @@ export class WebviewMessageHandler {
             const errorMessage = `Failed to generate review: ${error}`;
             vscode.window.showErrorMessage(errorMessage);
             console.error('Review generation error:', error);
-            
-            this.panel.webview.postMessage({
-                command: 'showError',
-                message: errorMessage
-            });
+            postError(this.panel, errorMessage);
         }
     }
 
-    /**
-     * Handle viewing the raw diff
-     */
-    private async handleViewRawDiff(message: ReviewStagedChangesMessage): Promise<void> {
-        const diffContent = message.diff;
-        
-        if (!diffContent) {
-            vscode.window.showWarningMessage('No diff content available.');
+    private async repairPlantUmlContent(message: ReviewStagedChangesMessage): Promise<void> {
+        const validationError = validateStagedReviewInput(message);
+        if (validationError || !message.content || !message.errorMessage || !message.target) {
+            postError(this.panel, validationError || 'Missing PlantUML repair payload.');
             return;
         }
 
-        try {
-            const doc = await vscode.workspace.openTextDocument({
-                content: diffContent,
-                language: 'markdown'
-            });
-            await vscode.window.showTextDocument(doc, { preview: false });
-        } catch (error) {
-            vscode.window.showErrorMessage(`Failed to open diff: ${error}`);
-            console.error('Error opening diff:', error);
+        const repairResult = await this.reviewStagedChangesService.repairPlantUml(
+            message.provider!,
+            message.model!,
+            message.language!,
+            message.contextStrategy!,
+            message.content,
+            message.errorMessage,
+            undefined,
+            message.apiKey,
+            message.baseURL,
+            message.contextWindow,
+            message.maxOutputTokens,
+            (progressMessage: string) => postProgress(this.panel, progressMessage),
+            (logMessage: string) => postLog(this.panel, logMessage)
+        );
+
+        if (!repairResult.success || !repairResult.content) {
+            postError(this.panel, repairResult.error || 'Failed to repair PlantUML content.');
+            return;
         }
+
+        postPlantUmlRepairResult(this.panel, message.target, repairResult.content, message.attempt || 1);
     }
 }

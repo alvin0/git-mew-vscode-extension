@@ -10,7 +10,7 @@
 export const OPENAI_MODELS = {
   // GPT-5 Models
   GPT_5_4: 'gpt-5.4',
-  GPT_5_3: 'gpt-5.3',
+  GPT_5_3: 'gpt-5.3-chat-latest',
   GPT_5_NANO: 'gpt-5-nano-2025-08-07',
 } as const;
 
@@ -18,8 +18,8 @@ export const OPENAI_MODELS = {
  * Claude (Anthropic) Models
  */
 export const CLAUDE_MODELS = {
-  // Claude Sonnet 4.5
-  CLAUDE_SONNET_4_5: 'claude-sonnet-4-5-20250929',
+  // Claude Sonnet 4.6
+  CLAUDE_SONNET_4_6: 'claude-sonnet-4-6',
 } as const;
 
 /**
@@ -51,8 +51,8 @@ export const MODEL_UI_METADATA = {
   },
   
   // Claude Models
-  [CLAUDE_MODELS.CLAUDE_SONNET_4_5]: {
-    displayName: 'Claude Sonnet 4.5',
+  [CLAUDE_MODELS.CLAUDE_SONNET_4_6]: {
+    displayName: 'Claude Sonnet 4.6',
     description: 'Latest model',
   },
   
@@ -105,7 +105,7 @@ export const PROVIDER_UI_METADATA = {
  */
 export const DEFAULT_MODELS = {
   OPENAI: OPENAI_MODELS.GPT_5_3,
-  CLAUDE: CLAUDE_MODELS.CLAUDE_SONNET_4_5,
+  CLAUDE: CLAUDE_MODELS.CLAUDE_SONNET_4_6,
   GEMINI: GEMINI_MODELS.GEMINI_3_FLASH,
 } as const;
 
@@ -146,7 +146,7 @@ export const MODEL_CAPABILITIES = {
     [OPENAI_MODELS.GPT_5_3]: 200000,
     [OPENAI_MODELS.GPT_5_NANO]: 200000,
     
-    [CLAUDE_MODELS.CLAUDE_SONNET_4_5]: 200000,
+    [CLAUDE_MODELS.CLAUDE_SONNET_4_6]: 200000,
     
     [GEMINI_MODELS.GEMINI_3_1_PRO]: 200000,
     [GEMINI_MODELS.GEMINI_3_FLASH]: 200000,
@@ -158,7 +158,7 @@ export const MODEL_CAPABILITIES = {
     [OPENAI_MODELS.GPT_5_3]: 128000,
     [OPENAI_MODELS.GPT_5_NANO]: 128000,
     
-    [CLAUDE_MODELS.CLAUDE_SONNET_4_5]: 128000,
+    [CLAUDE_MODELS.CLAUDE_SONNET_4_6]: 128000,
     
     [GEMINI_MODELS.GEMINI_3_1_PRO]: 128000,
     [GEMINI_MODELS.GEMINI_3_FLASH]: 128000,

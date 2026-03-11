@@ -2,10 +2,32 @@
 
 ## Current Status
 **Project State:** v0.0.7 - Stable Release
-**Last Updated:** 2026-03-10
-**Active Work:** Keeping provider integrations current, including OpenAI Responses API migration for newer models.
+**Last Updated:** 2026-03-11
+**Active Work:** Refactoring review workflows into smaller shared modules for easier maintenance and regression testing.
 
 ## Recent Changes
+### 2026-03-11
+- ✅ Added a hide/show control for the left setup panel so AI setup/context can collapse and the right result workspace expands for focused reading
+- ✅ Added a PlantUML “Fix with AI” action in review webviews, with best-effort extraction of server-reported syntax messages from returned SVG content
+- ✅ Added a “View larger” interaction for PlantUML diagrams in review webviews and the markdown viewer so small diagrams can open in a focused modal overlay
+- ✅ Compacted the redesigned review layout by reducing card spacing/radius and moving primary action clusters into the top hero banner for faster access
+- ✅ Changed activity log UX from an always-present status-area detail block to an explicit show/hide drawer trigger so logs no longer compete with result reading space
+- ✅ Rebuilt `reviewMerge` and `reviewStagedChanges` webviews into a two-panel dashboard layout with a shared review shell, card sections, explicit status states, and stronger action hierarchy
+- ✅ Added shared review layout primitives in `src/commands/reviewShared/webview/layout.ts` so merge/staged review screens can compose headers, sections, and empty states without duplicating markup
+- ✅ Replaced spinner-only progress UX with a persistent status card, collapsible execution log, and empty/result workspace transitions
+- ✅ Moved custom model/provider inputs into collapsible advanced settings and added inline same-branch prevention messaging for merge review
+- ✅ Updated the markdown viewer styling to match the redesigned review workspace visual language
+- ✅ Refactored `reviewMerge` and `reviewStagedChanges` around shared review infrastructure in `src/commands/reviewShared/`
+- ✅ Extracted shared review preferences/model loading, adapter bootstrap, panel messaging, and webview option/style/script helpers
+- ✅ Split merge/staged handlers with dedicated validation modules so each file now has a narrower responsibility
+- ✅ Added review-agent oriented output contract with PlantUML diagrams, observer todo lists (max 4 items), and hidden-risk reporting
+- ✅ Added supporting-context reader for a few related files outside the diff to improve flow reconstruction during staged and PR review
+- ✅ Added publishable `.gitmew/agent-rule.review-merge.md` template for custom review agent behavior
+- ✅ Switched review and markdown webviews from Mermaid rendering to PlantUML rendering via PlantUML server SVG output
+- ✅ Replaced Mermaid repair flow with PlantUML repair flow and limited prompt guidance to PlantUML sequence/class/activity/IE diagrams
+- ✅ Added output path normalization so review results prefer repo-relative paths instead of absolute disk paths
+- ✅ Added inline custom-provider inputs in review webviews so `custom` can capture base URL and API key without leaving the panel
+
 ### 2026-03-10
 - ✅ Migrated `OpenAIAdapter` from `/chat/completions` to `/responses`
 - ✅ Mapped Responses API usage fields back into the shared `GenerateResponse` contract
@@ -66,7 +88,8 @@
 - **Service Layer:** Separation of concerns (Git, Config, LLM, ReviewMerge)
 - **Type Safety:** Full TypeScript with strict mode
 - **No External Dependencies:** Uses only VS Code and Node.js APIs (except markdown rendering)
-- **Modular Architecture:** Clear separation in reviewMerge module
+- **Modular Architecture:** Shared review infrastructure now isolates config/bootstrap/webview helpers from merge/staged domain logic
+- **Context-Enriched Review:** Review flows can attach read-only summaries from a few related files outside the diff to catch hidden integration risks
 
 ## Current Focus
 **Documentation Maintenance** - Keeping memory bank, README, and CHANGELOG synchronized with v0.0.7 features and pre-commit review flow
@@ -105,6 +128,7 @@
 5. **Modular Commands:** Each feature in its own command file
 6. **Webview Separation:** Content generation, message handling, and service logic separated
 7. **Cancellation Tokens:** Global token to coordinate cancel command + UI
+8. **Review Shared Layer:** Merge and staged-review flows share stable helpers for config resolution, adapter initialization, message posting, and webview fragments
 
 ### User Experience Patterns
 1. **Guided Setup:** Step-by-step with clear titles

@@ -29,7 +29,8 @@
   "@types/markdown-it": "^14.1.2",
   "highlight.js": "^11.11.1",
   "markdown-it": "^14.1.0",
-  "markdown-it-highlightjs": "^4.2.0"
+  "markdown-it-highlightjs": "^4.2.0",
+  "plantuml-encoder": "^1.4.0"
 }
 ```
 
@@ -38,6 +39,7 @@
 - Node.js standard library
 - Native fetch API (no axios/node-fetch)
 - Markdown rendering for review/description display
+- PlantUML SVG URL encoding via `plantuml-encoder`
 
 ## Project Structure
 
@@ -67,6 +69,12 @@ git-mew/
 │   │       ├── reviewMergeService.ts
 │   │       ├── webviewContentGenerator.ts
 │   │       └── webviewMessageHandler.ts
+│   │   └── reviewShared/
+│   │       └── webview/
+│   │           ├── layout.ts
+│   │           ├── options.ts
+│   │           ├── scriptFragments.ts
+│   │           └── styles.ts
 │   ├── services/
 │   │   ├── llm/
 │   │   │   ├── index.ts

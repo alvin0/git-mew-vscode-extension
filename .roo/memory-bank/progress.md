@@ -17,6 +17,16 @@
 - [x] Automatic stage-all fallback when no files are staged
 - [x] Cancel command to stop commit generation mid-flight
 - [x] Review staged changes workflow with AI feedback
+- [x] Shared review workflow infrastructure for merge/staged review commands
+- [x] Review-agent output contract with PlantUML diagram and observer todo list
+- [x] Read-only related-file context for staged/merge review flows
+- [x] PlantUML diagram rendering in review and markdown webviews
+- [x] PlantUML repair agent flow with up to 3 render-fix retries
+- [x] Review output path normalization from absolute disk paths to repo-relative paths
+- [x] Review webviews accept inline custom provider base URL and API key for `custom`
+- [x] Review webviews redesigned into a two-panel dashboard with shared shell, status card, empty state, and stronger action hierarchy
+- [x] Advanced model/provider settings moved into collapsible sections in review webviews
+- [x] Markdown viewer visual design aligned with the review workspace presentation
 
 ### LLM Provider Support
 - [x] OpenAI adapter
@@ -57,6 +67,7 @@
 - [x] Success/warning/error messages
 - [x] Current selection indicators in Quick Picks
 - [x] Review webview actions (copy review, view raw diff)
+- [x] Review workspace states (idle, running, success, error) surfaced directly inside the webview
 
 ### Error Handling
 - [x] No staged files warning
@@ -85,6 +96,7 @@
 - [x] Auto-reload prompt after updates
 - [x] Smart template routing (default/release/hotfix)
 - [x] Cancel/auto-stage workflow documentation
+- [x] Published template for custom review agents (`agent-rule.review-merge.md`)
 
 ## What's Working Well
 
@@ -109,6 +121,7 @@
 - **Extensible:** Easy to add new providers
 - **Testable:** Services isolated from VS Code API
 - **Documented:** Comments and Memory Bank
+- **Review Refactor:** Shared review helpers reduce duplication across merge/staged webviews and handlers
 
 ## Known Issues
 

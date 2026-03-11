@@ -2,7 +2,7 @@
   "name": "git-mew",
   "displayName": "Git Mew",
   "description": "Your AI kitty for Git chaos - Generate intelligent commit messages using AI",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "icon": "resources/images/logo.png",
   "publisher": "GitMew",
   "engines": {
@@ -265,6 +265,7 @@
     "@typescript-eslint/parser": "^8.45.0",
     "@vscode/test-cli": "^0.0.11",
     "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.7.1",
     "eslint": "^9.36.0",
     "typescript": "^5.9.3"
   },
@@ -273,6 +274,7 @@
     "gpt-tokenizer": "^3.4.0",
     "highlight.js": "^11.11.1",
     "markdown-it": "^14.1.0",
-    "markdown-it-highlightjs": "^4.2.0"
+    "markdown-it-highlightjs": "^4.2.0",
+    "plantuml-encoder": "^1.4.0"
   }
 }

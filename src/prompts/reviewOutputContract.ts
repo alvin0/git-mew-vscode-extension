@@ -1,3 +1,4 @@
+export const REVIEW_AGENT_INSTRUCTIONS = `
 ## Review Agents
 Operate as three coordinated internal agents and merge their findings into one final report:
 
@@ -16,9 +17,11 @@ Operate as three coordinated internal agents and merge their findings into one f
 - Use any provided supporting context from related files as read-only background.
 - Produce a short execution todo list with no more than 4 items.
 - Todo items may mention whether they can be done sequentially or in parallel.
+`;
 
+export const REVIEW_OUTPUT_CONTRACT = `
 **Hard requirements**
-- The output **must** use Markdown headings with #, ##, and (optionally) ###.
+- The output **must** use Markdown headings with \`#\`, \`##\`, and (optionally) \`###\`.
 - ALWAYS include **exactly** these sections in this order (no emojis/icons):
   1) Changed File Paths
   2) Summary of Changes
@@ -37,49 +40,49 @@ Operate as three coordinated internal agents and merge their findings into one f
 
 ## 1. Changed File Paths
 Bulleted list of paths only (no line counts or diffs). Group by module/package when helpful.
-- path/to/fileA.ts — modified
-- services/user/ — multiple files updated
-- pkg/auth/index.ts — renamed from pkg/auth/main.ts
+- \`path/to/fileA.ts\` — modified
+- \`services/user/\` — multiple files updated
+- \`pkg/auth/index.ts\` — renamed from \`pkg/auth/main.ts\`
 *If very large, include the most important 10–15, then “... and N more”.*
 
 ## 2. Summary of Changes (<=100 words)
-One short paragraph describing what the MR/PR does at a high level. Do not enumerate every file or show diffs.
+One short paragraph describing what the MR/PR or staged change set does at a high level. Do not enumerate every file or show diffs.
 
 ## 3. Flow Diagram
-- Use exactly one ```plantuml fenced block.
-- Start with `@startuml` and end with `@enduml`.
+- Use exactly one \`\`\`plantuml\` fenced block.
+- Start with \`@startuml\` and end with \`@enduml\`.
 - Choose the most suitable PlantUML diagram type for the change: activity, sequence, class, or IE.
 - Show the main runtime or processing flow changed by this review.
 - Prefer nodes for entrypoints, key services/functions, state transitions, side effects, and outputs.
 - If context is incomplete, keep the diagram conservative and list assumptions in plain text below the diagram.
 
 ## 4. Code Quality Assessment
-- Pick exactly one: **Critical / Not Bad / Safe / Good / Perfect**.  
+- Pick exactly one: **Critical / Not Bad / Safe / Good / Perfect**.
 - Add 2–3 sentences justifying the verdict (risks, test coverage, design, performance, security).
 - Limit to 20 words.
 
 ## 5. Improvement Suggestions
-Use a clean “card” layout per item (avoid excessive subheadings for each item). Prefer **bold labels** inside bullets for readability.  
-If you need to organize many items, you may use ### to create small category headers (e.g., “### Security”, “### Performance”). Do **not** use ### for every single item.
+Use a clean “card” layout per item (avoid excessive subheadings for each item). Prefer **bold labels** inside bullets for readability.
+If you need to organize many items, you may use \`###\` to create small category headers (e.g., “### Security”, “### Performance”). Do **not** use \`###\` for every single item.
 
-- **File & Location**: path/to/file.ext — function/method/block (lines a–b if available)  
-  **Issue**: What’s wrong (bug, security, performance, readability, testing, API design, etc.).  
-  **Why it matters**: Impact on correctness, maintainability, user impact, scalability, etc.  
+- **File & Location**: \`path/to/file.ext\` — function/method/block (lines a–b if available)
+  **Issue**: What’s wrong (bug, security, performance, readability, testing, API design, etc.).
+  **Why it matters**: Impact on correctness, maintainability, user impact, scalability, etc.
   **Actionable fix**: Concrete, step-by-step remediation.
 
-  *Optional — Minimal Illustrative Change (when helpful)*  
+  *Optional — Minimal Illustrative Change (when helpful)*
   *Before*:
-  ```<lang>
+  \`\`\`<lang>
   // ≤10 lines focusing only on the relevant part…
-  ```
+  \`\`\`
   *After*:
-  ```<lang>
+  \`\`\`<lang>
   // ≤10 lines showing the improved approach…
-  ```
+  \`\`\`
 
-  *Optional — Guided Change Snippet (direct "how to fix")*  
-  Provide a single code block (≤15 lines) with the final intended version or pseudocode (no diff markers):  
-  ```<lang>
+  *Optional — Guided Change Snippet (direct "how to fix")*
+  Provide a single code block (≤15 lines) with the final intended version or pseudocode (no diff markers):
+  \`\`\`<lang>
   // Goal: enforce non-empty password before hashing
   function login(req, res) {
     const pw = req.body?.password;
@@ -87,12 +90,12 @@ If you need to organize many items, you may use ### to create small category hea
     const ok = hasher.compare(pw, user.hash);
     return ok ? res.json(user) : res.status(401).end();
   }
-  ```
+  \`\`\`
 
 ## 6. Observer TODO List
 - Provide at most 4 items.
 - Each item must be action-oriented and testable.
-- Prefix each item with either `[Sequential]` or `[Parallel]`.
+- Prefix each item with either \`[Sequential]\` or \`[Parallel]\`.
 - Focus on follow-up validation, missing checks, or next review actions.
 
 ## 7. Potential Hidden Risks
@@ -105,29 +108,4 @@ If you need to organize many items, you may use ### to create small category hea
 - Be concise and specific. Point to exact files/locations; avoid vague statements.
 - Prioritize critical issues first; then improvements.
 - Maintain a constructive tone and propose solutions, not just problems.
-
-## Good Example (Improvement card)
-- **File & Location**: api/user/UserController.ts — login() (42–60)  
-  **Issue**: Null password can bypass comparison.  
-  **Why it matters**: Authentication bypass risk.  
-  **Actionable fix**: Validate null/empty before hashing; return 401 early.  
-  *Before*:
-  ```ts
-  const ok = hasher.compare(req.body.password, user.hash)
-  if (ok) return success(user)
-  ```
-  *After*:
-  ```ts
-  if (!req.body.password) return unauthorized()
-  const ok = hasher.compare(req.body.password, user.hash)
-  if (ok) return success(user)
-  ```
-  *Guided Change Snippet*:
-  ```ts
-  export function login(req, res) {
-    const pw = req.body?.password;
-    if (!pw) return res.status(401).end();
-    const ok = hasher.compare(pw, user.hash);
-    return ok ? res.json(user) : res.status(401).end();
-  }
-  ```
+`;

@@ -20,6 +20,8 @@ Git Mew helps you write better commit messages by analyzing your staged changes 
 - 🌍 **Multi-Language Support**: Get code reviews and MR descriptions in your preferred language.
 - 📤 **Easy Template Publishing**: Use the publish command to copy template files to your project.
 - 🚀 **GPT-5 Support**: Automatic optimization for GPT-5 models with reasoning capabilities.
+- 🧭 **Flow Diagram + Observer Review**: Reviews can now include PlantUML diagrams, hidden-risk warnings, and a capped observer todo list.
+- 🔎 **Related-Code Awareness**: Review flows may inspect a few related read-only files outside the diff to better understand runtime flow.
 
 ### How to Use
 
@@ -35,6 +37,7 @@ Git Mew helps you write better commit messages by analyzing your staged changes 
 3. A webview will open. Select your preferred LLM provider, model, and output language.
 4. Click **"Generate Review"** to get AI-powered analysis of your staged changes.
 5. Review the suggestions and insights before committing.
+6. When helpful, Git Mew may inspect a few related files outside the staged diff to reconstruct the flow and warn about hidden risks.
 
 #### Generating a Code Review or MR Description
 1. Ensure you have committed your changes to your feature branch.
@@ -46,6 +49,7 @@ Git Mew helps you write better commit messages by analyzing your staged changes 
    - **"Generate Review"** for a comprehensive code review
    - **"Generate Description"** for a merge request description
 7. The result will open in a new tab.
+8. Review output can include a PlantUML diagram, observer warnings, and a todo list with at most 4 items.
 
 **MR Description Templates:**
 - **Default**: Standard feature/bugfix descriptions
@@ -103,7 +107,11 @@ The easiest way to get started with customization:
    - Add specific, project-level rules on top of the default system prompt
    - Define project-specific conventions, style guides, or areas to check
 
-4. **MR Description System Prompt** (`.gitmew/system-prompt.description-merge.md`)
+4. **Review Agent Rules** (`.gitmew/agent-rule.review-merge.md`)
+   - Customize the internal review agents such as flow-diagram generation, observer checks, and domain-specific reviewers
+   - Keep observer todo output capped to 4 items
+
+5. **MR Description System Prompt** (`.gitmew/system-prompt.description-merge.md`)
    - Customize the merge request description generation
    - Control template selection logic and output format
 
@@ -114,6 +122,7 @@ your-project/
 │   ├── commit-rule.generate-commit.md        # Custom commit rules
 │   ├── system-prompt.review-merge.md         # Custom review prompt
 │   ├── code-rule.review-merge.md             # Custom review rules
+│   ├── agent-rule.review-merge.md            # Custom review agents
 │   └── system-prompt.description-merge.md    # Custom MR description prompt
 ├── src/
 └── ...

@@ -134,14 +134,38 @@ User Input → Validation → Storage → Adapter Initialization → Cached Inst
 
 **Implementation:**
 - Dedicated service classes (`ReviewMergeService`, `ReviewStagedChangesService`)
-- Webview generators with provider/model metadata pulled from constants
-- Message handlers for generate/cancel/view diff actions
+- Shared review helpers under `src/commands/reviewShared/` for preferences, adapter bootstrap, panel messaging, and webview fragments
+- Webview generators composed from shared option/style/script helpers plus domain-specific layout builders
+- Shared layout primitives (`layout.ts`) provide a reusable review shell, card sections, and empty-state blocks so review screens can share information architecture as well as visual styling
+- Shared client actions now own status-card state, empty/result transitions, explicit show/hide execution-log drawer behavior, collapsible left setup-panel behavior, and advanced-settings visibility instead of each screen managing ad hoc DOM toggles
+- Review webviews can inject inline custom-provider credentials/base URL for the `custom` provider, then persist them through the shared adapter/bootstrap layer before generation
+- Message handlers delegate generate/cancel/view diff actions through shared panel bridge functions
 - Persisted configuration via `ReviewMergeConfigManager`
 
 **Benefits:**
 - Consistent review experience across workflows
 - Easy to extend with new actions (copy review, open diff)
 - Reuses existing Git formatting and custom prompt loaders
+- Makes regression testing easier because config/bootstrap/UI primitives are centralized
+- Supports a dashboard-style UX where controls and output remain visible together during generation and review, while high-frequency actions stay in the hero banner
+
+### 7. Review Agent Pattern
+**Purpose:** Produce richer staged/PR reviews by simulating specialized internal agents without changing the provider abstraction.
+
+**Implementation:**
+- Shared review output contract asks for three internal roles: code reviewer, flow diagram agent, and observer agent
+- Merge/staged review services append supporting context from a few related non-diff files when available
+- Observer agent must return a todo list capped at 4 items to keep follow-up action focused
+- Review webviews render PlantUML fenced blocks into SVG images via the official PlantUML server, while the markdown viewer resolves PlantUML SVG URLs during Markdown rendering
+- Rendered PlantUML blocks expose a “View larger” affordance that opens the SVG in a modal overlay for easier inspection without leaving the current review context
+- Review webviews also expose a manual “Fix with AI” action for PlantUML blocks; when possible the client extracts syntax/error text from the returned SVG and passes that message into the existing PlantUML repair prompt
+- If PlantUML rendering fails, webviews send the markdown back through a dedicated PlantUML repair prompt and retry rendering up to 3 times
+- Review results are normalized before display so any workspace absolute paths are rewritten to repo-relative paths
+
+**Benefits:**
+- Better runtime-flow understanding through PlantUML diagrams
+- Higher chance of catching integration issues outside the modified hunks
+- Review follow-up remains actionable and bounded
 
 ## Key Technical Decisions
 

@@ -1,18 +1,15 @@
-import * as vscode from 'vscode';
-import { CLAUDE_MODELS, GEMINI_MODELS, OPENAI_MODELS } from '../../constant/llm';
-import { createAdapter, LLMProvider } from '../../llm-adapter';
+import { LLMProvider } from '../../llm-adapter';
 import { SYSTEM_PROMPT_GENERATE_DESCRIPTION_MERGE } from '../../prompts/systemPromptGenerateDescriptionMerge';
 import { SYSTEM_PROMPT_GENERATE_REVIEW_MERGE } from '../../prompts/systemPromptGenerateReviewMerge';
 import {
-    ContextOrchestratorService,
     ContextStrategy,
     ContextTaskSpec,
     GenerationCancelledError,
     LLMService,
     UnifiedDiffFile
 } from '../../services/llm';
-import { ReviewMergeConfigManager } from '../../services/llm/ReviewMergeConfigManager';
 import { GitService } from '../../services/utils/gitService';
+import { ReviewWorkflowServiceBase } from '../reviewShared/reviewWorkflowServiceBase';
 
 export interface ReviewResult {
     success: boolean;
@@ -29,25 +26,18 @@ export interface DescriptionResult {
     error?: string;
 }
 
+export interface PlantUmlRepairResult {
+    success: boolean;
+    content?: string;
+    error?: string;
+}
+
 /**
  * Service for handling review merge operations
  */
-export class ReviewMergeService {
-    private readonly contextOrchestrator = new ContextOrchestratorService();
-    private currentAbortController: AbortController | null = null;
-
-    constructor(
-        private gitService: GitService,
-        private llmService: LLMService
-    ) {}
-
-    /**
-     * Cancel the review generation
-     */
-    cancel() {
-        this.currentAbortController?.abort();
-        this.currentAbortController = null;
-        console.log('Review generation cancelled by user.');
+export class ReviewMergeService extends ReviewWorkflowServiceBase {
+    constructor(gitService: GitService, llmService: LLMService) {
+        super(gitService, llmService);
     }
 
     /**
@@ -61,92 +51,62 @@ export class ReviewMergeService {
         language: string,
         strategy: ContextStrategy,
         taskInfo?: string,
+        apiKey?: string,
+        baseURL?: string,
         contextWindow?: number,
         maxOutputTokens?: number,
         onProgress?: (message: string) => void,
         onLog?: (message: string) => void
     ): Promise<ReviewResult> {
-        this.currentAbortController?.abort();
-        const abortController = new AbortController();
-        this.currentAbortController = abortController;
+        return this.withAbortController(async (abortController) => {
+            try {
+                const dependencyState = await this.prepareAdapter(
+                    provider,
+                    model,
+                    language,
+                    strategy,
+                    apiKey,
+                    baseURL,
+                    contextWindow,
+                    maxOutputTokens
+                );
+                if (!dependencyState.adapter) {
+                    return { success: false, error: dependencyState.error };
+                }
 
-        try {
-            // Save configuration for next time
-            await this.saveConfiguration(provider, model, language, strategy);
-            await this.saveCustomModelCapabilities(provider, model, contextWindow, maxOutputTokens);
+                const branchDiff = await this.getBranchDiffPreview(baseBranch, compareBranch);
+                const customSystemPrompt = await this.gitService.getCustomReviewMergeSystemPrompt();
+                const customAgentInstructions = await this.gitService.getCustomReviewMergeAgentPrompt();
+                const customRules = await this.gitService.getCustomReviewMergeRules();
+                const referenceContext = await this.gitService.buildReviewReferenceContext(branchDiff.changes);
 
-            // Get API key
-            const apiKey = await this.getApiKey(provider);
-            if (!apiKey) {
+                const review = await this.contextOrchestrator.generate({
+                    adapter: dependencyState.adapter,
+                    strategy,
+                    changes: branchDiff.changes,
+                    signal: abortController.signal,
+                    onProgress,
+                    onLog,
+                    task: this.buildMergeReviewTaskSpec(
+                        baseBranch,
+                        compareBranch,
+                        branchDiff.diff,
+                        taskInfo,
+                        SYSTEM_PROMPT_GENERATE_REVIEW_MERGE(language, customSystemPrompt, customRules, customAgentInstructions),
+                        referenceContext
+                    ),
+                });
+
                 return {
-                    success: false,
-                    error: `No API key found for ${provider.toUpperCase()}. Please configure it first using "Git Mew: Setup Model".`
+                    success: true,
+                    review: this.gitService.normalizeGeneratedPaths(review, branchDiff.changes),
+                    diff: branchDiff.diff,
+                    changes: branchDiff.changes
                 };
+            } catch (error) {
+                return this.handleGenerationError(error, 'Review generation cancelled.');
             }
-
-            const baseURL = await this.getBaseURL(provider);
-            if (provider === 'custom' && !baseURL) {
-                return {
-                    success: false,
-                    error: 'No custom base URL configured. The endpoint must support OpenAI-compatible /chat/completions.'
-                };
-            }
-
-            const branchDiff = await this.getBranchDiffPreview(baseBranch, compareBranch);
-
-            // Initialize adapter and generate review
-            const tempAdapter = createAdapter(provider);
-            await tempAdapter.initialize({
-                apiKey,
-                model,
-                baseURL,
-                contextWindow: this.isCustomModel(provider, model) ? this.llmService.getCustomModelContextWindow(provider) : undefined,
-                maxOutputTokens: this.isCustomModel(provider, model) ? this.llmService.getCustomModelMaxOutputTokens(provider) : undefined
-            });
-
-            // Get custom system prompt and review rules if available
-            const customSystemPrompt = await this.gitService.getCustomReviewMergeSystemPrompt();
-            const customRules = await this.gitService.getCustomReviewMergeRules();
-            
-            const review = await this.contextOrchestrator.generate({
-                adapter: tempAdapter,
-                strategy,
-                changes: branchDiff.changes,
-                signal: abortController.signal,
-                onProgress,
-                onLog,
-                task: this.buildReviewTaskSpec(
-                    baseBranch,
-                    compareBranch,
-                    branchDiff.diff,
-                    taskInfo,
-                    SYSTEM_PROMPT_GENERATE_REVIEW_MERGE(language, customSystemPrompt, customRules)
-                ),
-            });
-
-            return {
-                success: true,
-                review,
-                diff: branchDiff.diff,
-                changes: branchDiff.changes
-            };
-
-        } catch (error) {
-            if (error instanceof GenerationCancelledError) {
-                return {
-                    success: false,
-                    error: 'Review generation cancelled.'
-                };
-            }
-            return {
-                success: false,
-                error: `${error}`
-            };
-        } finally {
-            if (this.currentAbortController === abortController) {
-                this.currentAbortController = null;
-            }
-        }
+        });
     }
 
     /**
@@ -162,91 +122,101 @@ export class ReviewMergeService {
         taskInfo?: string,
         diff?: string,
         changes?: UnifiedDiffFile[],
+        apiKey?: string,
+        baseURL?: string,
         contextWindow?: number,
         maxOutputTokens?: number,
         onProgress?: (message: string) => void,
         onLog?: (message: string) => void
     ): Promise<DescriptionResult> {
-        this.currentAbortController?.abort();
-        const abortController = new AbortController();
-        this.currentAbortController = abortController;
+        return this.withAbortController(async (abortController) => {
+            try {
+                const dependencyState = await this.prepareAdapter(
+                    provider,
+                    model,
+                    language,
+                    strategy,
+                    apiKey,
+                    baseURL,
+                    contextWindow,
+                    maxOutputTokens
+                );
+                if (!dependencyState.adapter) {
+                    return { success: false, error: dependencyState.error };
+                }
 
-        try {
-            await this.saveConfiguration(provider, model, language, strategy);
-            await this.saveCustomModelCapabilities(provider, model, contextWindow, maxOutputTokens);
+                const branchDiff = changes && diff
+                    ? { changes, diff }
+                    : await this.getBranchDiffPreview(baseBranch, compareBranch);
+                const customSystemPrompt = await this.gitService.getCustomDescriptionMergeSystemPrompt();
+                const referenceContext = await this.gitService.buildReviewReferenceContext(branchDiff.changes);
 
-            // Get API key
-            const apiKey = await this.getApiKey(provider);
-            if (!apiKey) {
+                const description = await this.contextOrchestrator.generate({
+                    adapter: dependencyState.adapter,
+                    strategy,
+                    changes: branchDiff.changes,
+                    signal: abortController.signal,
+                    onProgress,
+                    onLog,
+                    task: this.buildMergeDescriptionTaskSpec(
+                        baseBranch,
+                        compareBranch,
+                        branchDiff.diff,
+                        taskInfo,
+                        SYSTEM_PROMPT_GENERATE_DESCRIPTION_MERGE(language, customSystemPrompt, ''),
+                        referenceContext
+                    ),
+                });
+
                 return {
-                    success: false,
-                    error: `No API key found for ${provider.toUpperCase()}. Please configure it first using "Git Mew: Setup Model".`
+                    success: true,
+                    description: this.gitService.normalizeGeneratedPaths(description, branchDiff.changes),
+                    diff: branchDiff.diff
                 };
+            } catch (error) {
+                return this.handleGenerationError(error, 'Description generation cancelled.');
             }
+        });
+    }
 
-            const baseURL = await this.getBaseURL(provider);
-            if (provider === 'custom' && !baseURL) {
-                return {
-                    success: false,
-                    error: 'No custom base URL configured. The endpoint must support OpenAI-compatible /chat/completions.'
-                };
-            }
+    async repairPlantUml(
+        provider: LLMProvider,
+        model: string,
+        language: string,
+        strategy: ContextStrategy,
+        content: string,
+        renderError: string,
+        changedFiles: UnifiedDiffFile[] = [],
+        apiKey?: string,
+        baseURL?: string,
+        contextWindow?: number,
+        maxOutputTokens?: number,
+        onProgress?: (message: string) => void,
+        onLog?: (message: string) => void
+    ): Promise<PlantUmlRepairResult> {
+        const result = await this.repairPlantUmlMarkdown(
+            provider,
+            model,
+            language,
+            strategy,
+            content,
+            renderError,
+            apiKey,
+            baseURL,
+            contextWindow,
+            maxOutputTokens,
+            onProgress,
+            onLog
+        );
 
-            const branchDiff = changes && diff
-                ? { changes, diff }
-                : await this.getBranchDiffPreview(baseBranch, compareBranch);
-
-            // Initialize adapter and generate description
-            const tempAdapter = createAdapter(provider);
-            await tempAdapter.initialize({
-                apiKey,
-                model,
-                baseURL,
-                contextWindow: this.isCustomModel(provider, model) ? this.llmService.getCustomModelContextWindow(provider) : undefined,
-                maxOutputTokens: this.isCustomModel(provider, model) ? this.llmService.getCustomModelMaxOutputTokens(provider) : undefined
-            });
-
-            // Get custom system prompt and review rules if available
-            const customSystemPrompt = await this.gitService.getCustomDescriptionMergeSystemPrompt();
-            
-            const description = await this.contextOrchestrator.generate({
-                adapter: tempAdapter,
-                strategy,
-                changes: branchDiff.changes,
-                signal: abortController.signal,
-                onProgress,
-                onLog,
-                task: this.buildDescriptionTaskSpec(
-                    baseBranch,
-                    compareBranch,
-                    branchDiff.diff,
-                    taskInfo,
-                    SYSTEM_PROMPT_GENERATE_DESCRIPTION_MERGE(language, customSystemPrompt, '')
-                ),
-            });
-
+        if (result.success && result.content) {
             return {
                 success: true,
-                description,
-                diff: branchDiff.diff
+                content: this.gitService.normalizeGeneratedPaths(result.content, changedFiles),
             };
-
-        } catch (error) {
-            if (error instanceof GenerationCancelledError) {
-                return {
-                    success: false,
-                    error: 'Description generation cancelled.'
-                };
-            }
-            return {
-                success: false,
-                error: `${error}`
-            };
-        } finally {
-            if (this.currentAbortController === abortController) {
-                this.currentAbortController = null;
-            }
         }
+
+        return result;
     }
 
     /**
@@ -256,123 +226,6 @@ export class ReviewMergeService {
         const changes = await this.gitService.getBranchDiffFiles(baseBranch, compareBranch);
         const diff = this.gitService.renderBranchDiffFiles(changes);
         return { changes, diff };
-    }
-
-    /**
-     * Save the review merge configuration
-     */
-    private async saveConfiguration(
-        provider: LLMProvider,
-        model: string,
-        language: string,
-        strategy: ContextStrategy
-    ): Promise<void> {
-        await ReviewMergeConfigManager.setProvider(provider);
-        await ReviewMergeConfigManager.setModel(model);
-        await ReviewMergeConfigManager.setLanguage(language);
-        await ReviewMergeConfigManager.setContextStrategy(strategy);
-    }
-
-    private async saveCustomModelCapabilities(
-        provider: LLMProvider,
-        model: string,
-        contextWindow?: number,
-        maxOutputTokens?: number
-    ): Promise<void> {
-        if (!this.isCustomModel(provider, model)) {
-            return;
-        }
-
-        if (contextWindow) {
-            await this.llmService.setCustomModelContextWindow(provider, contextWindow);
-        }
-
-        if (maxOutputTokens) {
-            await this.llmService.setCustomModelMaxOutputTokens(provider, maxOutputTokens);
-        }
-    }
-
-    /**
-     * Get API key for the provider
-     */
-    private async getApiKey(provider: LLMProvider): Promise<string | undefined> {
-        if (provider === 'ollama') {
-            return 'not-required';
-        }
-
-        let key = await this.llmService.getApiKey(provider);
-        if (!key) {
-            const newKey = await vscode.window.showInputBox({
-                prompt: `Enter API Key for ${provider.toUpperCase()}`,
-                placeHolder: 'Your API Key',
-                ignoreFocusOut: true,
-            });
-
-            if (newKey) {
-                await this.llmService.setApiKey(provider, newKey);
-                key = newKey;
-            } else {
-                vscode.window.showWarningMessage(
-                    `No API key provided for ${provider.toUpperCase()}. Please configure it first to proceed.`
-                );
-                return undefined;
-            }
-        }
-
-        return key;
-    }
-
-    private async getBaseURL(provider: LLMProvider): Promise<string | undefined> {
-        if (provider !== 'custom') {
-            return undefined;
-        }
-
-        vscode.window.showWarningMessage(
-            'Custom provider must expose an OpenAI-compatible /chat/completions interface.'
-        );
-
-        let baseURL = this.llmService.getBaseURL(provider);
-        if (!baseURL) {
-            const newBaseURL = await vscode.window.showInputBox({
-                prompt: 'Enter Custom provider base URL',
-                placeHolder: 'https://your-endpoint.example.com/v1',
-                ignoreFocusOut: true,
-                validateInput: (value) => {
-                    if (!value || value.trim().length === 0) {
-                        return 'Base URL cannot be empty';
-                    }
-
-                    try {
-                        new URL(value.trim());
-                        return null;
-                    } catch {
-                        return 'Base URL must be a valid URL';
-                    }
-                },
-            });
-
-            if (newBaseURL) {
-                await this.llmService.setBaseURL(provider, newBaseURL.trim());
-                baseURL = newBaseURL.trim();
-            }
-        }
-
-        return baseURL;
-    }
-
-    private isCustomModel(provider: LLMProvider, model: string): boolean {
-        if (provider === 'custom') {
-            return true;
-        }
-
-        const knownModelsByProvider: Partial<Record<LLMProvider, string[]>> = {
-            openai: Object.values(OPENAI_MODELS),
-            claude: Object.values(CLAUDE_MODELS),
-            gemini: Object.values(GEMINI_MODELS),
-        };
-
-        const knownModels = knownModelsByProvider[provider] || [];
-        return !knownModels.includes(model);
     }
 
     /**
@@ -392,18 +245,22 @@ ${diff}
 Please analyze these changes and provide a comprehensive merge request review.`;
     }
 
-    private buildReviewTaskSpec(
+    private buildMergeReviewTaskSpec(
         baseBranch: string,
         compareBranch: string,
         diff: string,
         taskInfo: string | undefined,
-        systemMessage: string
+        systemMessage: string,
+        referenceContext?: string
     ): ContextTaskSpec {
         return {
             kind: 'mergeReview',
             label: 'merge request review',
             systemMessage,
-            directPrompt: this.buildReviewPrompt(baseBranch, compareBranch, diff, taskInfo),
+            directPrompt: this.withReferenceContext(
+                this.buildReviewPrompt(baseBranch, compareBranch, diff, taskInfo),
+                referenceContext
+            ),
             buildCoordinatorPrompt: ({ changedFilesSummary, analysesSummary }) => `# Merge Request Review
 
 **Base Branch:** ${baseBranch}
@@ -418,7 +275,7 @@ ${changedFilesSummary}
 
 ${analysesSummary}
 
-Please analyze these changes and provide a comprehensive merge request review.
+${referenceContext ? `${referenceContext}\n\n` : ''}Please analyze these changes and provide a comprehensive merge request review.
 Do not mention that the diff was summarized in multiple stages.`
         };
     }
@@ -440,18 +297,22 @@ ${diff}
 Please generate a comprehensive merge request description following the template guidelines.`;
     }
 
-    private buildDescriptionTaskSpec(
+    private buildMergeDescriptionTaskSpec(
         baseBranch: string,
         compareBranch: string,
         diff: string,
         taskInfo: string | undefined,
-        systemMessage: string
+        systemMessage: string,
+        referenceContext?: string
     ): ContextTaskSpec {
         return {
             kind: 'mrDescription',
             label: 'merge request description generation',
             systemMessage,
-            directPrompt: this.buildDescriptionPrompt(baseBranch, compareBranch, diff, taskInfo),
+            directPrompt: this.withReferenceContext(
+                this.buildDescriptionPrompt(baseBranch, compareBranch, diff, taskInfo),
+                referenceContext
+            ),
             buildCoordinatorPrompt: ({ changedFilesSummary, analysesSummary }) => `# Generate Merge Request Description
 
 **Base Branch:** ${baseBranch}
@@ -466,8 +327,30 @@ ${changedFilesSummary}
 
 ${analysesSummary}
 
-Please generate a comprehensive merge request description following the template guidelines.
+${referenceContext ? `${referenceContext}\n\n` : ''}Please generate a comprehensive merge request description following the template guidelines.
 Do not mention that the diff was summarized in multiple stages.`
+        };
+    }
+
+    private withReferenceContext(prompt: string, referenceContext?: string): string {
+        if (!referenceContext) {
+            return prompt;
+        }
+
+        return `${prompt}\n\n${referenceContext}`;
+    }
+
+    private handleGenerationError(error: unknown, cancelledMessage: string): ReviewResult | DescriptionResult {
+        if (error instanceof GenerationCancelledError) {
+            return {
+                success: false,
+                error: cancelledMessage
+            };
+        }
+
+        return {
+            success: false,
+            error: `${error}`
         };
     }
 }

@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { UnifiedDiffFile } from '../llm/contextTypes';
 import { FileTypeDetector } from './fileTypeDetector';
+import { ReviewReferenceContextProvider } from '../../commands/reviewShared/referenceContextProvider';
 
 export interface GitChange {
     uri: vscode.Uri;
@@ -38,6 +39,7 @@ export class GitService {
     private git: any;
     private readonly commitMessageSyncRetries = 20;
     private readonly commitMessageSyncDelayMs = 100;
+    private readonly reviewReferenceContextProvider = new ReviewReferenceContextProvider();
 
     constructor() {
         this.initializeGit();
@@ -587,6 +589,55 @@ export class GitService {
             return markdown;
         }).join('').trim() || 'No detailed diff available.';
     }
+
+    public async buildReviewReferenceContext(changedFiles: UnifiedDiffFile[]): Promise<string | undefined> {
+        return this.reviewReferenceContextProvider.buildReferenceContext(changedFiles);
+    }
+
+    public normalizeGeneratedPaths(text: string, changedFiles: UnifiedDiffFile[] = []): string {
+        if (!text) {
+            return text;
+        }
+
+        const repository = this.getRepository();
+        const workspaceRoot = repository.rootUri.fsPath;
+        const replacements = new Map<string, string>();
+
+        for (const file of changedFiles) {
+            replacements.set(file.filePath, this.toForwardSlashPath(file.relativePath));
+
+            if (file.originalFilePath) {
+                const relativeOriginalPath = this.toRelativePath(workspaceRoot, file.originalFilePath);
+                replacements.set(file.originalFilePath, this.toForwardSlashPath(relativeOriginalPath));
+            }
+        }
+
+        let normalizedText = text;
+        for (const [absolutePath, relativePath] of Array.from(replacements.entries()).sort((a, b) => b[0].length - a[0].length)) {
+            const pathVariants = new Set<string>([
+                absolutePath,
+                absolutePath.replace(/\//g, '\\'),
+                absolutePath.replace(/\\/g, '/'),
+            ]);
+
+            for (const variant of pathVariants) {
+                normalizedText = normalizedText.split(variant).join(relativePath);
+            }
+        }
+
+        const workspacePrefixPatterns = [
+            `${workspaceRoot}\\`,
+            `${workspaceRoot}/`,
+            `${workspaceRoot.replace(/\//g, '\\')}\\`,
+            `${workspaceRoot.replace(/\\/g, '/')}\/`,
+        ];
+
+        for (const prefix of workspacePrefixPatterns) {
+            normalizedText = normalizedText.split(prefix).join('');
+        }
+
+        return normalizedText.replace(/\\/g, '/');
+    }
     
     /**
      * Get status string from status code
@@ -659,6 +710,10 @@ export class GitService {
         return fullPath.replace(normalizedRoot, '');
     }
 
+    private toForwardSlashPath(filePath: string): string {
+        return filePath.replace(/\\/g, '/');
+    }
+
     /**
      * Get custom code review rules from .gitmew/code-rule.review-merge.md
      * @returns Custom rules content or undefined if file doesn't exist
@@ -703,6 +758,28 @@ export class GitService {
             return content.trim();
         } catch (error) {
             console.error('Error reading custom system prompt:', error);
+            return undefined;
+        }
+    }
+
+    /**
+     * Get custom review agent instructions from .gitmew/agent-rule.review-merge.md
+     * @returns Custom agent instructions or undefined if file doesn't exist
+     */
+    public async getCustomReviewMergeAgentPrompt(): Promise<string | undefined> {
+        try {
+            const repository = this.getRepository();
+            const workspaceRoot = repository.rootUri.fsPath;
+            const promptPath = path.join(workspaceRoot, '.gitmew', 'agent-rule.review-merge.md');
+
+            if (!fs.existsSync(promptPath)) {
+                return undefined;
+            }
+
+            const content = fs.readFileSync(promptPath, 'utf-8');
+            return content.trim();
+        } catch (error) {
+            console.error('Error reading custom review agent instructions:', error);
             return undefined;
         }
     }

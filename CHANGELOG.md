@@ -1,5 +1,25 @@
 # Change Log
 
+## [0.2.0] - 2026-03-11
+
+### Added
+- **PlantUML Review Output**: Review Merge and Review Staged Changes can now generate PlantUML flow diagrams, render them directly in the result view, and open diagrams in a larger modal viewer.
+- **PlantUML Repair Flow**: Added a "Fix with AI" action that retries invalid PlantUML blocks using a dedicated repair prompt and server error hints when available.
+- **Review Agent Customization**: Added publishable `.gitmew/agent-rule.review-merge.md` template to customize review agents such as flow-diagram, observer, and domain-specific checks.
+- **Related Reference Context**: Review workflows can now inspect a limited set of related read-only files outside the diff to improve runtime-flow reconstruction and hidden-risk detection.
+- **Shared Review Infrastructure**: Introduced shared review modules for adapter setup, preferences, panel messaging, validation, and reusable webview fragments/layout primitives.
+
+### Changed
+- **Review Output Contract**: Review prompts now require structured sections for Flow Diagram, Observer TODO List, and Potential Hidden Risks in addition to the existing review summary.
+- **Review UI Redesign**: Rebuilt Review Merge and Review Staged Changes into a two-panel dashboard with collapsible setup panel, advanced settings, persistent status card, and explicit execution-log drawer.
+- **Markdown Viewer**: Updated the markdown viewer to match the new review workspace styling and support embedded PlantUML rendering.
+- **Path Normalization**: Review results now normalize absolute workspace paths into repository-relative paths for cleaner output.
+
+### Improved
+- **Maintainability**: Refactored merge-review and staged-review flows around shared services and narrower validation/message-handler responsibilities.
+- **Custom Provider UX**: Review screens now support inline custom-provider API key and base URL entry without leaving the panel.
+- **Model Defaults**: Updated bundled model metadata and defaults, including newer Claude and OpenAI identifiers used by the extension.
+
 ## [0.1.0] - 2026-03-10
 
 ### Added
