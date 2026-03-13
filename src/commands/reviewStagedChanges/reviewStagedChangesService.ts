@@ -9,6 +9,15 @@ import {
 } from '../../services/llm';
 import { GitService } from '../../services/utils/gitService';
 import { ReviewWorkflowServiceBase } from '../reviewShared/reviewWorkflowServiceBase';
+import { 
+    getDiagnosticsTool, 
+    findReferencesTool, 
+    readFileTool, 
+    searchCodeTool, 
+    getRelatedFilesTool, 
+    getSymbolDefinitionTool 
+} from '../../llm-tools/tools';
+import { AgentPrompt } from '../../services/llm/ContextOrchestratorService';
 
 export interface ReviewResult {
     success: boolean;
@@ -89,20 +98,73 @@ export class ReviewStagedChangesService extends ReviewWorkflowServiceBase {
                 });
                 this.logReferenceContextMetadata(referenceContextResult.metadata, onLog);
 
-                const review = await this.contextOrchestrator.generate({
-                    adapter: dependencyState.adapter,
-                    strategy,
-                    changes: preview.changes,
-                    signal: abortController.signal,
-                    onProgress,
-                    onLog,
-                    task: this.buildStagedReviewTaskSpec(
-                        preview.diff,
-                        taskInfo,
-                        systemPrompt,
-                        referenceContextResult.context
-                    ),
-                });
+                const agents: AgentPrompt[] = [
+                    {
+                        role: "Code Reviewer",
+                        systemMessage: `${systemPrompt}\n\nYour specific role is Code Reviewer Agent. 
+- Inspect correctness, maintainability, security, performance, and testing gaps in the staged changes.
+- Prioritize concrete issues and actionable fixes.
+- Use tools to investigate function implementations, trace symbol usage (find_references, get_symbol_definition), or search for patterns (search_code) when the provided context is insufficient.
+- You can read full file contents using read_file if you identify a related file that needs deeper inspection.`,
+                        prompt: `${referenceContextResult.context ? `${referenceContextResult.context}\n\n` : ''}${basePrompt}`,
+                        tools: [findReferencesTool, getDiagnosticsTool, readFileTool, getSymbolDefinitionTool, searchCodeTool],
+                        maxIterations: 3,
+                        selfAudit: true
+                    },
+                    {
+                        role: "Flow Diagram",
+                        systemMessage: `${systemPrompt}\n\nYour specific role is Flow Diagram Agent. 
+- Reconstruct the most important control flow or data flow affected by the staged changes.
+- Use additional reference context from non-changed related files when available.
+- Draw one or more PlantUML fenced blocks when the change affects multiple independent problems or flows.
+- Name each diagram clearly to reflect the specific problem/flow it explains.
+- Prefer the simplest suitable PlantUML diagram type: activity, sequence, class, or IE.
+- Use get_related_files and read_file to discovery and understand interconnected logic.`,
+                        prompt: `${referenceContextResult.context ? `${referenceContextResult.context}\n\n` : ''}${basePrompt}`,
+                        tools: [findReferencesTool, getRelatedFilesTool, readFileTool, getSymbolDefinitionTool],
+                        maxIterations: 3,
+                        selfAudit: true
+                    },
+                    {
+                        role: "Observer",
+                        systemMessage: `${systemPrompt}\n\nYour specific role is Observer Agent. 
+- Look beyond the staged diff to infer hidden risks, missing edge-case coverage, and likely integration regressions.
+- Use any provided supporting context from related files as read-only background.
+- Produce a short execution todo list with no more than 4 items.
+- Use get_diagnostics to check for project-wide impact and read_file to verify assumptions about integration points.`,
+                        prompt: `${referenceContextResult.context ? `${referenceContextResult.context}\n\n` : ''}${basePrompt}`,
+                        tools: [getDiagnosticsTool, getRelatedFilesTool, readFileTool],
+                        maxIterations: 3,
+                        selfAudit: true
+                    },
+                ];
+
+                const review = await this.contextOrchestrator.generateMultiAgentFinalText(
+                    dependencyState.adapter,
+                    agents,
+                    systemPrompt,
+                    (reports) => `You are the Synthesizer. Here are the review reports from your specialized agents:
+
+${reports.join('\n\n')}
+
+Please synthesize these inputs into a final, highly structured markdown report following the exact format requested.
+Do NOT output the raw agent reports. Merge them gracefully according to the output contract.`,
+                    abortController.signal,
+                    {
+                        adapter: dependencyState.adapter,
+                        strategy,
+                        changes: preview.changes,
+                        signal: abortController.signal,
+                        onProgress,
+                        onLog,
+                        task: this.buildStagedReviewTaskSpec(
+                            preview.diff,
+                            taskInfo,
+                            systemPrompt,
+                            referenceContextResult.context
+                        ),
+                    }
+                );
 
                 return {
                     success: true,

@@ -43,13 +43,21 @@ export class ClaudeAdapter implements ILLMAdapter {
       requestBody.system = options.systemMessage;
     }
 
+    if (options?.tools && options.tools.length > 0) {
+      requestBody.tools = options.tools.map(t => ({
+        name: t.function.name,
+        description: t.function.description,
+        input_schema: t.function.parameters
+      }));
+    }
+
     if (options?.stop) {
       requestBody.stop_sequences = options.stop;
     }
 
     // Merge additional options into requestBody (excluding known properties)
     if (options) {
-      const { maxTokens, temperature, stop, systemMessage, ...additionalOptions } = options;
+      const { maxTokens, temperature, stop, systemMessage, tools, ...additionalOptions } = options;
       Object.assign(requestBody, additionalOptions);
     }
 
@@ -71,19 +79,37 @@ export class ClaudeAdapter implements ILLMAdapter {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const error: any = await response.json().catch(() => ({ error: { message: response.statusText } }));
-        throw new Error(`Claude API error: ${error.error?.message || response.statusText}`);
+        let errorBody = '';
+        try {
+          const errorJson = await response.json();
+          errorBody = JSON.stringify(errorJson, null, 2);
+        } catch {
+          errorBody = await response.text().catch(() => response.statusText);
+        }
+        throw new Error(`Claude API error: ${response.status} ${response.statusText}\nResponse: ${errorBody}`);
       }
 
       const data: any = await response.json();
 
+      const toolCalls = data.content
+        .filter((c: any) => c.type === 'tool_use')
+        .map((c: any) => ({
+          id: c.id,
+          type: 'function',
+          function: {
+            name: c.name,
+            arguments: JSON.stringify(c.input)
+          }
+        }));
+
       return {
-        text: data.content[0]?.text || '',
+        text: data.content.find((c: any) => c.type === 'text')?.text || '',
         model: data.model,
         promptTokens: data.usage?.input_tokens,
         completionTokens: data.usage?.output_tokens,
         totalTokens: (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0),
         finishReason: data.stop_reason,
+        toolCalls: toolCalls.length > 0 ? toolCalls : undefined
       };
     } catch (error) {
       clearTimeout(timeoutId);

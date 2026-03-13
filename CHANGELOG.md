@@ -1,5 +1,23 @@
 # Change Log
 
+## [0.3.0] - 2026-03-13
+
+### Added
+- **Adaptive Context Window Calibration**: Extension now automatically learns the real context window limits from API error responses (e.g., "exceeds limit of X") and persists them to settings.
+- **Persistent Calibration Cache**: Learned token limits are cached per-session and synchronized back to the UI "Context window" field automatically.
+- **Enhanced API Error Logging**: Failed API calls now include the full response body in the execution logs for faster debugging.
+
+### Changed
+- **Architectural Refactoring**: High-traffic `ContextOrchestratorService` has been split into specialized sub-modules (`DiffChunkBuilder`, `ChunkAnalysisReducer`, `AdapterCalibrationService`, `MultiAgentExecutor`) for better maintainability.
+- **Corrected Token Budget Logic**: Fixed the input budget formula to treat input and output budgets independently, preventing unnecessary prompt truncation on large-context models.
+- **Dynamic Safety Margins**: Prompt truncation now uses context-aware safety margins (2k to 8k tokens) to ensure stable API requests.
+- **Optimized Review Summary Contract**: Reduced the suggested number of files in the review summary from 10-15 to 3-5 to keep the context window focused on the most critical changes.
+
+### Improved
+- **Self-Audit Efficiency**: Optimized the agent self-audit pass to only include previous analysis text instead of re-submitting the original diff. This drastically reduces token usage and prevents truncation issues on complex tasks.
+- **Gemini API Compatibility**: Implemented automatic stripping of `additionalProperties` from tool schemas to resolve "Invalid JSON payload" errors (also applied to OpenAI adapter for custom proxy compatibility).
+- **Token Estimation Accuracy**: Refined estimation to 4 characters per token to better match real-world tokenizer behavior for mixed code/prose content.
+
 ## [0.2.1] - 2026-03-11
 
 ### Added

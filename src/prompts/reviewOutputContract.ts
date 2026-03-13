@@ -44,7 +44,7 @@ Bulleted list of paths only (no line counts or diffs). Group by module/package w
 - \`path/to/fileA.ts\` — modified
 - \`services/user/\` — multiple files updated
 - \`pkg/auth/index.ts\` — renamed from \`pkg/auth/main.ts\`
-*If very large, include the most important 10–15, then “... and N more”.*
+*If very large, include the most important 3–5, then “... and N more”.*
 
 ## 2. Summary of Changes (<=100 words)
 One short paragraph describing what the MR/PR or staged change set does at a high level. Do not enumerate every file or show diffs.

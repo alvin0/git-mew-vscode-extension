@@ -51,6 +51,18 @@ export class GeminiAdapter implements ILLMAdapter {
       generationConfig: {},
     };
 
+    if (options?.tools && options.tools.length > 0) {
+      requestBody.tools = [
+        {
+          functionDeclarations: options.tools.map(t => ({
+            name: t.function.name,
+            description: t.function.description,
+            parameters: this.stripAdditionalProperties(t.function.parameters)
+          }))
+        }
+      ];
+    }
+
     if (options?.stop) {
       requestBody.generationConfig.stopSequences = options.stop;
     }
@@ -65,7 +77,7 @@ export class GeminiAdapter implements ILLMAdapter {
 
     // Merge additional options into requestBody (excluding known properties)
     if (options) {
-      const { maxTokens, temperature, stop, systemMessage, ...additionalOptions } = options;
+      const { maxTokens, temperature, stop, systemMessage, tools, ...additionalOptions } = options;
       Object.assign(requestBody, additionalOptions);
     }
 
@@ -87,14 +99,39 @@ export class GeminiAdapter implements ILLMAdapter {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const error: any = await response.json().catch(() => ({ error: { message: response.statusText } }));
-        throw new Error(`Gemini API error: ${error.error?.message || response.statusText}`);
+        let errorBody = '';
+        try {
+          const errorJson = await response.json();
+          errorBody = JSON.stringify(errorJson, null, 2);
+        } catch {
+          errorBody = await response.text().catch(() => response.statusText);
+        }
+        throw new Error(`Gemini API error: ${response.status} ${response.statusText}\nResponse: ${errorBody}`);
       }
 
       const data: any = await response.json();
 
       const candidate = data.candidates?.[0];
-      const text = candidate?.content?.parts?.[0]?.text || '';
+      
+      let text = '';
+      const toolCalls: any[] = [];
+      
+      if (candidate?.content?.parts) {
+        for (const part of candidate.content.parts) {
+          if (part.text) {
+            text += part.text;
+          } else if (part.functionCall) {
+            toolCalls.push({
+              id: `call_${Math.random().toString(36).substring(2, 9)}`,
+              type: 'function',
+              function: {
+                name: part.functionCall.name,
+                arguments: JSON.stringify(part.functionCall.args || {})
+              }
+            });
+          }
+        }
+      }
       
       return {
         text,
@@ -103,6 +140,7 @@ export class GeminiAdapter implements ILLMAdapter {
         completionTokens: data.usageMetadata?.candidatesTokenCount,
         totalTokens: data.usageMetadata?.totalTokenCount,
         finishReason: candidate?.finishReason,
+        toolCalls: toolCalls.length > 0 ? toolCalls : undefined
       };
     } catch (error) {
       clearTimeout(timeoutId);
@@ -114,6 +152,25 @@ export class GeminiAdapter implements ILLMAdapter {
       }
       throw new Error('Unknown error occurred');
     }
+  }
+
+  private stripAdditionalProperties(obj: any): any {
+    if (!obj || typeof obj !== 'object') {
+      return obj;
+    }
+
+    if (Array.isArray(obj)) {
+      return obj.map(item => this.stripAdditionalProperties(item));
+    }
+
+    const newObj: any = {};
+    for (const key in obj) {
+      if (key === 'additionalProperties') {
+        continue;
+      }
+      newObj[key] = this.stripAdditionalProperties(obj[key]);
+    }
+    return newObj;
   }
 
   isReady(): boolean {

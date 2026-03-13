@@ -43,7 +43,7 @@ export class CustomAdapter implements ILLMAdapter {
     const requestBody: any = {
       model: this.config.model,
       messages,
-      ...(options?.maxTokens && { max_completion_tokens: options.maxTokens }),
+      // ...(options?.maxTokens && { max_completion_tokens: options.maxTokens }),
       ...(options?.temperature !== undefined && {
         temperature: options.temperature,
       }),
@@ -72,8 +72,14 @@ export class CustomAdapter implements ILLMAdapter {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const error: any = await response.json().catch(() => ({ error: { message: response.statusText } }));
-        throw new Error(`Custom API error: ${error.error?.message || response.statusText}`);
+        let errorBody = '';
+        try {
+          const errorJson = await response.json();
+          errorBody = JSON.stringify(errorJson, null, 2);
+        } catch {
+          errorBody = await response.text().catch(() => response.statusText);
+        }
+        throw new Error(`Custom API error: ${response.status} ${response.statusText}\nResponse: ${errorBody}`);
       }
 
       const data: any = await response.json();

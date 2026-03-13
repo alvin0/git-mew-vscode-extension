@@ -49,13 +49,13 @@ export const MODEL_UI_METADATA = {
     displayName: 'GPT-5 Nano',
     description: 'Fast and efficient',
   },
-  
+
   // Claude Models
   [CLAUDE_MODELS.CLAUDE_SONNET_4_6]: {
     displayName: 'Claude Sonnet 4.6',
     description: 'Latest model',
   },
-  
+
   // Gemini Models
   [GEMINI_MODELS.GEMINI_3_1_PRO]: {
     displayName: 'Gemini 3.1 Pro',
@@ -145,23 +145,23 @@ export const MODEL_CAPABILITIES = {
     [OPENAI_MODELS.GPT_5_4]: 200000,
     [OPENAI_MODELS.GPT_5_3]: 200000,
     [OPENAI_MODELS.GPT_5_NANO]: 200000,
-    
+
     [CLAUDE_MODELS.CLAUDE_SONNET_4_6]: 200000,
-    
+
     [GEMINI_MODELS.GEMINI_3_1_PRO]: 200000,
     [GEMINI_MODELS.GEMINI_3_FLASH]: 200000,
   },
-  
-  // Max output tokens
+
+  // Max output tokens (realistic per-request output limits, separate from context window)
   MAX_OUTPUT_TOKENS: {
     [OPENAI_MODELS.GPT_5_4]: 128000,
     [OPENAI_MODELS.GPT_5_3]: 128000,
     [OPENAI_MODELS.GPT_5_NANO]: 128000,
-    
+
     [CLAUDE_MODELS.CLAUDE_SONNET_4_6]: 128000,
-    
-    [GEMINI_MODELS.GEMINI_3_1_PRO]: 128000,
-    [GEMINI_MODELS.GEMINI_3_FLASH]: 128000,
+
+    [GEMINI_MODELS.GEMINI_3_1_PRO]: 65536,
+    [GEMINI_MODELS.GEMINI_3_FLASH]: 65536,
   },
 } as const;
 

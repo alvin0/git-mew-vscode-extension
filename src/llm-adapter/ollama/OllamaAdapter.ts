@@ -74,13 +74,25 @@ export class OllamaAdapter implements ILLMAdapter {
       requestBody.system = options.systemMessage;
     }
 
+    // Tools may not be fully supported by all Ollama models, but we can pass them in the options
+    if (options?.tools && options.tools.length > 0) {
+      requestBody.tools = options.tools.map(t => ({
+        type: 'function',
+        function: {
+          name: t.function.name,
+          description: t.function.description,
+          parameters: t.function.parameters
+        }
+      }));
+    }
+
     if (options?.stop) {
       requestBody.options.stop = options.stop;
     }
 
     // Merge additional options into requestBody (excluding known properties)
     if (options) {
-      const { maxTokens, temperature, stop, systemMessage, ...additionalOptions } = options;
+      const { maxTokens, temperature, stop, systemMessage, tools, ...additionalOptions } = options;
       Object.assign(requestBody, additionalOptions);
     }
 
@@ -100,19 +112,35 @@ export class OllamaAdapter implements ILLMAdapter {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const error: any = await response.json().catch(() => ({ error: response.statusText }));
-        throw new Error(`Ollama API error: ${error.error || response.statusText}`);
+        let errorBody = '';
+        try {
+          const errorJson = await response.json();
+          errorBody = JSON.stringify(errorJson, null, 2);
+        } catch {
+          errorBody = await response.text().catch(() => response.statusText);
+        }
+        throw new Error(`Ollama API error: ${response.status} ${response.statusText}\nResponse: ${errorBody}`);
       }
 
       const data: any = await response.json();
 
+      const toolCalls = data.message?.tool_calls?.map((c: any) => ({
+        id: `call_${Math.random().toString(36).substring(2, 9)}`,
+        type: 'function',
+        function: {
+          name: c.function.name,
+          arguments: JSON.stringify(c.function.arguments || {})
+        }
+      }));
+
       return {
-        text: data.response || '',
+        text: data.response || data.message?.content || '',
         model: data.model || this.config.model || '',
         promptTokens: data.prompt_eval_count,
         completionTokens: data.eval_count,
         totalTokens: (data.prompt_eval_count || 0) + (data.eval_count || 0),
         finishReason: data.done ? 'stop' : 'length',
+        toolCalls: toolCalls?.length > 0 ? toolCalls : undefined
       };
     } catch (error) {
       clearTimeout(timeoutId);

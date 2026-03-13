@@ -6,13 +6,26 @@ import { createInitializedAdapter, resolveCustomProviderBaseUrl, resolveProvider
 import { persistCustomModelCapabilitiesIfNeeded, persistReviewPreferences } from './preferences';
 
 export abstract class ReviewWorkflowServiceBase {
-    protected readonly contextOrchestrator = new ContextOrchestratorService();
+    protected readonly contextOrchestrator: ContextOrchestratorService;
     private currentAbortController: AbortController | null = null;
 
     protected constructor(
         protected readonly gitService: GitService,
         protected readonly llmService: LLMService
-    ) {}
+    ) {
+        this.contextOrchestrator = new ContextOrchestratorService({
+            onCalibrate: (provider, model, contextWindow) => {
+                // Persist the auto-discovered context window back to settings
+                // so the UI "Context window" field reflects the real value
+                llmService.setCustomModelContextWindow(
+                    provider as any,
+                    contextWindow
+                ).catch((err: unknown) => {
+                    console.error('[calibration] failed to persist context window to settings:', err);
+                });
+            }
+        });
+    }
 
     cancel(): void {
         this.currentAbortController?.abort();

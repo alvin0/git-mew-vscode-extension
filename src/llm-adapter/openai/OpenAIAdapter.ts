@@ -49,6 +49,14 @@ export class OpenAIAdapter implements ILLMAdapter {
       ...(normalizedOptions?.systemMessage && {
         instructions: normalizedOptions.systemMessage,
       }),
+      ...(normalizedOptions?.tools && normalizedOptions.tools.length > 0 && {
+        tools: normalizedOptions.tools.map(tool => ({
+          type: tool.type || "function",
+          name: tool.function.name,
+          description: tool.function.description,
+          parameters: this.stripAdditionalProperties(tool.function.parameters)
+        })),
+      }),
       ...(normalizedOptions?.maxTokens && {
         max_output_tokens: normalizedOptions.maxTokens,
       }),
@@ -64,6 +72,7 @@ export class OpenAIAdapter implements ILLMAdapter {
         temperature,
         stop,
         systemMessage,
+        tools,
         ...additionalOptions
       } = normalizedOptions;
       Object.assign(requestBody, additionalOptions);
@@ -86,12 +95,14 @@ export class OpenAIAdapter implements ILLMAdapter {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const error: any = await response
-          .json()
-          .catch(() => ({ error: { message: response.statusText } }));
-        throw new Error(
-          `OpenAI API error: ${error.error?.message || response.statusText}`,
-        );
+        let errorBody = '';
+        try {
+          const errorJson = await response.json();
+          errorBody = JSON.stringify(errorJson, null, 2);
+        } catch {
+          errorBody = await response.text().catch(() => response.statusText);
+        }
+        throw new Error(`OpenAI API error: ${response.status} ${response.statusText}\nResponse: ${errorBody}`);
       }
 
       const data: any = await response.json();
@@ -103,6 +114,7 @@ export class OpenAIAdapter implements ILLMAdapter {
         completionTokens: data.usage?.output_tokens,
         totalTokens: data.usage?.total_tokens,
         finishReason: this.extractFinishReason(data),
+        toolCalls: this.extractToolCalls(data),
       };
     } catch (error) {
       clearTimeout(timeoutId);
@@ -197,6 +209,25 @@ export class OpenAIAdapter implements ILLMAdapter {
       .join("\n");
   }
 
+  private extractToolCalls(data: any): any[] | undefined {
+    if (!Array.isArray(data?.output)) {
+      return undefined;
+    }
+
+    const toolCalls: any[] = [];
+    data.output.forEach((item: any) => {
+      if (Array.isArray(item?.content)) {
+        item.content.forEach((content: any) => {
+          if (content?.type === "tool_call" && content.tool_call) {
+            toolCalls.push(content.tool_call);
+          }
+        });
+      }
+    });
+
+    return toolCalls.length > 0 ? toolCalls : undefined;
+  }
+
   private extractFinishReason(data: any): string | undefined {
     if (
       typeof data?.status === "string" &&
@@ -238,5 +269,24 @@ export class OpenAIAdapter implements ILLMAdapter {
     } catch {
       return false;
     }
+  }
+
+  private stripAdditionalProperties(obj: any): any {
+    if (!obj || typeof obj !== "object") {
+      return obj;
+    }
+
+    if (Array.isArray(obj)) {
+      return obj.map((item) => this.stripAdditionalProperties(item));
+    }
+
+    const newObj: any = {};
+    for (const key in obj) {
+      if (key === "additionalProperties") {
+        continue;
+      }
+      newObj[key] = this.stripAdditionalProperties(obj[key]);
+    }
+    return newObj;
   }
 }

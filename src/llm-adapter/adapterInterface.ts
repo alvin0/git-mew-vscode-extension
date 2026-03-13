@@ -20,6 +20,8 @@ export interface LLMAdapterConfig {
   maxOutputTokens?: number;
 }
 
+import { ToolCallResult, FunctionCallingInfo } from "../llm-tools/toolInterface";
+
 /**
  * Options for text generation
  * Any additional properties will be merged into the API request body,
@@ -34,6 +36,8 @@ export interface GenerateOptions {
   stop?: string[];
   /** System message to set context */
   systemMessage?: string;
+  /** Tools available for the model to call */
+  tools?: FunctionCallingInfo[];
   /** Any additional properties to merge into the request body */
   [key: string]: any;
 }
@@ -52,8 +56,10 @@ export interface GenerateResponse {
   completionTokens?: number;
   /** Total tokens used */
   totalTokens?: number;
-  /** Finish reason (e.g., "stop", "length") */
+  /** Finish reason (e.g., "stop", "length", "tool_calls") */
   finishReason?: string;
+  /** Tool calls requested by the model */
+  toolCalls?: ToolCallResult[];
 }
 
 /**
