@@ -1,5 +1,14 @@
 # Change Log
 
+## [0.3.1] - 2026-03-25
+
+### Added
+- **Structured Review Error Reports**: Review Staged Changes and Review Merge now render a clear in-panel failure report with operation, provider, model, branch, command, timestamp, and raw error details.
+- **Copy Error Report Action**: Added a dedicated action to copy the full error report so users can send reproducible diagnostics to maintainers more easily.
+
+### Changed
+- **Review Failure Handling**: Validation errors, generation failures, and PlantUML repair failures now use the same structured error payload instead of a single generic error string.
+
 ## [0.3.0] - 2026-03-13
 
 ### Added

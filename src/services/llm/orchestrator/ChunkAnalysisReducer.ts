@@ -74,7 +74,7 @@ export class ChunkAnalysisReducer {
     request?: ContextGenerationRequest,
     executionProfile?: TaskExecutionProfile
   ): Promise<ChunkAnalysis> {
-    const prompt = this.buildChunkPrompt(chunk, taskLabel);
+    const prompt = this.buildChunkPrompt(chunk, taskLabel, request?.task.taskContext);
     this.reportLog(request, `[worker:${chunk.id}] reading ${this.describeChunk(chunk)}`);
     const response = await adapter.generateText(prompt, {
       systemMessage: this.getWorkerSystemPrompt(request),
@@ -86,7 +86,7 @@ export class ChunkAnalysisReducer {
     return this.parseChunkAnalysis(response.text, chunk);
   }
 
-  private buildChunkPrompt(chunk: DiffChunk, taskLabel: string): string {
+  private buildChunkPrompt(chunk: DiffChunk, taskLabel: string, taskContext?: string): string {
     const fileList = Array.from(new Set(chunk.files.map((e) => e.file.relativePath)));
     const renderedChunk = chunk.files.map((entry) => {
       const labelSuffix = entry.segmentLabel ? ` (${entry.segmentLabel})` : "";
@@ -96,7 +96,7 @@ export class ChunkAnalysisReducer {
       return `## ${entry.file.statusLabel}: ${entry.file.relativePath}${labelSuffix}\n\n\`\`\`diff\n${entry.content}\n\`\`\``;
     }).join("\n\n");
 
-    return `Task: ${taskLabel}\n\nChanged files:\n${fileList.map((f) => `- ${f}`).join("\n")}\n\nChunk content:\n${renderedChunk}`;
+    return `Task: ${taskLabel}${taskContext ? `\n\nAdditional task context:\n${taskContext}` : ""}\n\nChanged files:\n${fileList.map((f) => `- ${f}`).join("\n")}\n\nChunk content:\n${renderedChunk}`;
   }
 
   private parseChunkAnalysis(rawText: string, chunk: DiffChunk): ChunkAnalysis {
@@ -197,7 +197,7 @@ export class ChunkAnalysisReducer {
           const group = groups[currentIndex];
           const batchLabel = this.describeAnalysisGroup(group);
           this.reportLog(request, `[reducer] reducing batch with ${group.length} summary item(s): ${batchLabel}`);
-          const prompt = this.buildReducerPrompt(group);
+          const prompt = this.buildReducerPrompt(group, request?.task.taskContext);
           const response = await adapter.generateText(prompt, {
             systemMessage: this.getReducerSystemPrompt(request),
             maxTokens: Math.min(executionProfile?.reducerMaxTokens ?? 900, adapter.getMaxOutputTokens()),
@@ -241,8 +241,8 @@ export class ChunkAnalysisReducer {
     return groups;
   }
 
-  private buildReducerPrompt(analyses: ChunkAnalysis[]): string {
-    return `Combine the following JSON-compatible summaries into one smaller summary:\n\n${this.renderAnalyses(analyses)}`;
+  private buildReducerPrompt(analyses: ChunkAnalysis[], taskContext?: string): string {
+    return `Combine the following JSON-compatible summaries into one smaller summary.${taskContext ? `\n\nAdditional task context:\n${taskContext}` : ""}\n\n${this.renderAnalyses(analyses)}`;
   }
 
   private parseReducedAnalysis(rawText: string, fallbackAnalyses: ChunkAnalysis[]): ChunkAnalysis {

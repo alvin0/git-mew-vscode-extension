@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { LLMProvider } from '../../llm-adapter';
 import { ContextStrategy } from '../../services/llm';
+import { createReviewErrorPayload } from '../reviewShared/errorReport';
 import { openDiffDocument, postError, postLog, postPlantUmlRepairResult, postProgress, postResult } from '../reviewShared/panelMessaging';
 import { ReviewMergeService } from './reviewMergeService';
 import { validateMergeRequestInput } from './validation';
@@ -57,7 +58,17 @@ export class WebviewMessageHandler {
     private async generateMergeReview(message: ReviewMergeMessage, includeDescription: boolean): Promise<void> {
         const validationError = validateMergeRequestInput(message);
         if (validationError) {
-            vscode.window.showWarningMessage(validationError);
+            postError(this.panel, createReviewErrorPayload(validationError, {
+                operation: includeDescription ? 'review merge and generate description' : 'review merge',
+                provider: message.provider,
+                model: message.model,
+                baseBranch: message.baseBranch,
+                compareBranch: message.compareBranch,
+                command: message.command,
+                hint: 'Verify branch selection and required fields in the review panel.'
+            }, {
+                title: 'Invalid merge review request'
+            }));
             return;
         }
         const { taskInfo, contextWindow, maxOutputTokens, apiKey, baseURL } = message;
@@ -90,7 +101,17 @@ export class WebviewMessageHandler {
             }
 
             if (!result.success || !result.review || !result.diff || !result.changes) {
-                postError(this.panel, result.error || 'Unknown error occurred');
+                postError(this.panel, createReviewErrorPayload(result.error || 'Unknown error occurred', {
+                    operation: includeDescription ? 'review merge and generate description' : 'review merge',
+                    provider,
+                    model,
+                    baseBranch,
+                    compareBranch,
+                    command: message.command,
+                    hint: 'Copy this report and include the selected branches when reporting the bug.'
+                }, {
+                    title: 'Merge review failed'
+                }));
                 return;
             }
 
@@ -121,14 +142,35 @@ export class WebviewMessageHandler {
             const errorMessage = `Failed to generate review: ${error}`;
             vscode.window.showErrorMessage(errorMessage);
             console.error('Review generation error:', error);
-            postError(this.panel, errorMessage);
+            postError(this.panel, createReviewErrorPayload(error, {
+                operation: includeDescription ? 'review merge and generate description' : 'review merge',
+                provider,
+                model,
+                baseBranch,
+                compareBranch,
+                command: message.command,
+                hint: 'Copy this report and include the selected branches when reporting the bug.'
+            }, {
+                title: 'Merge review crashed',
+                summary: errorMessage
+            }));
         }
     }
 
     private async generateMergeDescription(message: ReviewMergeMessage): Promise<void> {
         const validationError = validateMergeRequestInput(message);
         if (validationError) {
-            vscode.window.showWarningMessage(validationError);
+            postError(this.panel, createReviewErrorPayload(validationError, {
+                operation: 'generate merge description',
+                provider: message.provider,
+                model: message.model,
+                baseBranch: message.baseBranch,
+                compareBranch: message.compareBranch,
+                command: message.command,
+                hint: 'Verify branch selection and required fields in the review panel.'
+            }, {
+                title: 'Invalid description request'
+            }));
             return;
         }
         const { taskInfo, contextWindow, maxOutputTokens, apiKey, baseURL } = message;
@@ -171,12 +213,33 @@ export class WebviewMessageHandler {
                 return;
             }
 
-            postError(this.panel, descResult.error || 'Unknown error occurred');
+            postError(this.panel, createReviewErrorPayload(descResult.error || 'Unknown error occurred', {
+                operation: 'generate merge description',
+                provider,
+                model,
+                baseBranch,
+                compareBranch,
+                command: message.command,
+                hint: 'Copy this report and include the selected branches when reporting the bug.'
+            }, {
+                title: 'MR description generation failed'
+            }));
         } catch (error) {
             const errorMessage = `Failed to generate description: ${error}`;
             vscode.window.showErrorMessage(errorMessage);
             console.error('Description generation error:', error);
-            postError(this.panel, errorMessage);
+            postError(this.panel, createReviewErrorPayload(error, {
+                operation: 'generate merge description',
+                provider,
+                model,
+                baseBranch,
+                compareBranch,
+                command: message.command,
+                hint: 'Copy this report and include the selected branches when reporting the bug.'
+            }, {
+                title: 'MR description generation crashed',
+                summary: errorMessage
+            }));
         }
     }
 
@@ -230,7 +293,18 @@ export class WebviewMessageHandler {
     private async repairPlantUmlContent(message: ReviewMergeMessage): Promise<void> {
         const validationError = validateMergeRequestInput(message);
         if (validationError || !message.content || !message.errorMessage || !message.target) {
-            postError(this.panel, validationError || 'Missing PlantUML repair payload.');
+            postError(this.panel, createReviewErrorPayload(validationError || 'Missing PlantUML repair payload.', {
+                operation: 'repair PlantUML',
+                provider: message.provider,
+                model: message.model,
+                baseBranch: message.baseBranch,
+                compareBranch: message.compareBranch,
+                command: message.command,
+                target: message.target,
+                hint: 'Retry generation first. If the issue persists, send this report to the maintainer.'
+            }, {
+                title: 'Invalid PlantUML repair request'
+            }));
             return;
         }
 
@@ -256,7 +330,18 @@ export class WebviewMessageHandler {
         );
 
         if (!repairResult.success || !repairResult.content) {
-            postError(this.panel, repairResult.error || 'Failed to repair PlantUML content.');
+            postError(this.panel, createReviewErrorPayload(repairResult.error || 'Failed to repair PlantUML content.', {
+                operation: 'repair PlantUML',
+                provider,
+                model,
+                baseBranch: message.baseBranch,
+                compareBranch: message.compareBranch,
+                command: message.command,
+                target: message.target,
+                hint: 'Include the generated review/description and this repair report when filing the issue.'
+            }, {
+                title: 'PlantUML repair failed'
+            }));
             return;
         }
 

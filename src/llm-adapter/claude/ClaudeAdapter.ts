@@ -90,8 +90,9 @@ export class ClaudeAdapter implements ILLMAdapter {
       }
 
       const data: any = await response.json();
+      const contentBlocks = Array.isArray(data?.content) ? data.content : [];
 
-      const toolCalls = data.content
+      const toolCalls = contentBlocks
         .filter((c: any) => c.type === 'tool_use')
         .map((c: any) => ({
           id: c.id,
@@ -103,7 +104,7 @@ export class ClaudeAdapter implements ILLMAdapter {
         }));
 
       return {
-        text: data.content.find((c: any) => c.type === 'text')?.text || '',
+        text: contentBlocks.find((c: any) => c.type === 'text')?.text || '',
         model: data.model,
         promptTokens: data.usage?.input_tokens,
         completionTokens: data.usage?.output_tokens,

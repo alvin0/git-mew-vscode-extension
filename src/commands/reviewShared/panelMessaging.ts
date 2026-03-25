@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ReviewResultPayload } from './types';
+import { ReviewErrorPayload, ReviewResultPayload } from './types';
 
 export function postProgress(panel: vscode.WebviewPanel, message: string): void {
     panel.webview.postMessage({ command: 'showProgress', message });
@@ -9,8 +9,8 @@ export function postLog(panel: vscode.WebviewPanel, message: string): void {
     panel.webview.postMessage({ command: 'showLog', message });
 }
 
-export function postError(panel: vscode.WebviewPanel, message: string): void {
-    panel.webview.postMessage({ command: 'showError', message });
+export function postError(panel: vscode.WebviewPanel, error: ReviewErrorPayload): void {
+    panel.webview.postMessage({ command: 'showError', error });
 }
 
 export function postResult(panel: vscode.WebviewPanel, payload: ReviewResultPayload): void {

@@ -14,6 +14,7 @@ export function buildSharedWebviewScriptState(
         let currentReview = '';
         ${options?.includeDescriptionState ? "let currentDescription = '';" : ''}
         let currentRawDiff = '';
+        let currentErrorReport = null;
         const plantUmlRepairAttempts = { review: 0, description: 0 };
     `;
 }
@@ -53,6 +54,84 @@ export function buildSharedClientActions(actionButtonIds: string[], options?: { 
             setEmptyStateVisible(!isVisible);
         }
 
+        function clearErrorReport() {
+            currentErrorReport = null;
+            if (!errorReportContainer) {
+                return;
+            }
+
+            errorReportContainer.classList.add('hidden');
+            errorReportContainer.innerHTML = '';
+        }
+
+        function buildErrorField(label, value) {
+            if (!value) {
+                return '';
+            }
+
+            return '<div class="error-report__field"><span class="error-report__label">' + label + '</span><code class="error-report__value">' + escapeHtml(String(value)) + '</code></div>';
+        }
+
+        function escapeHtml(value) {
+            return value
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function renderErrorReport(error) {
+            currentErrorReport = error;
+            if (!errorReportContainer) {
+                return;
+            }
+
+            const metadata = [
+                buildErrorField('Operation', error.operation),
+                buildErrorField('Provider', error.provider),
+                buildErrorField('Model', error.model),
+                buildErrorField('Base branch', error.baseBranch),
+                buildErrorField('Compare branch', error.compareBranch),
+                buildErrorField('Command', error.command),
+                buildErrorField('Target', error.target),
+                buildErrorField('Timestamp', error.timestamp)
+            ].filter(Boolean).join('');
+
+            const hint = error.hint
+                ? '<p class="error-report__hint">' + escapeHtml(error.hint) + '</p>'
+                : '';
+
+            errorReportContainer.innerHTML = [
+                '<div class="error-report__header">',
+                '<div>',
+                '<p class="error-report__eyebrow">Failure report</p>',
+                '<h3 class="error-report__title">' + escapeHtml(error.title || 'Review workflow failed') + '</h3>',
+                '<p class="error-report__summary">' + escapeHtml(error.summary || 'Unknown error occurred.') + '</p>',
+                '</div>',
+                '<button type="button" id="copyErrorReportBtn" class="btn-secondary">Copy error report</button>',
+                '</div>',
+                metadata ? '<div class="error-report__meta">' + metadata + '</div>' : '',
+                hint,
+                '<div class="error-report__details">',
+                '<div class="error-report__label">Raw error</div>',
+                '<pre class="error-report__pre">' + escapeHtml(error.rawError || error.summary || 'Unknown error occurred.') + '</pre>',
+                '</div>'
+            ].join('');
+
+            errorReportContainer.classList.remove('hidden');
+            const copyErrorReportBtn = document.getElementById('copyErrorReportBtn');
+            if (copyErrorReportBtn) {
+                copyErrorReportBtn.addEventListener('click', () => {
+                    handleCopyToClipboardAction(
+                        copyErrorReportBtn,
+                        JSON.stringify(currentErrorReport, null, 2),
+                        'Copy error report'
+                    );
+                });
+            }
+        }
+
         function setGeneratingState(isGenerating) {
             cancelBtn.classList.toggle('hidden', !isGenerating);
             const actionButtons = [${buttonRefs}];
@@ -60,6 +139,7 @@ export function buildSharedClientActions(actionButtonIds: string[], options?: { 
                 button.disabled = isGenerating;
             });
             if (isGenerating) {
+                clearErrorReport();
                 setStatusState('running', 'Generating output', 'Git Mew is collecting context, sending the request, and preparing the result.');
                 logToggleBtn.classList.remove('hidden');
             } else {
@@ -155,13 +235,40 @@ export function buildSharedClientActions(actionButtonIds: string[], options?: { 
             };
         }
 
+        function getReviewContentWrapper() {
+            return reviewContent ? reviewContent.querySelector('.content-wrapper') : null;
+        }
+
+        function getDescriptionContentWrapper() {
+            return typeof descriptionContent !== 'undefined' && descriptionContent
+                ? descriptionContent.querySelector('.content-wrapper')
+                : null;
+        }
+
         function handleWebviewErrorMessage(message) {
             setGeneratingState(false);
-            setStatusState('error', 'Generation failed', message.message);
-            appendLogMessage('Generation failed: ' + message.message);
+            const error = message.error || {
+                title: 'Review workflow failed',
+                summary: message.message || 'Unknown error occurred.',
+                rawError: message.message || 'Unknown error occurred.',
+                operation: 'unknown',
+                timestamp: new Date().toISOString()
+            };
+            setStatusState('error', error.title || 'Generation failed', error.summary || error.rawError);
+            appendLogMessage('Generation failed: ' + (error.summary || error.rawError));
             logToggleBtn.classList.remove('hidden');
             setResultVisible(true);
-            reviewContent.querySelector('.content-wrapper').textContent = 'Error: ' + message.message;
+            renderErrorReport(error);
+            const reviewWrapper = getReviewContentWrapper();
+            if (reviewWrapper) {
+                reviewWrapper.innerHTML = '';
+            }
+            const descriptionWrapper = typeof getDescriptionContentWrapper === 'function'
+                ? getDescriptionContentWrapper()
+                : null;
+            if (descriptionWrapper) {
+                descriptionWrapper.innerHTML = '';
+            }
         }
 
         function handleViewRawDiffAction() {
@@ -424,11 +531,17 @@ export function buildSingleResultMessageHandler(): string {
             setGeneratingState(false);
             setStatusState('success', 'Review ready', 'The staged review is available below. Copy it or open the raw diff in the editor.');
             appendLogMessage('Generation completed successfully.');
+            clearErrorReport();
             currentRawDiff = message.rawDiff;
             plantUmlRepairAttempts.review = 0;
             currentReview = message.review;
+            const reviewWrapper = getReviewContentWrapper();
+            if (!reviewWrapper) {
+                appendLogMessage('Review content container is unavailable.');
+                return;
+            }
             await renderMarkdownWithDiagrams(
-                reviewContent.querySelector('.content-wrapper'),
+                reviewWrapper,
                 message.review,
                 markdownRenderer,
                 'review'
@@ -455,32 +568,46 @@ export function buildTabbedResultMessageHandler(): string {
             setGeneratingState(false);
             setStatusState('success', 'Output ready', 'Review output has been generated. Switch tabs to inspect the review and MR description.');
             appendLogMessage('Generation completed successfully.');
+            clearErrorReport();
             currentRawDiff = message.rawDiff;
 
             if (message.review) {
                 plantUmlRepairAttempts.review = 0;
                 currentReview = message.review;
+                const reviewWrapper = getReviewContentWrapper();
+                if (reviewWrapper) {
                 await renderMarkdownWithDiagrams(
-                    reviewContent.querySelector('.content-wrapper'),
+                    reviewWrapper,
                     message.review,
                     markdownRenderer,
                     'review'
                 );
+                } else {
+                    appendLogMessage('Review content container is unavailable.');
+                }
             }
 
             if (message.description) {
                 plantUmlRepairAttempts.description = 0;
                 currentDescription = message.description;
+                const descriptionWrapper = getDescriptionContentWrapper();
+                if (descriptionWrapper) {
                 await renderMarkdownWithDiagrams(
-                    descriptionContent.querySelector('.content-wrapper'),
+                    descriptionWrapper,
                     message.description,
                     markdownRenderer,
                     'description'
                 );
+                } else {
+                    appendLogMessage('Description content container is unavailable.');
+                }
                 descriptionTab.classList.remove('hidden');
             } else {
                 currentDescription = '';
-                descriptionContent.querySelector('.content-wrapper').innerHTML = '';
+                const descriptionWrapper = getDescriptionContentWrapper();
+                if (descriptionWrapper) {
+                    descriptionWrapper.innerHTML = '';
+                }
                 descriptionTab.classList.add('hidden');
             }
 
@@ -502,8 +629,13 @@ export function buildPlantUmlRepairMessageHandler(options?: { includeDescription
 
             if (message.target === 'review') {
                 currentReview = message.content;
+                const reviewWrapper = getReviewContentWrapper();
+                if (!reviewWrapper) {
+                    appendLogMessage('Review content container is unavailable.');
+                    return;
+                }
                 await renderMarkdownWithDiagrams(
-                    reviewContent.querySelector('.content-wrapper'),
+                    reviewWrapper,
                     currentReview,
                     markdownRenderer,
                     'review'
@@ -514,8 +646,13 @@ export function buildPlantUmlRepairMessageHandler(options?: { includeDescription
             ${options?.includeDescription ? `
             if (message.target === 'description') {
                 currentDescription = message.content;
+                const descriptionWrapper = getDescriptionContentWrapper();
+                if (!descriptionWrapper) {
+                    appendLogMessage('Description content container is unavailable.');
+                    return;
+                }
                 await renderMarkdownWithDiagrams(
-                    descriptionContent.querySelector('.content-wrapper'),
+                    descriptionWrapper,
                     currentDescription,
                     markdownRenderer,
                     'description'

@@ -25,7 +25,12 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Check for updates and prompt for reload
 	const previousVersion = context.globalState.get<string>('extensionVersion');
-	const currentVersion = vscode.extensions.getExtension('GitMew.git-mew')!.packageJSON.version;
+	const currentVersion = vscode.extensions.getExtension('GitMew.git-mew')?.packageJSON?.version;
+
+	if (!currentVersion) {
+		console.warn('Git Mew extension metadata is unavailable; skipping version change prompt.');
+		return;
+	}
 
 	if (previousVersion && previousVersion !== currentVersion) {
 		vscode.window.showInformationMessage(

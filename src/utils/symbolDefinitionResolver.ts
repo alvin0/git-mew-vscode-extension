@@ -10,6 +10,11 @@ export interface ResolveSymbolDefinitionOptions {
     maxMatches?: number;
 }
 
+export interface NormalizedSymbolDefinition {
+    uri: vscode.Uri;
+    range: vscode.Range;
+}
+
 export function findSymbolMatches(document: vscode.TextDocument, symbol: string): SymbolMatch[] {
     const escapedSymbol = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const symbolRegex = new RegExp(`\\b${escapedSymbol}\\b`, 'g');
@@ -33,7 +38,7 @@ export async function resolveSymbolDefinitions(
     document: vscode.TextDocument,
     symbol: string,
     options: ResolveSymbolDefinitionOptions = {}
-): Promise<vscode.Location[]> {
+): Promise<NormalizedSymbolDefinition[]> {
     if (!symbol.trim()) {
         return [];
     }
@@ -44,21 +49,26 @@ export async function resolveSymbolDefinitions(
     }
 
     const definitionKeys = new Set<string>();
-    const definitions: vscode.Location[] = [];
+    const definitions: NormalizedSymbolDefinition[] = [];
     const maxMatches = Math.max(1, options.maxMatches ?? 3);
 
     for (const match of matches.slice(0, maxMatches)) {
-        const found = await vscode.commands.executeCommand<vscode.Location[]>(
+        const found = await vscode.commands.executeCommand<Array<vscode.Location | vscode.LocationLink>>(
             'vscode.executeDefinitionProvider',
             document.uri,
             match.position
         );
 
         for (const definition of found || []) {
-            const key = `${definition.uri.toString()}#${definition.range.start.line}:${definition.range.start.character}-${definition.range.end.line}:${definition.range.end.character}`;
+            const normalized = normalizeDefinitionLocation(definition);
+            if (!normalized) {
+                continue;
+            }
+
+            const key = `${normalized.uri.toString()}#${normalized.range.start.line}:${normalized.range.start.character}-${normalized.range.end.line}:${normalized.range.end.character}`;
             if (!definitionKeys.has(key)) {
                 definitionKeys.add(key);
-                definitions.push(definition);
+                definitions.push(normalized);
             }
         }
 
@@ -68,4 +78,24 @@ export async function resolveSymbolDefinitions(
     }
 
     return definitions;
+}
+
+function normalizeDefinitionLocation(
+    definition: vscode.Location | vscode.LocationLink
+): NormalizedSymbolDefinition | undefined {
+    if (definition instanceof vscode.Location) {
+        return {
+            uri: definition.uri,
+            range: definition.range,
+        };
+    }
+
+    if ('targetUri' in definition && definition.targetUri && definition.targetSelectionRange) {
+        return {
+            uri: definition.targetUri,
+            range: definition.targetSelectionRange,
+        };
+    }
+
+    return undefined;
 }

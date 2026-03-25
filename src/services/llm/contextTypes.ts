@@ -53,6 +53,7 @@ export interface ContextTaskSpec {
   label: string;
   systemMessage: string;
   directPrompt: string;
+  taskContext?: string;
   buildCoordinatorPrompt: (input: CoordinatorPromptInput) => string;
   speedProfile?: "balanced" | "fast";
 }

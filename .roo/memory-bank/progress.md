@@ -68,6 +68,7 @@
 - [x] Current selection indicators in Quick Picks
 - [x] Review webview actions (copy review, view raw diff)
 - [x] Review workspace states (idle, running, success, error) surfaced directly inside the webview
+- [x] Structured review failure reports rendered inside the webview with copyable diagnostics for bug reporting
 
 ### Error Handling
 - [x] No staged files warning

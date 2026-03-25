@@ -396,6 +396,9 @@ Please generate a comprehensive merge request description following the template
             kind: 'mrDescription',
             label: 'merge request description generation',
             systemMessage,
+            taskContext: taskInfo
+                ? `Use this current task info when interpreting the diff and drafting the MR description:\n${taskInfo}`
+                : undefined,
             directPrompt: this.withReferenceContext(
                 this.buildDescriptionPrompt(baseBranch, compareBranch, diff, taskInfo),
                 referenceContext

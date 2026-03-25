@@ -7,6 +7,7 @@
 
 ## Recent Changes
 ### 2026-03-11
+- ✅ Added structured error reporting inside Review Staged Changes and Review Merge webviews, including copyable failure reports with provider/model/branch/timestamp metadata for bug reporting
 - ✅ Added a hide/show control for the left setup panel so AI setup/context can collapse and the right result workspace expands for focused reading
 - ✅ Added a PlantUML “Fix with AI” action in review webviews, with best-effort extraction of server-reported syntax messages from returned SVG content
 - ✅ Added a “View larger” interaction for PlantUML diagrams in review webviews and the markdown viewer so small diagrams can open in a focused modal overlay

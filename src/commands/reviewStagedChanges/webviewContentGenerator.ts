@@ -152,6 +152,7 @@ function renderOutputPanel(): string {
             note: 'Tip: use raw diff view if you want to compare the generated review against the exact staged patch.'
         })}
         <div id="result-container" class="result-workspace hidden">
+            <section id="errorReport" class="error-report hidden"></section>
             <div class="sticky-result-header">
                 <div>
                     <h2>Review result</h2>
@@ -202,6 +203,7 @@ function getClientScript(
         const logOutput = document.getElementById('logOutput');
         const emptyState = document.getElementById('emptyState');
         const resultContainer = document.getElementById('result-container');
+        const errorReportContainer = document.getElementById('errorReport');
         const reviewContent = document.getElementById('review');
         const copyReviewBtn = document.getElementById('copyReviewBtn');
         const viewDiffBtn = document.getElementById('viewDiffBtn');

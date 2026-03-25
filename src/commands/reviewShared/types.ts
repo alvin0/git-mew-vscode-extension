@@ -39,3 +39,18 @@ export interface ReviewResultPayload {
     description?: string;
     rawDiff?: string;
 }
+
+export interface ReviewErrorPayload {
+    title: string;
+    summary: string;
+    rawError: string;
+    operation: string;
+    timestamp: string;
+    provider?: string;
+    model?: string;
+    baseBranch?: string;
+    compareBranch?: string;
+    command?: string;
+    target?: string;
+    hint?: string;
+}

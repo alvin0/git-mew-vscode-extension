@@ -184,6 +184,7 @@ function renderOutputPanel(): string {
             note: 'Generate both when you want code feedback and a polished merge request description from the same branch comparison.'
         })}
         <div id="result-container" class="result-workspace hidden">
+            <section id="errorReport" class="error-report hidden"></section>
             <div class="tabs" role="tablist" aria-label="Output tabs">
                 <button class="tab-button active" data-tab="review" id="reviewTab" aria-selected="true">Review</button>
                 <button class="tab-button hidden" data-tab="description" id="descriptionTab" aria-selected="false">MR description</button>
@@ -259,6 +260,7 @@ function getClientScript(
         const logOutput = document.getElementById('logOutput');
         const emptyState = document.getElementById('emptyState');
         const resultContainer = document.getElementById('result-container');
+        const errorReportContainer = document.getElementById('errorReport');
         const reviewContent = document.getElementById('review');
         const descriptionContent = document.getElementById('description');
         const descriptionTab = document.getElementById('descriptionTab');

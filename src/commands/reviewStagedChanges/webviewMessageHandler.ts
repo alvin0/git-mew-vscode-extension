@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { LLMProvider } from '../../llm-adapter';
 import { ContextStrategy } from '../../services/llm';
+import { createReviewErrorPayload } from '../reviewShared/errorReport';
 import { openDiffDocument, postError, postLog, postPlantUmlRepairResult, postProgress, postResult } from '../reviewShared/panelMessaging';
 import { ReviewStagedChangesService } from './reviewStagedChangesService';
 import { validateStagedReviewInput } from './validation';
@@ -49,7 +50,15 @@ export class WebviewMessageHandler {
     private async generateStagedChangesReview(message: ReviewStagedChangesMessage): Promise<void> {
         const validationError = validateStagedReviewInput(message);
         if (validationError) {
-            vscode.window.showWarningMessage(validationError);
+            postError(this.panel, createReviewErrorPayload(validationError, {
+                operation: 'review staged changes',
+                provider: message.provider,
+                model: message.model,
+                command: message.command,
+                hint: 'Verify the required fields in the review panel and try again.'
+            }, {
+                title: 'Invalid review request'
+            }));
             return;
         }
         const { taskInfo, contextWindow, maxOutputTokens, apiKey, baseURL } = message;
@@ -78,7 +87,15 @@ export class WebviewMessageHandler {
             }
 
             if (!result.success || !result.review || !result.diff) {
-                postError(this.panel, result.error || 'Unknown error occurred');
+                postError(this.panel, createReviewErrorPayload(result.error || 'Unknown error occurred', {
+                    operation: 'review staged changes',
+                    provider,
+                    model,
+                    command: message.command,
+                    hint: 'Copy this report and include the staged diff scenario when reporting the bug.'
+                }, {
+                    title: 'Staged review failed'
+                }));
                 return;
             }
 
@@ -90,14 +107,32 @@ export class WebviewMessageHandler {
             const errorMessage = `Failed to generate review: ${error}`;
             vscode.window.showErrorMessage(errorMessage);
             console.error('Review generation error:', error);
-            postError(this.panel, errorMessage);
+            postError(this.panel, createReviewErrorPayload(error, {
+                operation: 'review staged changes',
+                provider,
+                model,
+                command: message.command,
+                hint: 'Copy this report and include the staged diff scenario when reporting the bug.'
+            }, {
+                title: 'Staged review crashed',
+                summary: errorMessage
+            }));
         }
     }
 
     private async repairPlantUmlContent(message: ReviewStagedChangesMessage): Promise<void> {
         const validationError = validateStagedReviewInput(message);
         if (validationError || !message.content || !message.errorMessage || !message.target) {
-            postError(this.panel, validationError || 'Missing PlantUML repair payload.');
+            postError(this.panel, createReviewErrorPayload(validationError || 'Missing PlantUML repair payload.', {
+                operation: 'repair PlantUML',
+                provider: message.provider,
+                model: message.model,
+                command: message.command,
+                target: message.target,
+                hint: 'Retry generation first. If the issue persists, send this report to the maintainer.'
+            }, {
+                title: 'Invalid PlantUML repair request'
+            }));
             return;
         }
 
@@ -118,7 +153,16 @@ export class WebviewMessageHandler {
         );
 
         if (!repairResult.success || !repairResult.content) {
-            postError(this.panel, repairResult.error || 'Failed to repair PlantUML content.');
+            postError(this.panel, createReviewErrorPayload(repairResult.error || 'Failed to repair PlantUML content.', {
+                operation: 'repair PlantUML',
+                provider: message.provider,
+                model: message.model,
+                command: message.command,
+                target: message.target,
+                hint: 'Include the generated review and this repair report when filing the issue.'
+            }, {
+                title: 'PlantUML repair failed'
+            }));
             return;
         }
 
