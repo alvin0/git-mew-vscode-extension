@@ -25,6 +25,8 @@ export type ToolOptional = {
   state?: ToolState;
   llmAdapter: ILLMAdapter;
   abortController?: AbortController;
+  sharedStore?: any; // SharedContextStore — typed as `any` to avoid circular dependency, cast in query_context tool
+  queryContextCallCount?: { value: number };
 };
 
 export type ToolExecuteResponse = {

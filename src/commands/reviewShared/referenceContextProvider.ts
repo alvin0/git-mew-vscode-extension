@@ -40,6 +40,9 @@ export interface ReviewReferenceContextOptions {
     systemMessage?: string;
     directPrompt?: string;
     effectiveStrategy?: ContextStrategy;
+    maxSymbols?: number;
+    maxReferenceFiles?: number;
+    tokenBudget?: number;
 }
 
 export interface ReviewReferenceContextMetadata {
@@ -243,7 +246,9 @@ export class ReviewReferenceContextProvider {
         options?: ReviewReferenceContextOptions
     ): Promise<ReviewReferenceContextResult> {
         const mode = options?.mode || 'auto';
-        const expansionTokenCap = computeReferenceExpansionTokenCap(options?.contextWindow || 32768);
+        const maxSymbols = options?.maxSymbols ?? MAX_SYMBOLS_TOTAL;
+        const maxFiles = options?.maxReferenceFiles ?? MAX_EXPANDED_REFERENCE_FILES;
+        const expansionTokenCap = options?.tokenBudget ?? computeReferenceExpansionTokenCap(options?.contextWindow || 32768);
         const decision = options
             ? shouldAutoExpandReferenceContext({
                 mode,
@@ -262,9 +267,9 @@ export class ReviewReferenceContextProvider {
             };
 
         const legacyContext = await this.buildLegacyReferenceContext(changedFiles);
-        const candidates = decision.triggered ? extractCandidateSymbolsFromDiff(changedFiles) : [];
+        const candidates = decision.triggered ? extractCandidateSymbolsFromDiff(changedFiles, maxSymbols, MAX_SYMBOLS_PER_FILE) : [];
         const expanded = decision.triggered
-            ? await this.buildExpandedSymbolContext(changedFiles, candidates, expansionTokenCap)
+            ? await this.buildExpandedSymbolContext(changedFiles, candidates, expansionTokenCap, maxFiles)
             : { context: undefined, symbolsResolved: 0, filesIncluded: 0, truncatedByBudget: false };
 
         const combinedContext = [legacyContext, expanded.context].filter(Boolean).join('\n\n') || undefined;
@@ -356,7 +361,8 @@ export class ReviewReferenceContextProvider {
     private async buildExpandedSymbolContext(
         changedFiles: UnifiedDiffFile[],
         candidates: CandidateSymbol[],
-        tokenBudget: number
+        tokenBudget: number,
+        maxFiles: number = MAX_EXPANDED_REFERENCE_FILES
     ): Promise<ExpansionBuildResult> {
         if (candidates.length === 0 || tokenBudget <= 0) {
             return {
@@ -386,7 +392,7 @@ export class ReviewReferenceContextProvider {
         let truncatedByBudget = false;
 
         for (const candidate of candidates) {
-            if (sectionsByFile.size >= MAX_EXPANDED_REFERENCE_FILES) {
+            if (sectionsByFile.size >= maxFiles) {
                 break;
             }
 
@@ -411,7 +417,7 @@ export class ReviewReferenceContextProvider {
                     continue;
                 }
 
-                if (!sectionsByFile.has(normalizedDefPath) && sectionsByFile.size >= MAX_EXPANDED_REFERENCE_FILES) {
+                if (!sectionsByFile.has(normalizedDefPath) && sectionsByFile.size >= maxFiles) {
                     break;
                 }
 

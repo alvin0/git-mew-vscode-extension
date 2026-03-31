@@ -1,0 +1,583 @@
+# Implementation Plan: Multi-Agent Context Optimization
+
+## Overview
+
+Triển khai Blackboard-based multi-agent review pipeline với 7 file mới và 5 file sửa đổi. Thứ tự implementation theo dependency graph: types → SharedContextStore → ContextBudgetManager → DependencyGraphIndex → AgentPromptBuilder → query_context tool → RiskHypothesisGenerator → Phased MultiAgentExecutor → Service integration → Backward compatibility verification.
+
+Ngôn ngữ: TypeScript. Tất cả code nằm trong VS Code extension project hiện tại.
+
+## Tasks
+
+- [x] 1. Mở rộng core types và interfaces
+  - [x] 1.1 Mở rộng `src/services/llm/orchestrator/orchestratorTypes.ts` với structured output schemas và AgentPrompt optional fields
+    - Thêm interface `CodeReviewerOutput` với fields: `issues: Array<{file: string, location: string, severity: 'critical'|'major'|'minor'|'suggestion', category: 'correctness'|'security'|'performance'|'maintainability'|'testing', description: string, suggestion: string}>`, `affectedSymbols: string[]`, `qualityVerdict: 'Critical'|'Not Bad'|'Safe'|'Good'|'Perfect'`
+    - Thêm interface `FlowDiagramOutput` với fields: `diagrams: Array<{name: string, type: 'activity'|'sequence'|'class'|'ie', plantumlCode: string, description: string}>`, `affectedFlows: string[]`
+    - Thêm interface `ObserverOutput` với fields: `risks: Array<{description: string, severity: 'high'|'medium'|'low', affectedArea: string}>`, `todoItems: Array<{action: string, parallelizable: boolean}>`, `integrationConcerns: string[]`, `hypothesisVerdicts?: Array<{hypothesisIndex: number, verdict: 'confirmed'|'refuted'|'inconclusive', evidence: string}>`
+    - Thêm type `StructuredAgentReport = {role: 'Code Reviewer', structured: CodeReviewerOutput, raw: string} | {role: 'Flow Diagram', structured: FlowDiagramOutput, raw: string} | {role: 'Observer', structured: ObserverOutput, raw: string}`
+    - Thêm interface `RiskHypothesis` với fields: `question: string`, `affectedFiles: string[]`, `evidenceNeeded: string`, `severityEstimate: 'high'|'medium'|'low'`, `source: 'heuristic'|'llm'`
+    - Thêm 3 optional fields vào existing `AgentPrompt` type: `phase?: number`, `outputSchema?: 'code-reviewer'|'flow-diagram'|'observer'`, `sharedStore?: SharedContextStore` — KHÔNG thay đổi existing required fields
+    - Thêm interface `PhasedAgentConfig` với fields: `phase1: AgentPrompt[]`, `phase2: AgentPrompt[]`, `sharedStore: SharedContextStore`, `promptBuilder: AgentPromptBuilder`, `buildContext: AgentPromptBuildContext`, `budgetAllocations: AgentBudgetAllocation[]`
+    - Thêm interface `AgentBudgetAllocation` với fields: `agentRole: string`, `totalBudget: number`, `diffBudget: number`, `referenceBudget: number`, `sharedContextBudget: number`, `reservedForOutput: number`
+    - Thêm interface `BudgetManagerConfig` với fields: `referenceContextRatio: number` (default 0.40), `minReferenceTokens: number` (default 80000), `maxSymbolsFormula: (cw: number) => number`, `maxFilesFormula: (cw: number) => number`, `agentBudgetRatios: Record<string, number>`, `safetyThreshold: number` (default 0.85)
+    - Thêm interface `AgentPromptBuildContext` với fields: `fullDiff: string`, `changedFiles: UnifiedDiffFile[]`, `referenceContext?: string`, `dependencyGraph?: DependencyGraphData`, `sharedContextStore?: SharedContextStore`, `riskHypotheses?: RiskHypothesis[]`, `language: string`, `taskInfo?: string`, `customSystemPrompt?: string`, `customRules?: string`, `customAgentInstructions?: string`
+    - Thêm interface `DependencyGraphData` với fields: `fileDependencies: Map<string, {imports: string[], importedBy: string[]}>`, `symbolMap: Map<string, {definedIn: string, referencedBy: string[], type: 'function'|'class'|'interface'|'type'|'constant'|'enum'}>`, `criticalPaths: Array<{files: string[], changedFileCount: number, description: string}>`
+    - Thêm interface `DependencyGraphConfig` với fields: `maxFiles: number` (default 100), `maxSymbolLookups: number` (default 200), `timeoutMs: number` (default 15000), `criticalPathThreshold: number` (default 3)
+    - Thêm interface `ToolResultCacheEntry` với fields: `toolName: string`, `normalizedArgs: string`, `result: ToolExecuteResponse`, `timestamp: number`
+    - Thêm interface `AgentFinding` với fields: `agentRole: string`, `type: 'issue'|'flow'|'risk'|'todo'`, `data: unknown`, `timestamp: number`
+    - Export tất cả types mới. Import `ToolExecuteResponse` từ `../../../llm-tools/toolInterface`, `UnifiedDiffFile` từ `../contextTypes`
+    - _Requirements: 4.1, 4.2, 4.3, 5.1, 11.1_
+  - [x] 1.2 Mở rộng `ToolOptional` trong `src/llm-tools/toolInterface.ts`
+    - Import `SharedContextStore` type (forward reference hoặc import từ orchestrator)
+    - Thêm `sharedStore?: any` vào `ToolOptional` type (dùng `any` để tránh circular dependency, cast trong query_context tool)
+    - Thêm `queryContextCallCount?: { value: number }` vào `ToolOptional` type
+    - Verify: existing tools (findReferences, getDiagnostics, readFile, getSymbolDefinition, getRelatedFiles, searchCode) vẫn compile không lỗi vì new fields là optional
+    - _Requirements: 10.1, 11.5_
+
+- [x] 2. Implement SharedContextStore
+  - [x] 2.1 Tạo `src/services/llm/orchestrator/SharedContextStore.ts` — Interface + Implementation
+    - Khai báo `SharedContextStore` interface với methods: `getToolResult(toolName, args)`, `setToolResult(toolName, args, result)`, `addAgentFindings(agentRole, findings)`, `getAgentFindings(agentRole?)`, `getDependencyGraph()`, `setDependencyGraph(graph)`, `updateDependencyGraph(patch)`, `setRiskHypotheses(hypotheses)`, `getRiskHypotheses()`, `serializeForAgent(agentRole, tokenBudget)`, `getStats()`
+    - Implement `SharedContextStoreImpl` class:
+      - Private fields: `toolCache = new Map<string, ToolResultCacheEntry>()`, `findings: AgentFinding[] = []`, `graph: DependencyGraphData | undefined`, `hypotheses: RiskHypothesis[] = []`, `stats = { toolCacheHits: 0, toolCacheMisses: 0 }`
+      - `normalizeKey(toolName, args)`: sort Object.keys(args) alphabetically, return `${toolName}::${JSON.stringify(sortedArgs)}`
+      - `getToolResult()`: lookup by normalizeKey, increment stats.toolCacheHits on hit, stats.toolCacheMisses on miss
+      - `setToolResult()`: store `{toolName, normalizedArgs: key, result, timestamp: Date.now()}`
+      - `addAgentFindings()`: push to findings array (append-only, safe for Node.js single-threaded event loop)
+      - `getAgentFindings(agentRole?)`: filter by agentRole if provided, return all if not
+      - `updateDependencyGraph(patch)`: merge fileDependencies Maps (dedupe imports/importedBy arrays with Set), merge symbolMap (dedupe referencedBy), append criticalPaths
+      - `serializeForAgent(agentRole, tokenBudget)`: build sections array with priorities (1=agent summaries highest, 2=hypotheses, 3=dependency graph, 4=tool cache lowest). Use `assembleWithinBudget()`: sort by priority ascending (1 first), iterate adding sections, truncate/skip when over budget. Dependency graph filter: 'full' for Code Reviewer, 'critical-paths' for Flow Diagram, 'summary' for Observer
+      - `serializeFindings(findings)`: format issues as `- [severity] file:location — description`, flows as `- name (type): description`
+      - `getStats()`: return `{toolCacheHits, toolCacheMisses, totalFindings: findings.length}`
+    - Import `TokenEstimatorService` for token counting in serialization. Add private `estimateTokens(text)` helper
+    - Export both interface and implementation class
+    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.7, 9.3, 9.4_
+  - [x] 2.2 Write unit tests cho SharedContextStore — File: `src/test/SharedContextStore.test.ts`
+    - Test `normalizeKey()`: verify `{b: 2, a: 1}` và `{a: 1, b: 2}` produce same key
+    - Test `getToolResult()` cache miss: returns undefined, stats.toolCacheMisses increments
+    - Test `setToolResult()` then `getToolResult()`: returns exact same result object, stats.toolCacheHits increments
+    - Test `getToolResult()` with different tool name but same args: returns undefined (no cross-tool collision)
+    - Test `addAgentFindings()` + `getAgentFindings()`: add findings for 'Code Reviewer', verify retrievable. Add for 'Flow Diagram', verify both roles retrievable independently
+    - Test `getAgentFindings()` without role filter: returns all findings from all agents
+    - Test `setDependencyGraph()` + `getDependencyGraph()`: round-trip
+    - Test `updateDependencyGraph()`: merge new fileDependencies into existing graph, verify imports/importedBy arrays are deduplicated
+    - Test `updateDependencyGraph()` with new symbolMap entries: verify existing symbols get referencedBy merged, new symbols added
+    - Test `serializeForAgent('Code Reviewer', budget)`: verify output contains dependency graph as 'full' filter
+    - Test `serializeForAgent('Observer', budget)`: verify output contains agent findings from other agents, risk hypotheses, graph as 'summary'
+    - Test `serializeForAgent()` with very small tokenBudget (200): verify highest priority sections included, lowest truncated/omitted
+    - Test `serializeForAgent()` with empty store: returns empty string
+    - Test `getStats()`: verify toolCacheHits and toolCacheMisses counts are accurate after multiple get/set operations
+  - [ ]* 2.3 Write property test: Tool result cache round-trip — File: `src/test/SharedContextStore.test.ts`
+    - Install `fast-check` if not present: add to devDependencies in package.json
+    - Use `fc.record({toolName: fc.constantFrom('read_file','find_references','get_diagnostics','search_code','get_related_files','get_symbol_definition'), args: fc.dictionary(fc.string(), fc.oneof(fc.string(), fc.integer()))})` to generate random tool calls
+    - For each generated tool call: `store.setToolResult(name, args, mockResult)` then assert `store.getToolResult(name, args)` returns identical result
+    - Assert `store.getStats().toolCacheHits` increments on second call
+    - Min 100 iterations. Tag: `// Feature: multi-agent-context-optimization, Property 1: Tool result cache round-trip`
+    - **Property 1: Tool result cache round-trip**
+    - **Validates: Requirements 1.2, 1.3, 10.2**
+  - [ ]* 2.3 Write property test: Agent findings persistence — File: `src/test/SharedContextStore.test.ts`
+    - Generate random `AgentFinding[]` with `fc.array(fc.record({agentRole: fc.constantFrom('Code Reviewer','Flow Diagram','Observer'), type: fc.constantFrom('issue','flow','risk','todo'), data: fc.anything(), timestamp: fc.nat()}))`
+    - `store.addAgentFindings(role, findings)` then assert `store.getAgentFindings(role)` contains all added findings
+    - Assert findings from different roles don't interfere
+    - **Property 2: Agent findings persistence**
+    - **Validates: Requirements 1.4, 1.5**
+  - [ ]* 2.4 Write property test: Concurrent SharedContextStore write safety — File: `src/test/SharedContextStore.test.ts`
+    - Simulate concurrent writes: `Promise.all([addFindings('Code Reviewer', [...]), addFindings('Flow Diagram', [...])])`
+    - Assert all findings from both agents are preserved in store
+    - Assert no data corruption (findings.length === total added)
+    - **Property 23: Concurrent SharedContextStore write safety**
+    - **Validates: Requirements 9.3**
+
+- [x] 3. Implement ContextBudgetManager
+  - [x] 3.1 Tạo `src/services/llm/orchestrator/ContextBudgetManager.ts`
+    - Export `DEFAULT_BUDGET_CONFIG: BudgetManagerConfig` with: `referenceContextRatio: 0.40`, `minReferenceTokens: 80_000`, `maxSymbolsFormula: (cw) => Math.min(Math.floor(cw / 2500), 120)`, `maxFilesFormula: (cw) => Math.min(Math.floor(cw / 5000), 40)`, `agentBudgetRatios: {'Code Reviewer': 0.40, 'Flow Diagram': 0.35, 'Observer': 0.25}`, `safetyThreshold: 0.85`
+    - `computeReferenceContextBudget(contextWindow)`:
+      - `computed = Math.floor(contextWindow * this.config.referenceContextRatio)`
+      - If `computed >= this.config.minReferenceTokens` → return computed
+      - Else: `maxAvailable = contextWindow - Math.floor(contextWindow * 0.20)` (estimate 20% for system+diff)
+      - If `maxAvailable >= minReferenceTokens` → return minReferenceTokens
+      - Else: `console.warn(...)`, return `Math.max(4500, maxAvailable)` (legacy fallback)
+    - `computeMaxSymbols(contextWindow)`: return `this.config.maxSymbolsFormula(contextWindow)` — 200k→80, 128k→51, 32k→12
+    - `computeMaxReferenceFiles(contextWindow)`: return `this.config.maxFilesFormula(contextWindow)` — 200k→40, 128k→25, 32k→6
+    - `allocateAgentBudgets(contextWindow, maxOutputTokens, systemMessageTokens, diffTokens)`:
+      - `safetyMargin = contextWindow > 128000 ? 8192 : contextWindow > 32000 ? 4096 : 2048`
+      - `totalInputBudget = contextWindow - safetyMargin`
+      - `availableForAgents = totalInputBudget - systemMessageTokens`
+      - `referenceBudget = this.computeReferenceContextBudget(contextWindow)`
+      - `remainingAfterReference = availableForAgents - referenceBudget`
+      - For each role in agentBudgetRatios: `agentTotal = Math.floor(remainingAfterReference * ratio)`, compute diffBudget (CR: 100%, FD: 35%, Obs: 15% of diffTokens), referenceBudget (CR: 50%, FD: 30%, Obs: 20% of referenceBudget), sharedContextBudget (30% of agentTotal)
+    - `enforceGlobalBudget(allocations, contextWindow)`:
+      - `safetyLimit = Math.floor(contextWindow * this.config.safetyThreshold)`
+      - `totalEstimated = sum of (diffBudget + referenceBudget + sharedContextBudget) for all allocations`
+      - If `totalEstimated <= safetyLimit` → return allocations unchanged
+      - Else: `overageRatio = safetyLimit / totalEstimated`, reduce referenceBudget and sharedContextBudget proportionally, keep diffBudget unchanged
+    - Constructor takes `BudgetManagerConfig` and `TokenEstimatorService`
+    - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8_
+  - [x] 3.2 Write unit tests cho ContextBudgetManager — File: `src/test/ContextBudgetManager.test.ts`
+    - Test `computeReferenceContextBudget(200000)`: expect `Math.floor(200000 * 0.40) = 80000`
+    - Test `computeReferenceContextBudget(128000)`: expect `Math.max(80000, Math.floor(128000 * 0.40))` — 128k * 0.40 = 51200 < 80000 → expect 80000
+    - Test `computeReferenceContextBudget(100000)`: context window nhỏ, 100k * 0.40 = 40000 < 80000, nhưng maxAvailable = 100k - 20k = 80000 → expect 80000
+    - Test `computeReferenceContextBudget(50000)`: 50k * 0.40 = 20000 < 80000, maxAvailable = 50k - 10k = 40000 < 80000 → expect 40000 (with console.warn)
+    - Test `computeMaxSymbols(200000)`: expect `min(floor(200000/2500), 120) = min(80, 120) = 80`
+    - Test `computeMaxSymbols(32000)`: expect `min(floor(32000/2500), 120) = min(12, 120) = 12`
+    - Test `computeMaxReferenceFiles(200000)`: expect `min(floor(200000/5000), 40) = min(40, 40) = 40`
+    - Test `computeMaxReferenceFiles(32000)`: expect `min(floor(32000/5000), 40) = min(6, 40) = 6`
+    - Test `allocateAgentBudgets(200000, 128000, 3000, 15000)`: verify Code Reviewer gets 40%, Flow Diagram 35%, Observer 25% of remaining budget
+    - Test `allocateAgentBudgets()`: verify Code Reviewer diffBudget = 100% of diffTokens, Flow Diagram = 35%, Observer = 15%
+    - Test `enforceGlobalBudget()` when total ≤ 85%: returns allocations unchanged
+    - Test `enforceGlobalBudget()` when total > 85%: referenceBudget and sharedContextBudget reduced, diffBudget unchanged
+    - Test with custom `BudgetManagerConfig` overrides: verify custom ratios are used
+  - [ ]* 3.3 Write property test: Dynamic budget scales with context window — File: `src/test/ContextBudgetManager.test.ts`
+    - Generate `contextWindow` with `fc.integer({min: 32000, max: 1000000})`
+    - Assert `computeReferenceContextBudget(cw) >= 80000 || computeReferenceContextBudget(cw) >= Math.max(4500, cw - Math.floor(cw*0.20))`
+    - Assert `computeReferenceContextBudget(cw) === Math.floor(cw * 0.40)` when `cw * 0.40 >= 80000`
+    - **Property 7**. **Validates: Requirements 3.1, 3.2, 3.3**
+  - [ ]* 3.3 Write property test: Dynamic limits follow formulas — File: `src/test/ContextBudgetManager.test.ts`
+    - Generate `contextWindow` with `fc.integer({min: 10000, max: 1000000})`
+    - Assert `computeMaxSymbols(cw) === Math.min(Math.floor(cw/2500), 120)`
+    - Assert `computeMaxReferenceFiles(cw) === Math.min(Math.floor(cw/5000), 40)`
+    - **Property 8**. **Validates: Requirements 3.4, 3.5**
+  - [ ]* 3.4 Write property test: Agent budget allocation ratios — File: `src/test/ContextBudgetManager.test.ts`
+    - Generate `contextWindow`, `systemTokens`, `diffTokens` with fc.integer
+    - Call `allocateAgentBudgets()`, assert sum of totalBudget ratios ≈ 40%/35%/25% within rounding tolerance (±1 token)
+    - **Property 9**. **Validates: Requirements 3.6**
+  - [ ]* 3.5 Write property test: Global budget safety enforcement — File: `src/test/ContextBudgetManager.test.ts`
+    - Generate allocations where total > 85% context window
+    - Call `enforceGlobalBudget()`, assert total ≤ 85% context window
+    - Assert diffBudget unchanged after enforcement
+    - **Property 10**. **Validates: Requirements 3.7**
+
+- [x] 4. Checkpoint — Ensure all tests pass
+  - Run `npm test` hoặc test runner hiện tại. Verify tasks 1-3 compile và tests pass. Ask user nếu có issues.
+
+- [x] 5. Implement DependencyGraphIndex
+  - [x] 5.1 Tạo `src/services/llm/orchestrator/DependencyGraphIndex.ts`
+    - Export `DEFAULT_GRAPH_CONFIG: DependencyGraphConfig` with: `maxFiles: 100`, `maxSymbolLookups: 200`, `timeoutMs: 15_000`, `criticalPathThreshold: 3`
+    - Constructor nhận `DependencyGraphConfig`
+    - `async build(changedFiles: UnifiedDiffFile[])`:
+      - Tạo `AbortController` với `setTimeout(timeoutMs)` để enforce timeout
+      - Khởi tạo `fileDependencies = new Map()`, `symbolMap = new Map()`, counters `filesScanned = 0`, `symbolLookups = 0`
+      - Phase A — Scan changed files (ưu tiên): for each changedFile (skip binary/deleted), if `filesScanned < maxFiles`:
+        - `scanImports(filePath)` → add to fileDependencies
+        - `extractSymbols(filePath)` → add to symbolMap with `definedIn: filePath`
+        - `filesScanned++`
+      - Phase B — Scan direct neighbors: for each import found in Phase A, if `filesScanned < maxFiles` and file not already scanned:
+        - `scanImports(neighborPath)` → add to fileDependencies, build importedBy reverse map
+        - `filesScanned++`
+      - Phase C — Find references: for each symbol in symbolMap, if `symbolLookups < maxSymbolLookups`:
+        - `findSymbolReferences(uri, position)` → update symbolMap.referencedBy
+        - `symbolLookups++`
+      - Phase D — Compute critical paths: `computeCriticalPaths(fileDependencies, changedFilePaths)`
+      - Return `DependencyGraphData`. Wrap entire build in try/catch, return partial results on timeout/error
+    - `private async scanImports(filePath)`:
+      - `const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath))`
+      - `const links = await vscode.commands.executeCommand<vscode.DocumentLink[]>('vscode.executeLinkProvider', doc.uri)`
+      - Filter links where `link.target?.scheme === 'file'`, return `link.target.fsPath` array
+    - `private async extractSymbols(filePath)`:
+      - `const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath))`
+      - `const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>('vscode.executeDocumentSymbolProvider', doc.uri)`
+      - Flatten nested symbols, filter exported ones (SymbolKind: Function, Class, Interface, Enum, Constant, TypeParameter)
+      - Return `Array<{name, type, range}>` — type mapped from `vscode.SymbolKind`
+    - `private async findSymbolReferences(uri, position)`:
+      - `const locations = await vscode.commands.executeCommand<vscode.Location[]>('vscode.executeReferenceProvider', uri, position)`
+      - Return unique file paths from locations, excluding the definition file itself
+    - `private computeCriticalPaths(fileDeps, changedFilePaths)`:
+      - Algorithm: Union-Find on changed files connected by dependency edges
+      - For each changed file F: BFS forward (F → imports that are also changed) + BFS backward (F → importedBy that are also changed)
+      - Group into connected components. Filter components with `changedFileCount >= criticalPathThreshold`
+      - Sort by changedFileCount descending. Generate description: `"Chain: A → B → C (N changed files)"`
+    - `static serializeForPrompt(data, filter)`:
+      - `'full'`: render all fileDependencies + symbolMap (top 20 by reference count) + criticalPaths
+      - `'critical-paths'`: render only criticalPaths + symbolMap entries referenced in critical paths
+      - `'summary'`: render file count, symbol count, critical path count + critical path descriptions only
+      - Format: markdown sections with `## Dependency Graph`, `### File Dependencies`, `### Critical Paths`, `### Symbol Map`
+    - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.8, 7.9, 7.10_
+  - [x] 5.2 Write unit tests cho DependencyGraphIndex — File: `src/test/DependencyGraphIndex.test.ts`
+    - Mock `vscode.commands.executeCommand` to return controlled DocumentLinks, DocumentSymbols, Locations
+    - Test `build()` with 3 changed files: verify fileDependencies has entries for all 3 files with correct imports/importedBy
+    - Test `build()` with binary/deleted files: verify they are skipped
+    - Test `build()` scans direct neighbors: if file A imports file B (not changed), verify B appears in fileDependencies
+    - Test `extractSymbols()`: mock DocumentSymbolProvider returning Function, Class, Interface symbols. Verify symbolMap has correct entries with type mapping
+    - Test `findSymbolReferences()`: mock ReferenceProvider returning locations in 3 files. Verify symbolMap.referencedBy contains those files
+    - Test `computeCriticalPaths()` with chain A→B→C (all changed): verify 1 critical path with changedFileCount=3
+    - Test `computeCriticalPaths()` with chain A→B→C where only A,C changed: verify no critical path (changedFileCount=2 < threshold 3)
+    - Test `computeCriticalPaths()` with circular dependency A→B→A: verify no infinite loop, produces valid result
+    - Test `build()` with > 100 files: verify filesScanned stops at 100
+    - Test `build()` with > 200 symbols: verify symbolLookups stops at 200
+    - Test `build()` timeout: mock slow VS Code API (delay > 15s). Verify returns partial results without throwing
+    - Test `build()` when VS Code API throws: verify returns empty graph without throwing
+    - Test `serializeForPrompt(data, 'full')`: verify output contains all fileDependencies, symbolMap, criticalPaths
+    - Test `serializeForPrompt(data, 'critical-paths')`: verify output contains only criticalPaths and related symbols
+    - Test `serializeForPrompt(data, 'summary')`: verify output contains counts and critical path descriptions only
+  - [ ]* 5.3 Write property test: Pre-analysis produces complete dependency graph — File: `src/test/DependencyGraphIndex.test.ts`
+    - Mock VS Code APIs: `vscode.commands.executeCommand` returns mock DocumentLinks, DocumentSymbols, Locations
+    - Generate random changed files with `fc.array(fc.record({filePath: fc.string(), ...}))`
+    - Assert result has fileDependencies, symbolMap, criticalPaths keys
+    - Assert each scanned file appears in fileDependencies
+    - **Property 17**. **Validates: Requirements 7.2, 7.3, 7.4, 7.5**
+  - [ ]* 5.3 Write property test: Critical path threshold invariant — File: `src/test/DependencyGraphIndex.test.ts`
+    - Generate random dependency graphs and changed file sets
+    - Assert every entry in criticalPaths has `changedFileCount >= 3`
+    - **Property 18**. **Validates: Requirements 7.6**
+  - [ ]* 5.4 Write property test: Pre-analysis resource limits — File: `src/test/DependencyGraphIndex.test.ts`
+    - Generate large input (200+ files). Assert filesScanned ≤ 100, symbolLookups ≤ 200
+    - Mock slow VS Code API (setTimeout). Assert build completes within 15s + tolerance
+    - **Property 19**. **Validates: Requirements 7.8**
+  - [ ]* 5.5 Write property test: Pre-analysis fallback on failure — File: `src/test/DependencyGraphIndex.test.ts`
+    - Mock VS Code API to throw errors. Assert build returns empty/partial graph without throwing
+    - **Property 20**. **Validates: Requirements 7.9**
+
+- [x] 6. Implement AgentPromptBuilder
+  - [x] 6.1 Tạo `src/services/llm/orchestrator/AgentPromptBuilder.ts`
+    - Constructor nhận `ContextBudgetManager` và `TokenEstimatorService`
+    - `buildCodeReviewerPrompt(ctx, budget)`:
+      - systemMessage: `ctx.customSystemPrompt` + Code Reviewer specific instructions (correctness, security, performance, maintainability, testing). NO REVIEW_OUTPUT_CONTRACT. NO flow diagram or observer instructions
+      - prompt: `ctx.fullDiff` (full, truncated to budget.diffBudget) + `ctx.referenceContext` (truncated to budget.referenceBudget) + dependency graph serialized as 'full' (truncated to remaining budget) + shared context from store (truncated to budget.sharedContextBudget)
+      - tools: `[findReferencesTool, getDiagnosticsTool, readFileTool, getSymbolDefinitionTool, searchCodeTool, queryContextTool]`
+      - Return `AgentPrompt` with `role: 'Code Reviewer'`, `phase: 1`, `outputSchema: 'code-reviewer'`, `selfAudit: true`, `maxIterations: 3`, `sharedStore: ctx.sharedContextStore`
+    - `buildFlowDiagramPrompt(ctx, budget)`:
+      - systemMessage: Flow Diagram specific instructions (reconstruct control/data flow, PlantUML). NO review instructions
+      - prompt: `filterStructuralDiff(ctx.fullDiff, ctx.changedFiles)` (truncated to budget.diffBudget) + dependency graph serialized as 'critical-paths' + shared context
+      - tools: `[findReferencesTool, getRelatedFilesTool, readFileTool, getSymbolDefinitionTool, queryContextTool]`
+      - Return `AgentPrompt` with `role: 'Flow Diagram'`, `phase: 1`, `outputSchema: 'flow-diagram'`, `selfAudit: true`, `maxIterations: 3`
+    - `buildObserverPrompt(ctx, budget)`:
+      - systemMessage: Observer specific instructions (hidden risks, edge cases, integration regressions, max 4 todo items). Include hypothesis investigation instructions if hypotheses present
+      - prompt: `buildDiffSummary(ctx.changedFiles)` (NOT full diff) + shared context from store (Phase 1 findings + hypotheses, truncated to budget.sharedContextBudget) + dependency graph serialized as 'summary'
+      - tools: `[getDiagnosticsTool, getRelatedFilesTool, readFileTool, queryContextTool]`
+      - Return `AgentPrompt` with `role: 'Observer'`, `phase: 2`, `outputSchema: 'observer'`, `selfAudit: true`, `maxIterations: 3`
+    - `buildSynthesizerPrompt(agentReports, diffSummary)`:
+      - Import `REVIEW_OUTPUT_CONTRACT` from prompts
+      - Step 1: Extract structured data from each report
+      - Step 2: Deduplicate issues — for each CR issue, find matching Observer risk by `risk.affectedArea.includes(issue.file) && wordOverlapRatio(issue.description, risk.description) > 0.4`. Merge matched pairs, keep unmatched separately
+      - Step 3: Map hypothesis verdicts to risk sections
+      - Step 4: Embed PlantUML diagrams from Flow Diagram
+      - Step 5: Assemble: `REVIEW_OUTPUT_CONTRACT + diffSummary + deduplicatedIssues + diagrams + riskMapping + rawReports`
+      - Return assembled string
+    - `private filterStructuralDiff(diff, changedFiles)`:
+      - For each file's diff: parse into hunks (split on `@@` lines)
+      - For each hunk: keep line if matches `/^[+-]\s*(export |import |class |interface |type |enum |function |async function |const \w+ = \(|public |private |protected |abstract |static )/`
+      - Keep `@@` hunk headers and `---`/`+++` file headers
+      - Keep 2 context lines around each structural change
+      - Drop hunks with zero structural changes
+      - Return filtered diff string
+    - `private buildDiffSummary(changedFiles)`:
+      - For each file: count `+` lines (added) and `-` lines (removed), extract function/class names from `@@` hunk headers
+      - Format: `## Changed Files Summary\n` + per-file `- {relativePath} ({statusLabel}): +{added}/-{removed} lines, affects: {symbols}`
+    - `private wordOverlapRatio(a, b)`: split both strings on whitespace, filter words > 3 chars, compute `intersection.size / min(setA.size, setB.size)`
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 4.4, 7.7_
+  - [x] 6.2 Write unit tests cho AgentPromptBuilder — File: `src/test/AgentPromptBuilder.test.ts`
+    - Test `buildCodeReviewerPrompt()`: verify prompt contains full diff text, does NOT contain 'REVIEW_OUTPUT_CONTRACT', does NOT contain 'Flow Diagram' or 'Observer' role instructions
+    - Test `buildCodeReviewerPrompt()`: verify tools array includes findReferencesTool, getDiagnosticsTool, readFileTool, getSymbolDefinitionTool, searchCodeTool, queryContextTool
+    - Test `buildCodeReviewerPrompt()`: verify returned AgentPrompt has `phase: 1`, `outputSchema: 'code-reviewer'`, `selfAudit: true`
+    - Test `buildFlowDiagramPrompt()`: verify prompt contains structural diff only (function sigs, class defs, imports), does NOT contain logic-only changes (if/else, variable assignments)
+    - Test `buildFlowDiagramPrompt()`: verify prompt contains dependency graph serialized as 'critical-paths'
+    - Test `buildObserverPrompt()`: verify prompt contains diff summary ("+N/-M lines, affects: symbols"), does NOT contain full diff text
+    - Test `buildObserverPrompt()` with Phase 1 findings in store: verify prompt contains serialized Code Reviewer issues and Flow Diagram flows
+    - Test `buildObserverPrompt()` with risk hypotheses: verify prompt contains each hypothesis question and "Investigate each hypothesis" instruction
+    - Test `buildObserverPrompt()` without Phase 1 findings (empty store): verify prompt still builds successfully with diff summary + graph only
+    - Test `buildSynthesizerPrompt()`: verify output contains 'REVIEW_OUTPUT_CONTRACT', all 3 agent role names, diff summary
+    - Test `buildSynthesizerPrompt()` deduplication: create CR issue and Observer risk with same file + overlapping description → verify merged into single item
+    - Test `buildSynthesizerPrompt()` deduplication: create CR issue and Observer risk with different files → verify both kept separately
+    - Test `buildSynthesizerPrompt()` with PlantUML diagrams: verify diagrams embedded with ```plantuml fences
+    - Test `buildSynthesizerPrompt()` with hypothesis verdicts: verify verdicts section included
+    - Test `filterStructuralDiff()`: input diff with mix of structural (function sig change) and logic (if/else change) → verify only structural lines kept
+    - Test `filterStructuralDiff()`: input diff with only logic changes → verify returns minimal diff (headers only)
+    - Test `buildDiffSummary()`: 3 changed files → verify output has 3 lines with correct +added/-removed counts and affected symbols
+    - Test `wordOverlapRatio()`: "user authentication failed" vs "authentication failure for user" → expect > 0.4. "database connection" vs "UI rendering" → expect < 0.4
+  - [ ]* 6.3 Write property test: Role-specific prompt content filtering — File: `src/test/AgentPromptBuilder.test.ts`
+    - Generate random diffs and reference contexts
+    - Assert Code Reviewer prompt contains full diff, does NOT contain 'REVIEW_OUTPUT_CONTRACT'
+    - Assert Flow Diagram prompt does NOT contain non-structural diff lines
+    - Assert Observer prompt does NOT contain full diff, DOES contain 'Changed Files Summary'
+    - **Property 5**. **Validates: Requirements 2.1-2.5, 7.7**
+  - [ ]* 6.3 Write property test: Synthesizer prompt completeness — File: `src/test/AgentPromptBuilder.test.ts`
+    - Generate random StructuredAgentReport arrays
+    - Assert Synthesizer prompt contains 'REVIEW_OUTPUT_CONTRACT', all agent role names, diff summary
+    - **Property 6**. **Validates: Requirements 2.6**
+  - [ ]* 6.4 Write property test: Observer receives latest Phase 1 context — File: `src/test/AgentPromptBuilder.test.ts`
+    - Create SharedContextStore, add Code Reviewer + Flow Diagram findings
+    - Build Observer prompt, assert it contains serialized findings from both agents
+    - **Property 3**. **Validates: Requirements 1.6, 5.3, 9.4**
+  - [ ]* 6.5 Write property test: Shared context truncation priority — File: `src/test/AgentPromptBuilder.test.ts`
+    - Create store with large tool cache + small agent summaries. Set small token budget
+    - Assert serialized output contains agent summaries (priority 1) but truncates/omits tool cache (priority 4)
+    - **Property 4**. **Validates: Requirements 1.7**
+  - [ ]* 6.6 Write property test: Risk hypotheses injected into Observer prompt — File: `src/test/AgentPromptBuilder.test.ts`
+    - Create store with risk hypotheses. Build Observer prompt
+    - Assert prompt contains each hypothesis question and "Investigate each hypothesis" instruction
+    - **Property 22**. **Validates: Requirements 8.4**
+
+- [x] 7. Checkpoint — Ensure all tests pass
+  - Run test suite. Verify tasks 1-6 compile and all tests pass.
+
+- [x] 8. Implement query_context tool
+  - [x] 8.1 Tạo `src/llm-tools/tools/queryContext.ts`
+    - Export `queryContextTool: FunctionCall` với `id: 'query_context'`
+    - `functionCalling`: name `'query_context'`, description giải thích 4 query types, parameters: `query_type: string` (required, enum-like description), `target: string` (required)
+    - `execute(args, optional)`:
+      - Extract `store = optional?.sharedStore as SharedContextStore`. If no store → return error description
+      - Extract `counter = optional?.queryContextCallCount`. If counter exists: `counter.value++`, if `> 5` → return call limit error
+      - `switch(args.query_type)`:
+        - `'imports_of'`: check `store.getDependencyGraph()?.symbolMap.get(target)` → return referencedBy. Fallback to `fileDependencies.get(target)?.importedBy`. Fallback to VS Code API call + cache
+        - `'dependency_chain'`: BFS from target file using fileDependencies, return chain as formatted string
+        - `'references_of'`: check `store.getToolResult('find_references', {symbol: target})`. If miss → execute VS Code `vscode.executeReferenceProvider` + cache in store
+        - `'cached_result'`: check `store.getToolResult('read_file', {filename: target})`. Return cached or "No cached result"
+        - default: return error with valid types list
+      - Truncate result: `tokenEstimator.estimateTextTokens(result) > 2000` → slice to `2000 * 4` chars + `[truncated]`
+      - Return `{description: '[query_context] ' + result, contentType: 'text'}`
+    - Helper `fetchAndCacheReferences(target, store)`: execute `vscode.executeReferenceProvider`, format result, `store.setToolResult(...)`, return formatted string
+    - Helper `buildDependencyChain(target, graph)`: BFS from target, return `"File: target\n→ imports: A, B\n→ A imports: C, D\n..."` (max depth 5)
+    - _Requirements: 10.1, 10.2, 10.3, 10.4_
+  - [x] 8.2 Write unit tests cho query_context tool — File: `src/test/queryContext.test.ts`
+    - Test `execute()` without sharedStore: returns error description "Shared context store not available"
+    - Test `execute()` with `query_type: 'imports_of'` and symbol in symbolMap: returns definedIn + referencedBy list
+    - Test `execute()` with `query_type: 'imports_of'` and file in fileDependencies: returns importedBy list
+    - Test `execute()` with `query_type: 'imports_of'` and target not in store: verify VS Code API called, result cached in store, returned to caller
+    - Test `execute()` with `query_type: 'dependency_chain'`: verify BFS chain output format
+    - Test `execute()` with `query_type: 'references_of'` and cached result: returns cached without API call
+    - Test `execute()` with `query_type: 'references_of'` and no cache: verify API called + cached
+    - Test `execute()` with `query_type: 'cached_result'` and existing cache: returns cached read_file result
+    - Test `execute()` with `query_type: 'cached_result'` and no cache: returns "No cached result" message
+    - Test `execute()` with invalid `query_type`: returns error with valid types list
+    - Test call count limit: create counter `{value: 0}`, call execute 5 times → all succeed. 6th call → returns "Call limit reached" error
+    - Test token truncation: mock store to return very large result (> 8000 chars). Verify output truncated with "[truncated to 2000 token limit]"
+    - Test call count reset: create new counter `{value: 0}` (simulating new iteration), verify calls succeed again
+  - [x] 8.3 Export `queryContextTool` từ `src/llm-tools/tools/index.ts`
+    - Add line: `export * from './queryContext';` after existing exports
+    - _Requirements: 10.1_
+  - [ ]* 8.4 Write property test: query_context token and call limits — File: `src/test/queryContext.test.ts`
+    - Generate random query_type and target. Mock store with large data
+    - Assert result description length ≤ 2000 tokens (estimated)
+    - Call 6 times in sequence with same counter object, assert 6th call returns error
+    - **Property 24**. **Validates: Requirements 10.4**
+  - [ ]* 8.4 Write property test: query_context cache-then-fetch — File: `src/test/queryContext.test.ts`
+    - Mock VS Code API. Call with data not in store → assert API called + result cached
+    - Call again with same args → assert API NOT called, result from cache
+    - **Property 25**. **Validates: Requirements 10.3**
+
+- [x] 9. Implement RiskHypothesisGenerator
+  - [x] 9.1 Tạo `src/services/llm/orchestrator/RiskHypothesisGenerator.ts`
+    - Constructor nhận `TokenEstimatorService`
+    - `async generate(codeReviewerOutput, flowDiagramOutput, dependencyGraph, adapter, signal?)`:
+      - `heuristics = this.generateHeuristicHypotheses(findings, graph)` — zero LLM cost
+      - If `heuristics.length < 8`: try `llmHypotheses = await this.generateLLMHypotheses(heuristics, summaries, adapter, signal)` — catch errors, fallback to heuristics only
+      - Combine, deduplicate by question similarity, slice to max 8
+      - Return `RiskHypothesis[]`
+    - `private generateHeuristicHypotheses(findings, graph)` — 8 rules:
+      - Rule 1 (API change): For each symbol in graph.symbolMap where `referencedBy.length >= 2` AND symbol's file is changed → hypothesis about consumer impact
+      - Rule 2 (Cross-file chain): For each criticalPath with `changedFileCount >= 3` → hypothesis about data flow consistency
+      - Rule 3 (Deleted export): Scan diff for lines matching `/^-\s*export\s+(function|class|const|interface|type|enum)\s+(\w+)/` → hypothesis about consumers
+      - Rule 4 (New dependency): Scan diff for lines matching `/^\+\s*import\s+/` → hypothesis about circular dependency
+      - Rule 5 (Error handling): Scan diff for changes in `try/catch/throw/Error` patterns → hypothesis about caller preparedness
+      - Rule 6 (Config change): Check if any changedFile matches `*.config.*`, `.env*`, `package.json` → hypothesis about environment compatibility
+      - Rule 7 (Test gap): For each changed source file, check if corresponding `.test.` or `.spec.` file is also changed → hypothesis about test coverage
+      - Rule 8 (Schema change): Scan diff for `migration`, `schema`, `model`, `entity`, `dto` keywords → hypothesis about query/DTO updates
+      - Each rule creates `RiskHypothesis` with `source: 'heuristic'`, appropriate `severityEstimate`, `affectedFiles` from graph
+    - `private async generateLLMHypotheses(heuristics, summaries, adapter, signal?)`:
+      - Build prompt: "Given these Phase 1 findings and existing hypotheses, generate additional risk hypotheses not covered. Output JSON array of {question, affectedFiles, evidenceNeeded, severityEstimate}. Max 4 additional hypotheses."
+      - Call `adapter.generateText(prompt, {systemMessage: '...', maxTokens: 2000})`
+      - Parse JSON response, validate each hypothesis has required fields
+      - Set `source: 'llm'` on each. Return parsed array. On parse failure → return empty array
+    - _Requirements: 8.1, 8.2, 8.3, 8.5, 8.6_
+  - [x] 9.2 Write unit tests cho RiskHypothesisGenerator — File: `src/test/RiskHypothesisGenerator.test.ts`
+    - Test Rule 1 (API change): create graph with symbol X in changed file, referencedBy 3 files → verify hypothesis generated about consumer impact
+    - Test Rule 2 (Cross-file chain): create graph with criticalPath of 3 changed files → verify hypothesis about data flow consistency
+    - Test Rule 3 (Deleted export): create diff with `- export function foo()` → verify hypothesis about consumers of foo
+    - Test Rule 4 (New dependency): create diff with `+ import { Bar } from './bar'` → verify hypothesis about circular dependency
+    - Test Rule 5 (Error handling): create diff with changed try/catch block → verify hypothesis about caller preparedness
+    - Test Rule 6 (Config change): create changedFile matching `*.config.ts` → verify hypothesis about environment compatibility
+    - Test Rule 7 (Test gap): create changed source file without corresponding test file in changed files → verify hypothesis about test coverage
+    - Test Rule 8 (Schema change): create diff containing "migration" keyword → verify hypothesis about query/DTO updates
+    - Test `generate()` with all rules triggering: verify max 8 hypotheses returned (not more)
+    - Test `generate()` with LLM call success: mock adapter.generateText returning 2 additional hypotheses → verify total ≤ 8, LLM hypotheses have `source: 'llm'`
+    - Test `generate()` with LLM call failure: mock adapter.generateText throwing → verify returns heuristic hypotheses only, no error thrown
+    - Test `generate()` with LLM returning invalid JSON: verify falls back to heuristic hypotheses only
+    - Test `generate()` with empty Phase 1 findings: verify returns empty array or minimal hypotheses from graph only
+    - Test each hypothesis has required fields: question (non-empty string), affectedFiles (string[]), evidenceNeeded (non-empty string), severityEstimate (valid enum value), source ('heuristic' or 'llm')
+  - [ ]* 9.3 Write property test: Risk hypothesis structure and limits — File: `src/test/RiskHypothesisGenerator.test.ts`
+    - Generate random CodeReviewerOutput, FlowDiagramOutput, DependencyGraphData
+    - Mock adapter.generateText to return valid JSON
+    - Assert result.length ≤ 8
+    - Assert each hypothesis has all required fields: question (string), affectedFiles (string[]), evidenceNeeded (string), severityEstimate (valid enum)
+    - **Property 21**. **Validates: Requirements 8.2, 8.6**
+
+- [x] 10. Implement Phased MultiAgentExecutor
+  - [x] 10.1 Mở rộng `src/services/llm/orchestrator/MultiAgentExecutor.ts`
+    - Add `executePhasedAgents(config: PhasedAgentConfig, adapter, signal?, request?)` method:
+      - Phase 1: reuse existing worker pool pattern (`Promise.all` with `runNext` closure). Wrap each agent in try/catch, store Error on failure instead of throwing
+      - After Phase 1: iterate `phase1Results`, call `parseStructuredOutput(rawText, agent.outputSchema)` for each successful result. Store parsed findings in `config.sharedStore.addAgentFindings()`
+      - Between phases: instantiate `RiskHypothesisGenerator`, call `generate()` with Phase 1 structured outputs + dependency graph. Store hypotheses in `config.sharedStore.setRiskHypotheses()`. Wrap in try/catch — on failure, continue without hypotheses
+      - Phase 2: call `config.promptBuilder.buildObserverPrompt()` with updated sharedStore (now contains Phase 1 findings + hypotheses). Execute Observer via `this.runAgent()`
+      - Combine results: filter Phase 1 strings (skip Errors) + Observer result. Return string array
+      - Progress messages: `"Executing Code Reviewer and Flow Diagram agents..."` before Phase 1, `"Generating risk hypotheses..."` between phases, `"Observer analyzing with context from other agents..."` before Phase 2
+    - Add `private parseStructuredOutput(rawText: string, schema?: string): StructuredAgentReport | null`:
+      - Extract body after `### Agent: {role}\n\n` using regex
+      - Try extract JSON: first try ` ```json...``` ` block, then try `{...}` match
+      - Parse JSON, validate: `'code-reviewer'` → check `Array.isArray(parsed.issues)`, `'flow-diagram'` → check `Array.isArray(parsed.diagrams)`, `'observer'` → check `Array.isArray(parsed.risks)`
+      - Return `StructuredAgentReport` on success, `null` on failure (log warning)
+    - Add `private async runObserverSelfAudit(agent, adapter, lastResponse, sharedStore, signal?, request?)`:
+      - Build checklist from `sharedStore.getAgentFindings('Code Reviewer')` → format each issue as numbered checklist item with "Have you assessed hidden risks?"
+      - Build checklist from `sharedStore.getAgentFindings('Flow Diagram')` → format each flow as numbered item with "Any integration concerns?"
+      - Audit prompt: `previousAnalysis + checklist + instructions`. NO full diff, NO reference context
+      - Instructions: "1. For each CR issue: assess hidden risks. 2. For each flow: integration concerns. 3. Todo items actionable? 4. ONLY add new findings, do NOT rewrite."
+      - Call `adapter.generateText()` with NO tools (reflection only)
+    - Modify existing `runAgent()`:
+      - In tool call loop: pass `agent.sharedStore` to `functionCallExecute()` as `sharedStore` param
+      - Create fresh `queryContextCallCount = { value: 0 }` at start of each iteration, pass to `functionCallExecute()`
+      - In self-audit: if `agent.role === 'Observer' && agent.sharedStore` → call `runObserverSelfAudit()` instead of `runSelfAudit()`
+    - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 6.1, 6.2, 6.3, 6.4_
+  - [x] 10.2 Write unit tests cho Phased MultiAgentExecutor — File: `src/test/MultiAgentExecutor.test.ts`
+    - Mock adapter.generateText, mock all tools, mock SharedContextStore
+    - Test `executePhasedAgents()` Phase 1 parallel: verify Code Reviewer and Flow Diagram both execute (check runAgent called twice)
+    - Test `executePhasedAgents()` Phase 2 after Phase 1: verify Observer executes only after both Phase 1 agents complete
+    - Test `executePhasedAgents()` Phase 1 failure: mock Code Reviewer to throw → verify Flow Diagram result still stored in SharedContextStore, Observer still executes
+    - Test `executePhasedAgents()` both Phase 1 fail: verify Observer still executes with dependency graph + diff only
+    - Test `executePhasedAgents()` structured output parsing: mock Code Reviewer returning JSON with `issues[]` → verify parsed and stored in SharedContextStore
+    - Test `executePhasedAgents()` structured output parse failure: mock agent returning non-JSON → verify null returned, warning logged, pipeline continues
+    - Test `executePhasedAgents()` risk hypothesis generation: verify RiskHypothesisGenerator called between phases, hypotheses stored in SharedContextStore
+    - Test `executePhasedAgents()` hypothesis generation failure: mock generator to throw → verify Observer runs without hypotheses
+    - Test `executePhasedAgents()` Observer prompt contains Phase 1 findings: capture Observer prompt, verify it contains serialized CR issues and FD flows
+    - Test `executePhasedAgents()` progress messages: verify "Executing Code Reviewer and Flow Diagram agents..." reported during Phase 1, "Observer analyzing with context from other agents..." during Phase 2
+    - Test `parseStructuredOutput()` with valid Code Reviewer JSON: verify returns `{role: 'Code Reviewer', structured: {...}, raw: '...'}`
+    - Test `parseStructuredOutput()` with valid Flow Diagram JSON: verify returns correct type
+    - Test `parseStructuredOutput()` with JSON in ```json fences: verify extracted and parsed
+    - Test `parseStructuredOutput()` with invalid JSON: verify returns null
+    - Test `parseStructuredOutput()` with JSON missing required field (no `issues` array): verify returns null
+    - Test `runObserverSelfAudit()`: verify audit prompt contains CR issues as numbered checklist
+    - Test `runObserverSelfAudit()`: verify audit prompt does NOT contain full diff text
+    - Test `runObserverSelfAudit()`: verify audit prompt contains FD flows as checklist items
+    - Test `runObserverSelfAudit()`: verify audit prompt contains "ONLY add new findings" instruction
+    - Test `runAgent()` with sharedStore: verify functionCallExecute receives sharedStore parameter
+    - Test `runAgent()` with queryContextCallCount: verify counter reset to 0 at start of each iteration
+  - [ ]* 10.3 Write property test: Phased execution ordering — File: `src/test/MultiAgentExecutor.test.ts`
+    - Mock adapter and agents. Track execution timestamps
+    - Assert all Phase 1 agents complete before Phase 2 starts
+    - Assert Phase 1 agents run concurrently (overlapping timestamps)
+    - **Property 14**. **Validates: Requirements 5.1, 5.2**
+  - [ ]* 10.3 Write property test: Phase 1 failure resilience — File: `src/test/MultiAgentExecutor.test.ts`
+    - Mock one Phase 1 agent to throw. Assert Phase 2 still executes
+    - Assert Observer prompt contains findings from successful Phase 1 agent
+    - **Property 15**. **Validates: Requirements 5.4**
+  - [ ]* 10.4 Write property test: Observer self-audit uses checklist — File: `src/test/MultiAgentExecutor.test.ts`
+    - Mock Observer self-audit. Capture audit prompt
+    - Assert prompt contains CR issues as checklist, does NOT contain full diff
+    - **Property 16**. **Validates: Requirements 6.1, 6.2**
+  - [ ]* 10.5 Write property test: Structured output schema conformance — File: `src/test/StructuredOutput.test.ts`
+    - Generate random valid JSON matching each schema. Assert parseStructuredOutput returns correct type
+    - **Property 11**. **Validates: Requirements 4.1, 4.2, 4.3**
+  - [ ]* 10.6 Write property test: Structured output JSON fallback — File: `src/test/StructuredOutput.test.ts`
+    - Generate random non-JSON strings. Assert parseStructuredOutput returns null (not throw)
+    - **Property 12**. **Validates: Requirements 4.5**
+  - [ ]* 10.7 Write property test: Structured output serialization round-trip — File: `src/test/StructuredOutput.test.ts`
+    - Generate random valid CodeReviewerOutput/FlowDiagramOutput/ObserverOutput
+    - `JSON.parse(JSON.stringify(output))` should deep-equal original
+    - **Property 13**. **Validates: Requirements 4.6**
+
+- [x] 11. Checkpoint — Ensure all tests pass
+  - Run full test suite. Verify tasks 1-10 compile and all tests pass.
+
+- [x] 12. Modify `functionCallExecute` for tool result caching
+  - [x] 12.1 Cập nhật `src/llm-tools/utils.ts`
+    - Add `sharedStore?: any` and `queryContextCallCount?: { value: number }` to `functionCallExecute` params object type (alongside existing `functionCalls`, `llmAdapter`, `toolCalls`, `onStream`)
+    - Inside the `for (const toolCall of toolCalls)` loop, BEFORE `functionCall.execute()`:
+      - If `sharedStore && functionName !== 'query_context'`: check `sharedStore.getToolResult(functionName, args)`. If cache hit → push `{tool: toolCall, result: cached}` to resultExecute, `continue` (skip execute)
+    - AFTER `functionCall.execute()`:
+      - If `sharedStore && !result.error && functionName !== 'query_context'`: call `sharedStore.setToolResult(functionName, args, result)`
+    - Pass `sharedStore` and `queryContextCallCount` to `functionCall.execute(args, {llmAdapter, sharedStore, queryContextCallCount})`
+    - Backward compatible: when `sharedStore` is undefined, behavior is identical to current code
+    - _Requirements: 1.2, 1.3, 11.5_
+  - [x] 12.2 Write unit tests cho functionCallExecute caching — File: `src/test/utils.test.ts`
+    - Test without sharedStore: verify behavior identical to current (all tools execute normally)
+    - Test with sharedStore, cache miss: verify tool executes, result cached in store via `setToolResult()`
+    - Test with sharedStore, cache hit: verify tool does NOT execute, cached result returned from `getToolResult()`
+    - Test with sharedStore, tool returns error: verify error result NOT cached (only successful results cached)
+    - Test query_context tool NOT cached: verify `query_context` calls always execute (never check cache, never cache result)
+    - Test queryContextCallCount passed through: verify `optional.queryContextCallCount` received by tool execute function
+    - Test sharedStore passed through: verify `optional.sharedStore` received by tool execute function
+
+- [x] 13. Mở rộng `ContextOrchestratorService` cho phased execution
+  - [x] 13.1 Cập nhật `src/services/llm/ContextOrchestratorService.ts`
+    - Add optional `phasedConfig` parameter to `generateMultiAgentFinalText()` signature: `phasedConfig?: { sharedStore: SharedContextStore, promptBuilder: AgentPromptBuilder, buildContext: AgentPromptBuildContext, budgetAllocations: AgentBudgetAllocation[] }`
+    - Inside method body: `if (phasedConfig)` → call `this.multiAgentExecutor.executePhasedAgents({phase1: agents, phase2: [], sharedStore: phasedConfig.sharedStore, promptBuilder: phasedConfig.promptBuilder, buildContext: phasedConfig.buildContext, budgetAllocations: phasedConfig.budgetAllocations}, adapter, signal, request)` to get agentReports
+    - `else` → call existing `this.multiAgentExecutor.executeAgents(agents, adapter, signal, request)` (unchanged)
+    - Rest of method (synthesis) remains the same
+    - Import new types at top of file
+    - _Requirements: 11.2, 11.4_
+
+- [x] 14. Mở rộng `ReviewReferenceContextProvider` cho dynamic limits
+  - [x] 14.1 Cập nhật `src/commands/reviewShared/referenceContextProvider.ts`
+    - Add 3 optional fields to `ReviewReferenceContextOptions` interface: `maxSymbols?: number`, `maxReferenceFiles?: number`, `tokenBudget?: number`
+    - In `buildReferenceContext()`: replace hardcoded constants with dynamic values:
+      - `const maxSymbols = options?.maxSymbols ?? MAX_SYMBOLS_TOTAL;` (was always `MAX_SYMBOLS_TOTAL = 24`)
+      - `const maxFiles = options?.maxReferenceFiles ?? MAX_EXPANDED_REFERENCE_FILES;` (was always `8`)
+      - `const expansionTokenCap = options?.tokenBudget ?? computeReferenceExpansionTokenCap(options?.contextWindow || 32768);` (was always `min(4500, cw*0.25)`)
+    - Pass `maxSymbols` to `extractCandidateSymbolsFromDiff(changedFiles, maxSymbols, MAX_SYMBOLS_PER_FILE)` — already accepts maxTotal param
+    - In `buildExpandedSymbolContext()`: use `maxFiles` instead of `MAX_EXPANDED_REFERENCE_FILES` for the `sectionsByFile.size >= maxFiles` check
+    - Pass `expansionTokenCap` as `tokenBudget` to `buildExpandedSymbolContext()`
+    - Backward compatible: when options don't include new fields, falls back to existing constants
+    - _Requirements: 3.4, 3.5, 10.5_
+
+- [x] 15. Tích hợp vào Service Layer
+  - [x] 15.1 Cập nhật `src/commands/reviewMerge/reviewMergeService.ts` — `generateReview()` method
+    - Add imports at top: `import { SharedContextStoreImpl } from '../../services/llm/orchestrator/SharedContextStore'`, `import { ContextBudgetManager, DEFAULT_BUDGET_CONFIG } from '../../services/llm/orchestrator/ContextBudgetManager'`, `import { AgentPromptBuilder } from '../../services/llm/orchestrator/AgentPromptBuilder'`, `import { DependencyGraphIndex, DEFAULT_GRAPH_CONFIG } from '../../services/llm/orchestrator/DependencyGraphIndex'`, `import { queryContextTool } from '../../llm-tools/tools/queryContext'`
+    - Inside `generateReview()`, after `prepareAdapter()` and `getBranchDiffPreview()`:
+      - Step 2: `const sharedStore = new SharedContextStoreImpl()`, `const budgetManager = new ContextBudgetManager(DEFAULT_BUDGET_CONFIG, new TokenEstimatorService())`, `const promptBuilder = new AgentPromptBuilder(budgetManager, new TokenEstimatorService())`
+      - Step 3 (Pre-Analysis): wrap in try/catch: `const graphIndex = new DependencyGraphIndex(DEFAULT_GRAPH_CONFIG)`, `const dependencyGraph = await graphIndex.build(branchDiff.changes)`, `sharedStore.setDependencyGraph(dependencyGraph)`. On error: `onLog?.('[pre-analysis] failed...')`, continue without graph
+      - Step 4 (Budgets): `const contextWindow = dependencyState.adapter.getContextWindow()`, compute budgets via `budgetManager.allocateAgentBudgets(...)`, enforce via `budgetManager.enforceGlobalBudget(...)`
+      - Step 5 (Reference context): pass dynamic limits: `{ ...existingOptions, maxSymbols: budgetManager.computeMaxSymbols(contextWindow), maxReferenceFiles: budgetManager.computeMaxReferenceFiles(contextWindow), tokenBudget: budgetManager.computeReferenceContextBudget(contextWindow) }`
+      - Step 6 (Agent prompts): build `AgentPromptBuildContext`, call `promptBuilder.buildCodeReviewerPrompt()` and `promptBuilder.buildFlowDiagramPrompt()` — REPLACE the existing 3 inline agent definitions
+      - Step 7 (Execute): pass `phasedConfig: { sharedStore, promptBuilder, buildContext, budgetAllocations: safeBudgets }` to `generateMultiAgentFinalText()`
+      - Update `buildSynthesisPrompt` callback to use `promptBuilder.buildSynthesizerPrompt()`
+      - Add `queryContextTool` to each agent's tools array
+    - _Requirements: 1.1, 2.1, 3.1, 5.1, 7.1, 8.1, 10.1, 10.5_
+  - [x] 15.2 Cập nhật `src/commands/reviewStagedChanges/reviewStagedChangesService.ts` — `generateReview()` method
+    - Apply identical pattern as 15.1: same imports, same initialization, same Pre-Analysis, same budget calculation, same role-specific prompts, same phasedConfig
+    - Key difference: uses `getStagedDiffPreview()` instead of `getBranchDiffPreview()`, uses `buildStagedReviewSystemPrompt()` instead of `SYSTEM_PROMPT_GENERATE_REVIEW_MERGE()`
+    - REPLACE the existing 3 inline agent definitions with `promptBuilder.buildCodeReviewerPrompt()`, `promptBuilder.buildFlowDiagramPrompt()`
+    - _Requirements: 1.1, 2.1, 3.1, 5.1, 7.1, 8.1, 10.1, 10.5_
+
+- [x] 16. Checkpoint — Ensure all tests pass
+  - Run full test suite. Verify entire pipeline compiles. Test manually: trigger review on a branch with 5+ changed files, verify:
+    - Pre-analysis log shows dependency graph stats
+    - Phase 1 agents run in parallel (check execution log timestamps)
+    - Observer log shows "context from other agents"
+    - Final output has all 7 REVIEW_OUTPUT_CONTRACT sections
+    - Token usage reduced compared to before (check log for cache hits)
+
+- [x] 17. Write integration unit tests — File: `src/test/integration.test.ts`
+  - [x] 17.1 Test full pipeline with phasedConfig
+    - Mock adapter, gitService, all VS Code APIs
+    - Call `reviewMergeService.generateReview()` with mocked dependencies
+    - Verify: SharedContextStore created, DependencyGraphIndex.build() called, ContextBudgetManager.allocateAgentBudgets() called
+    - Verify: Phase 1 agents use role-specific prompts (not identical prompts)
+    - Verify: Observer prompt contains Phase 1 findings
+    - Verify: final output contains all 7 REVIEW_OUTPUT_CONTRACT sections
+  - [x] 17.2 Test full pipeline without phasedConfig (backward compat)
+    - Call `generateMultiAgentFinalText()` without phasedConfig
+    - Verify: falls back to `executeAgents()` (all agents same prompt, no phased execution)
+    - Verify: existing AgentPrompt objects without new optional fields work correctly
+  - [x] 17.3 Test staged changes pipeline
+    - Same as 17.1 but for `reviewStagedChangesService.generateReview()`
+    - Verify same new pipeline components are used
+
+- [x] 18. Backward compatibility verification
+  - [ ]* 18.1 Write property test: Backward compatibility — fallback without SharedContextStore — File: `src/test/ContextOrchestratorService.test.ts`
+    - Call `generateMultiAgentFinalText()` WITHOUT phasedConfig parameter
+    - Assert behavior identical to current: all agents receive same prompt, no phased execution
+    - Assert existing `AgentPrompt` objects (without new optional fields) work without modification
+    - **Property 26**. **Validates: Requirements 11.1, 11.2, 11.4**
+  - [ ]* 18.2 Write property test: Final output structure preservation — File: `src/test/ContextOrchestratorService.test.ts`
+    - Mock full pipeline with phasedConfig. Assert final output contains all 7 sections from REVIEW_OUTPUT_CONTRACT in correct order
+    - **Property 27**. **Validates: Requirements 11.3**
+
+- [x] 19. Final checkpoint — Ensure all tests pass
+  - Run full test suite. All 27 property tests + unit tests pass. Manual smoke test on real repository.
+
+## Notes
+
+- Tasks marked with `*` are optional property-based tests — can be skipped for faster MVP but recommended for correctness
+- Unit test tasks (2.2, 3.2, 5.2, 6.2, 8.2, 9.2, 10.2, 12.2, 17.1-17.3) are REQUIRED — they validate specific examples, edge cases, and error conditions
+- Each task references specific requirements and design sections for traceability
+- 4 checkpoints (tasks 4, 7, 11, 16) ensure incremental validation
+- New files: SharedContextStore.ts, ContextBudgetManager.ts, DependencyGraphIndex.ts, AgentPromptBuilder.ts, RiskHypothesisGenerator.ts, queryContext.ts (6 implementation files)
+- Modified files: orchestratorTypes.ts, toolInterface.ts, MultiAgentExecutor.ts, utils.ts, ContextOrchestratorService.ts, referenceContextProvider.ts, reviewMergeService.ts, reviewStagedChangesService.ts (8 files)
+- Test files: SharedContextStore.test.ts, ContextBudgetManager.test.ts, DependencyGraphIndex.test.ts, AgentPromptBuilder.test.ts, queryContext.test.ts, RiskHypothesisGenerator.test.ts, MultiAgentExecutor.test.ts, StructuredOutput.test.ts, utils.test.ts, integration.test.ts, ContextOrchestratorService.test.ts (11 test files)
+- Backward compatibility: all new params are optional, fallback to current behavior when not provided

@@ -10,11 +10,15 @@ export const functionCallExecute = async ({
   llmAdapter,
   toolCalls,
   onStream = () => {},
+  sharedStore,
+  queryContextCallCount,
 }: {
   functionCalls: FunctionCall[];
   onStream?: (content: string, isDone: boolean, state?: any) => void;
   toolCalls: Array<ToolCallResult>;
   llmAdapter: ILLMAdapter;
+  sharedStore?: any;
+  queryContextCallCount?: { value: number };
 }): Promise<
   {
     tool: ToolCallResult;
@@ -49,12 +53,27 @@ export const functionCallExecute = async ({
       //   } else {
       const functionCall = findFunctionCallById(functionCalls, functionName);
       if (functionCall) {
-        resultExecute.push({
-          tool: toolCall,
-          result: await functionCall.execute(args, {
-            llmAdapter: llmAdapter,
-          }),
+        // Check shared store cache for non-query_context tools
+        if (sharedStore && functionName !== 'query_context') {
+          const cached = sharedStore.getToolResult(functionName, args);
+          if (cached) {
+            resultExecute.push({ tool: toolCall, result: cached });
+            continue;
+          }
+        }
+
+        const result = await functionCall.execute(args, {
+          llmAdapter: llmAdapter,
+          sharedStore,
+          queryContextCallCount,
         });
+
+        // Cache successful results in shared store (skip query_context)
+        if (sharedStore && !result.error && functionName !== 'query_context') {
+          sharedStore.setToolResult(functionName, args, result);
+        }
+
+        resultExecute.push({ tool: toolCall, result });
       }
       //   }
     } else {

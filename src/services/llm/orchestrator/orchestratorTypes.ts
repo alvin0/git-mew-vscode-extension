@@ -1,4 +1,5 @@
-import { FunctionCall } from "../../../llm-tools/toolInterface";
+import { FunctionCall, ToolExecuteResponse } from "../../../llm-tools/toolInterface";
+import { UnifiedDiffFile } from "../contextTypes";
 
 export type BudgetProfile = {
   contextWindow: number;
@@ -25,7 +26,18 @@ export type AgentPrompt = {
   tools?: FunctionCall[];
   maxIterations?: number;
   selfAudit?: boolean;
+  // Phased execution optional fields
+  phase?: number;
+  outputSchema?: 'code-reviewer' | 'flow-diagram' | 'observer';
+  sharedStore?: SharedContextStore;
 };
+
+// Forward reference — actual implementation in SharedContextStore.ts
+// eslint-disable-next-line @typescript-eslint/no-empty-interface
+export type SharedContextStore = any;
+
+// Forward reference — actual implementation in AgentPromptBuilder.ts
+export type AgentPromptBuilder = any;
 
 export type ContextOrchestratorConfig = {
   concurrency: number;
@@ -131,3 +143,149 @@ Rules:
 - Keep only the minimum information needed to write a good commit message.
 - Merge duplicates aggressively.
 - Prefer empty arrays for non-essential sections.`;
+
+// ─── Structured Agent Output Schemas ───
+
+export interface CodeReviewerOutput {
+  issues: Array<{
+    file: string;
+    location: string;
+    severity: 'critical' | 'major' | 'minor' | 'suggestion';
+    category: 'correctness' | 'security' | 'performance' | 'maintainability' | 'testing';
+    description: string;
+    suggestion: string;
+  }>;
+  affectedSymbols: string[];
+  qualityVerdict: 'Critical' | 'Not Bad' | 'Safe' | 'Good' | 'Perfect';
+}
+
+export interface FlowDiagramOutput {
+  diagrams: Array<{
+    name: string;
+    type: 'activity' | 'sequence' | 'class' | 'ie';
+    plantumlCode: string;
+    description: string;
+  }>;
+  affectedFlows: string[];
+}
+
+export interface ObserverOutput {
+  risks: Array<{
+    description: string;
+    severity: 'high' | 'medium' | 'low';
+    affectedArea: string;
+  }>;
+  todoItems: Array<{
+    action: string;
+    parallelizable: boolean;
+  }>;
+  integrationConcerns: string[];
+  hypothesisVerdicts?: Array<{
+    hypothesisIndex: number;
+    verdict: 'confirmed' | 'refuted' | 'inconclusive';
+    evidence: string;
+  }>;
+}
+
+export type StructuredAgentReport =
+  | { role: 'Code Reviewer'; structured: CodeReviewerOutput; raw: string }
+  | { role: 'Flow Diagram'; structured: FlowDiagramOutput; raw: string }
+  | { role: 'Observer'; structured: ObserverOutput; raw: string };
+
+// ─── Risk Hypothesis ───
+
+export interface RiskHypothesis {
+  question: string;
+  affectedFiles: string[];
+  evidenceNeeded: string;
+  severityEstimate: 'high' | 'medium' | 'low';
+  source: 'heuristic' | 'llm';
+}
+
+// ─── Phased Execution Config ───
+
+export interface PhasedAgentConfig {
+  phase1: AgentPrompt[];
+  phase2: AgentPrompt[];
+  sharedStore: SharedContextStore;
+  promptBuilder: AgentPromptBuilder;
+  buildContext: AgentPromptBuildContext;
+  budgetAllocations: AgentBudgetAllocation[];
+}
+
+// ─── Budget Allocation ───
+
+export interface AgentBudgetAllocation {
+  agentRole: string;
+  totalBudget: number;
+  diffBudget: number;
+  referenceBudget: number;
+  sharedContextBudget: number;
+  reservedForOutput: number;
+}
+
+export interface BudgetManagerConfig {
+  referenceContextRatio: number;
+  minReferenceTokens: number;
+  maxSymbolsFormula: (cw: number) => number;
+  maxFilesFormula: (cw: number) => number;
+  agentBudgetRatios: Record<string, number>;
+  safetyThreshold: number;
+}
+
+// ─── Agent Prompt Build Context ───
+
+export interface AgentPromptBuildContext {
+  fullDiff: string;
+  changedFiles: UnifiedDiffFile[];
+  referenceContext?: string;
+  dependencyGraph?: DependencyGraphData;
+  sharedContextStore?: SharedContextStore;
+  riskHypotheses?: RiskHypothesis[];
+  language: string;
+  taskInfo?: string;
+  customSystemPrompt?: string;
+  customRules?: string;
+  customAgentInstructions?: string;
+}
+
+// ─── Dependency Graph ───
+
+export interface DependencyGraphData {
+  fileDependencies: Map<string, { imports: string[]; importedBy: string[] }>;
+  symbolMap: Map<string, {
+    definedIn: string;
+    referencedBy: string[];
+    type: 'function' | 'class' | 'interface' | 'type' | 'constant' | 'enum';
+  }>;
+  criticalPaths: Array<{
+    files: string[];
+    changedFileCount: number;
+    description: string;
+  }>;
+}
+
+export interface DependencyGraphConfig {
+  maxFiles: number;
+  maxSymbolLookups: number;
+  timeoutMs: number;
+  criticalPathThreshold: number;
+}
+
+// ─── Tool Result Cache ───
+
+export interface ToolResultCacheEntry {
+  toolName: string;
+  normalizedArgs: string;
+  result: ToolExecuteResponse;
+  timestamp: number;
+}
+
+// ─── Agent Finding ───
+
+export interface AgentFinding {
+  agentRole: string;
+  type: 'issue' | 'flow' | 'risk' | 'todo';
+  data: unknown;
+  timestamp: number;
+}

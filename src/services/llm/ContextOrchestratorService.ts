@@ -14,10 +14,14 @@ import { ChunkAnalysisReducer } from "./orchestrator/ChunkAnalysisReducer";
 import { DiffChunkBuilder } from "./orchestrator/DiffChunkBuilder";
 import { MultiAgentExecutor } from "./orchestrator/MultiAgentExecutor";
 import {
+  AgentBudgetAllocation,
   AgentPrompt,
+  AgentPromptBuildContext,
   BudgetProfile,
   ContextOrchestratorConfig,
   DEFAULT_ORCHESTRATOR_CONFIG,
+  SharedContextStore,
+  AgentPromptBuilder,
   TaskExecutionProfile,
   FAST_REDUCER_SYSTEM_PROMPT,
   FAST_WORKER_SYSTEM_PROMPT,
@@ -48,7 +52,7 @@ export class ContextOrchestratorService {
     this.calibration = new AdapterCalibrationService(this.config, this.tokenEstimator);
     this.chunkBuilder = new DiffChunkBuilder(this.tokenEstimator);
     this.reducer = new ChunkAnalysisReducer(this.config, this.tokenEstimator);
-    this.multiAgentExecutor = new MultiAgentExecutor(this.config, this.calibration);
+    this.multiAgentExecutor = new MultiAgentExecutor(this.config, this.calibration, this.tokenEstimator);
   }
 
   public estimateTokens(text: string, model?: string): number {
@@ -181,11 +185,34 @@ export class ContextOrchestratorService {
     synthesisSystemMessage: string,
     buildSynthesisPrompt: (agentReports: string[]) => string,
     signal?: AbortSignal,
-    request?: ContextGenerationRequest
+    request?: ContextGenerationRequest,
+    phasedConfig?: {
+      sharedStore: SharedContextStore;
+      promptBuilder: AgentPromptBuilder;
+      buildContext: AgentPromptBuildContext;
+      budgetAllocations: AgentBudgetAllocation[];
+    }
   ): Promise<string> {
     this.reportLog(request, `[multi-agent] starting parallel execution of ${agents.length} agent(s)`);
 
-    const agentReports = await this.multiAgentExecutor.executeAgents(agents, adapter, signal, request);
+    let agentReports: string[];
+    if (phasedConfig) {
+      agentReports = await this.multiAgentExecutor.executePhasedAgents(
+        {
+          phase1: agents,
+          phase2: [],
+          sharedStore: phasedConfig.sharedStore,
+          promptBuilder: phasedConfig.promptBuilder,
+          buildContext: phasedConfig.buildContext,
+          budgetAllocations: phasedConfig.budgetAllocations,
+        },
+        adapter,
+        signal,
+        request
+      );
+    } else {
+      agentReports = await this.multiAgentExecutor.executeAgents(agents, adapter, signal, request);
+    }
 
     this.reportLog(request, `[multi-agent] synthesizing final report from ${agentReports.length} agent(s)`);
     this.reportProgress(request, "Synthesizing multi-agent reports...");

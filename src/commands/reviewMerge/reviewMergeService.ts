@@ -10,15 +10,13 @@ import {
 } from '../../services/llm';
 import { GitService } from '../../services/utils/gitService';
 import { ReviewWorkflowServiceBase } from '../reviewShared/reviewWorkflowServiceBase';
-import { 
-    getDiagnosticsTool, 
-    findReferencesTool, 
-    readFileTool, 
-    searchCodeTool, 
-    getRelatedFilesTool, 
-    getSymbolDefinitionTool 
-} from '../../llm-tools/tools';
 import { AgentPrompt } from '../../services/llm/ContextOrchestratorService';
+import { SharedContextStoreImpl } from '../../services/llm/orchestrator/SharedContextStore';
+import { ContextBudgetManager, DEFAULT_BUDGET_CONFIG } from '../../services/llm/orchestrator/ContextBudgetManager';
+import { AgentPromptBuilder } from '../../services/llm/orchestrator/AgentPromptBuilder';
+import { DependencyGraphIndex, DEFAULT_GRAPH_CONFIG } from '../../services/llm/orchestrator/DependencyGraphIndex';
+import { TokenEstimatorService } from '../../services/llm/TokenEstimatorService';
+import { AgentPromptBuildContext } from '../../services/llm/orchestrator/orchestratorTypes';
 
 export interface ReviewResult {
     success: boolean;
@@ -104,57 +102,77 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                 });
                 this.logReferenceContextMetadata(referenceContextResult.metadata, onLog);
 
-                const agents: AgentPrompt[] = [
-                    {
-                        role: "Code Reviewer",
-                        systemMessage: `${systemMessage}\n\nYour specific role is Code Reviewer Agent. 
-- Inspect correctness, maintainability, security, performance, and testing gaps in the changed code.
-- Prioritize concrete issues and actionable fixes.
-- Use tools to investigate function implementations, trace symbol usage (find_references, get_symbol_definition), or search for patterns (search_code) when the provided context is insufficient.
-- You can read full file contents using read_file if you identify a related file that needs deeper inspection.`,
-                        prompt: `${referenceContextResult.context ? `${referenceContextResult.context}\n\n` : ''}${basePrompt}`,
-                        tools: [findReferencesTool, getDiagnosticsTool, readFileTool, getSymbolDefinitionTool, searchCodeTool],
-                        maxIterations: 3,
-                        selfAudit: true
-                    },
-                    {
-                        role: "Flow Diagram",
-                        systemMessage: `${systemMessage}\n\nYour specific role is Flow Diagram Agent. 
-- Reconstruct the most important control flow or data flow affected by the change.
-- Use additional reference context from non-changed related files when available.
-- Draw one or more PlantUML fenced blocks when the change affects multiple independent problems or flows.
-- Name each diagram clearly to reflect the specific problem/flow it explains.
-- Prefer the simplest suitable PlantUML diagram type: activity, sequence, class, or IE.
-- Use get_related_files and read_file to discovery and understand interconnected logic.`,
-                        prompt: `${referenceContextResult.context ? `${referenceContextResult.context}\n\n` : ''}${basePrompt}`,
-                        tools: [findReferencesTool, getRelatedFilesTool, readFileTool, getSymbolDefinitionTool],
-                        maxIterations: 3,
-                        selfAudit: true
-                    },
-                    {
-                        role: "Observer",
-                        systemMessage: `${systemMessage}\n\nYour specific role is Observer Agent. 
-- Look beyond the changed diff to infer hidden risks, missing edge-case coverage, and likely integration regressions.
-- Use any provided supporting context from related files as read-only background.
-- Produce a short execution todo list with no more than 4 items.
-- Use get_diagnostics to check for project-wide impact and read_file to verify assumptions about integration points.`,
-                        prompt: `${referenceContextResult.context ? `${referenceContextResult.context}\n\n` : ''}${basePrompt}`,
-                        tools: [getDiagnosticsTool, getRelatedFilesTool, readFileTool],
-                        maxIterations: 3,
-                        selfAudit: true
-                    },
-                ];
+                // ── Step 2: Initialize new pipeline components ──
+                const sharedStore = new SharedContextStoreImpl();
+                const tokenEstimator = new TokenEstimatorService();
+                const budgetManager = new ContextBudgetManager(DEFAULT_BUDGET_CONFIG, tokenEstimator);
+                const promptBuilder = new AgentPromptBuilder(budgetManager, tokenEstimator);
 
+                // ── Step 3: Pre-Analysis Phase ──
+                onProgress?.("Building dependency graph from VS Code index...");
+                const graphIndex = new DependencyGraphIndex(DEFAULT_GRAPH_CONFIG);
+                let dependencyGraph;
+                try {
+                    dependencyGraph = await graphIndex.build(branchDiff.changes);
+                    sharedStore.setDependencyGraph(dependencyGraph);
+                    onLog?.(`[pre-analysis] graph built: ${dependencyGraph.fileDependencies.size} files, ${dependencyGraph.symbolMap.size} symbols, ${dependencyGraph.criticalPaths.length} critical paths`);
+                } catch (error) {
+                    onLog?.(`[pre-analysis] failed, falling back to legacy: ${error}`);
+                }
+
+                // ── Step 4: Calculate budgets ──
+                const adapterContextWindow = dependencyState.adapter.getContextWindow();
+                const adapterMaxOutputTokens = dependencyState.adapter.getMaxOutputTokens();
+                const systemTokens = tokenEstimator.estimateTextTokens(systemMessage, dependencyState.adapter.getModel());
+                const diffTokens = tokenEstimator.estimateTextTokens(branchDiff.diff, dependencyState.adapter.getModel());
+                const budgetAllocations = budgetManager.allocateAgentBudgets(adapterContextWindow, adapterMaxOutputTokens, systemTokens, diffTokens);
+                const safeBudgets = budgetManager.enforceGlobalBudget(budgetAllocations, adapterContextWindow);
+
+                // ── Step 5: Re-build reference context with dynamic limits ──
+                const dynamicReferenceContextResult = await this.gitService.buildReviewReferenceContext(branchDiff.changes, {
+                    strategy,
+                    model: dependencyState.adapter.getModel(),
+                    contextWindow: adapterContextWindow,
+                    mode: 'auto',
+                    systemMessage,
+                    directPrompt: basePrompt,
+                    maxSymbols: budgetManager.computeMaxSymbols(adapterContextWindow),
+                    maxReferenceFiles: budgetManager.computeMaxReferenceFiles(adapterContextWindow),
+                    tokenBudget: budgetManager.computeReferenceContextBudget(adapterContextWindow),
+                });
+                this.logReferenceContextMetadata(dynamicReferenceContextResult.metadata, onLog);
+
+                // ── Step 6: Build agent-specific prompts ──
+                const buildContext: AgentPromptBuildContext = {
+                    fullDiff: branchDiff.diff,
+                    changedFiles: branchDiff.changes,
+                    referenceContext: dynamicReferenceContextResult.context,
+                    dependencyGraph,
+                    sharedContextStore: sharedStore,
+                    language,
+                    taskInfo,
+                    customSystemPrompt,
+                    customRules,
+                    customAgentInstructions,
+                };
+                const codeReviewerAgent = promptBuilder.buildCodeReviewerPrompt(buildContext, safeBudgets[0]);
+                const flowDiagramAgent = promptBuilder.buildFlowDiagramPrompt(buildContext, safeBudgets[1]);
+
+                const agents: AgentPrompt[] = [codeReviewerAgent, flowDiagramAgent];
+
+                // ── Step 7: Execute with phased config ──
                 const review = await this.contextOrchestrator.generateMultiAgentFinalText(
                     dependencyState.adapter,
                     agents,
                     systemMessage,
-                    (reports) => `You are the Synthesizer. Here are the review reports from your specialized agents:
-
-${reports.join('\n\n')}
-
-Please synthesize these inputs into a final, highly structured markdown report following the exact format requested.
-Do NOT output the raw agent reports. Merge them gracefully according to the output contract.`,
+                    (reports) => promptBuilder.buildSynthesizerPrompt(
+                        reports.map((r, i) => ({
+                            role: i === 0 ? 'Code Reviewer' as const : i === 1 ? 'Flow Diagram' as const : 'Observer' as const,
+                            structured: {} as any,
+                            raw: r,
+                        })),
+                        promptBuilder.buildDiffSummary(branchDiff.changes),
+                    ),
                     abortController.signal,
                     {
                         adapter: dependencyState.adapter,
@@ -169,8 +187,14 @@ Do NOT output the raw agent reports. Merge them gracefully according to the outp
                             branchDiff.diff,
                             taskInfo,
                             systemMessage,
-                            referenceContextResult.context
+                            dynamicReferenceContextResult.context
                         ),
+                    },
+                    {
+                        sharedStore,
+                        promptBuilder,
+                        buildContext,
+                        budgetAllocations: safeBudgets,
                     }
                 );
 

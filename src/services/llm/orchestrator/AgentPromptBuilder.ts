@@ -1,0 +1,601 @@
+import {
+  AgentPrompt,
+  AgentBudgetAllocation,
+  AgentPromptBuildContext,
+  StructuredAgentReport,
+  CodeReviewerOutput,
+  FlowDiagramOutput,
+  ObserverOutput,
+} from './orchestratorTypes';
+import { UnifiedDiffFile } from '../contextTypes';
+import { ContextBudgetManager } from './ContextBudgetManager';
+import { TokenEstimatorService } from '../TokenEstimatorService';
+import { DependencyGraphIndex } from './DependencyGraphIndex';
+import { ISharedContextStore } from './SharedContextStore';
+import { REVIEW_OUTPUT_CONTRACT } from '../../../prompts/reviewOutputContract';
+import { FunctionCall } from '../../../llm-tools/toolInterface';
+import {
+  findReferencesTool,
+  getDiagnosticsTool,
+  getRelatedFilesTool,
+  getSymbolDefinitionTool,
+  readFileTool,
+  searchCodeTool,
+} from '../../../llm-tools/tools';
+
+// ── Structural diff regex ──
+const STRUCTURAL_LINE_PATTERN =
+  /^[+-]\s*(export |import |class |interface |type |enum |function |async function |const \w+ = \(|public |private |protected |abstract |static )/;
+
+// ── Placeholder for query_context tool (implemented in task 8) ──
+// We define a minimal stub so AgentPromptBuilder can reference it now.
+// The real implementation will be in src/llm-tools/tools/queryContext.ts.
+const queryContextTool: FunctionCall = {
+  id: 'query_context',
+  functionCalling: {
+    type: 'function',
+    function: {
+      name: 'query_context',
+      description:
+        'Query the shared context store for dependency information. ' +
+        'Use this to find files that import a symbol, get the dependency chain of a file, ' +
+        'or retrieve cached tool results from other agents.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query_type: {
+            type: 'string',
+            description:
+              'Type of query: "imports_of" (files importing symbol X), ' +
+              '"dependency_chain" (dependency chain of file Y), ' +
+              '"references_of" (all references to symbol X), ' +
+              '"cached_result" (get cached tool result)',
+          },
+          target: {
+            type: 'string',
+            description: 'The symbol name or file path to query about',
+          },
+        },
+        required: ['query_type', 'target'],
+        additionalProperties: false,
+      },
+    },
+  },
+  execute: async () => ({
+    description: '[query_context] Not yet implemented — stub placeholder.',
+    contentType: 'text' as const,
+  }),
+};
+
+// ── Helper: truncate text to a token budget (approx 4 chars/token) ──
+function truncateToTokenBudget(text: string, tokenBudget: number): string {
+  const charBudget = tokenBudget * 4;
+  if (text.length <= charBudget) {
+    return text;
+  }
+  return text.slice(0, charBudget) + '\n...[truncated]';
+}
+
+// ── System prompt fragments (role-specific, no REVIEW_OUTPUT_CONTRACT) ──
+
+const CODE_REVIEWER_INSTRUCTIONS = `## Code Reviewer Agent
+You are a specialized Code Reviewer. Inspect the changed code for:
+- **Correctness**: Logic errors, off-by-one, null/undefined handling, race conditions.
+- **Security**: Injection, auth bypass, secrets exposure, unsafe deserialization.
+- **Performance**: Unnecessary allocations, O(n²) where O(n) suffices, missing caching.
+- **Maintainability**: Naming, duplication, coupling, missing abstractions.
+- **Testing**: Untested paths, missing edge-case coverage, brittle assertions.
+
+Output your findings as JSON matching the CodeReviewerOutput schema:
+{
+  "issues": [{ "file", "location", "severity", "category", "description", "suggestion" }],
+  "affectedSymbols": [],
+  "qualityVerdict": "Critical | Not Bad | Safe | Good | Perfect"
+}
+Return ONLY valid JSON. Do not wrap in markdown fences.`;
+
+const FLOW_DIAGRAM_INSTRUCTIONS = `## Flow Diagram Agent
+You are a specialized Flow Diagram analyst. Your task:
+- Reconstruct the most important **control flow** and **data flow** affected by the change.
+- Use PlantUML notation. Choose the simplest suitable diagram type: activity, sequence, class, or IE.
+- Name each diagram clearly to reflect the specific flow it explains.
+- Focus on entrypoints, key services/functions, state transitions, side effects, and outputs.
+
+Output your findings as JSON matching the FlowDiagramOutput schema:
+{
+  "diagrams": [{ "name", "type", "plantumlCode", "description" }],
+  "affectedFlows": []
+}
+Return ONLY valid JSON. Do not wrap in markdown fences.`;
+
+const OBSERVER_INSTRUCTIONS = `## Observer Agent
+You look beyond the changed diff to infer:
+- **Hidden risks** not visible in the diff itself.
+- **Missing edge-case coverage** that could cause production issues.
+- **Integration regressions** where changes in one module break consumers.
+
+Produce a short execution todo list with **no more than 4 items**.
+Each todo item must be action-oriented and testable.
+Prefix each with [Sequential] or [Parallel].
+
+Output your findings as JSON matching the ObserverOutput schema:
+{
+  "risks": [{ "description", "severity", "affectedArea" }],
+  "todoItems": [{ "action", "parallelizable" }],
+  "integrationConcerns": []
+}
+Return ONLY valid JSON. Do not wrap in markdown fences.`;
+
+const OBSERVER_HYPOTHESIS_INSTRUCTIONS = `
+### Hypothesis Investigation
+You have been provided with risk hypotheses generated from Phase 1 analysis.
+Investigate each hypothesis. For each, provide a verdict:
+- **confirmed**: Evidence supports the risk.
+- **refuted**: Evidence disproves the risk.
+- **inconclusive**: Not enough information to decide.
+
+Include your verdicts in the "hypothesisVerdicts" array:
+{
+  "hypothesisVerdicts": [{ "hypothesisIndex", "verdict", "evidence" }]
+}`;
+
+export class AgentPromptBuilder {
+  constructor(
+    private readonly budgetManager: ContextBudgetManager,
+    private readonly tokenEstimator: TokenEstimatorService,
+  ) {}
+
+  // ────────────────────────────────────────────
+  // Public: Code Reviewer prompt (Phase 1)
+  // ────────────────────────────────────────────
+  buildCodeReviewerPrompt(
+    ctx: AgentPromptBuildContext,
+    budget: AgentBudgetAllocation,
+  ): AgentPrompt {
+    // System message: custom prompt + CR-specific instructions only
+    const systemMessage =
+      (ctx.customSystemPrompt ? ctx.customSystemPrompt + '\n\n' : '') +
+      CODE_REVIEWER_INSTRUCTIONS;
+
+    // Prompt assembly
+    const parts: string[] = [];
+
+    // 1. Full diff (truncated to diffBudget)
+    parts.push('## Diff\n' + truncateToTokenBudget(ctx.fullDiff, budget.diffBudget));
+
+    // 2. Reference context (truncated to referenceBudget)
+    if (ctx.referenceContext) {
+      parts.push(
+        '## Reference Context\n' +
+          truncateToTokenBudget(ctx.referenceContext, budget.referenceBudget),
+      );
+    }
+
+    // 3. Dependency graph serialized as 'full'
+    if (ctx.dependencyGraph) {
+      const graphText = DependencyGraphIndex.serializeForPrompt(ctx.dependencyGraph, 'full');
+      // Remaining budget after diff + reference
+      const usedTokens = Math.ceil(parts.join('\n\n').length / 4);
+      const remaining = Math.max(0, budget.totalBudget - usedTokens - budget.sharedContextBudget);
+      parts.push(truncateToTokenBudget(graphText, remaining));
+    }
+
+    // 4. Shared context from store
+    if (ctx.sharedContextStore) {
+      const shared = (ctx.sharedContextStore as ISharedContextStore).serializeForAgent(
+        'Code Reviewer',
+        budget.sharedContextBudget,
+      );
+      if (shared) {
+        parts.push('## Shared Context\n' + shared);
+      }
+    }
+
+    const prompt = parts.join('\n\n');
+
+    // Tools: all 6 existing + queryContext
+    const tools: FunctionCall[] = [
+      findReferencesTool,
+      getDiagnosticsTool,
+      readFileTool,
+      getSymbolDefinitionTool,
+      searchCodeTool,
+      getRelatedFilesTool,
+      queryContextTool,
+    ];
+
+    return {
+      role: 'Code Reviewer',
+      systemMessage,
+      prompt,
+      tools,
+      phase: 1,
+      outputSchema: 'code-reviewer',
+      selfAudit: true,
+      maxIterations: 3,
+      sharedStore: ctx.sharedContextStore,
+    };
+  }
+
+  // ────────────────────────────────────────────
+  // Public: Flow Diagram prompt (Phase 1)
+  // ────────────────────────────────────────────
+  buildFlowDiagramPrompt(
+    ctx: AgentPromptBuildContext,
+    budget: AgentBudgetAllocation,
+  ): AgentPrompt {
+    const systemMessage = FLOW_DIAGRAM_INSTRUCTIONS;
+
+    const parts: string[] = [];
+
+    // 1. Structural diff only (truncated to diffBudget)
+    const structuralDiff = this.filterStructuralDiff(ctx.fullDiff, ctx.changedFiles);
+    parts.push('## Structural Diff\n' + truncateToTokenBudget(structuralDiff, budget.diffBudget));
+
+    // 2. Dependency graph serialized as 'critical-paths'
+    if (ctx.dependencyGraph) {
+      const graphText = DependencyGraphIndex.serializeForPrompt(
+        ctx.dependencyGraph,
+        'critical-paths',
+      );
+      parts.push(graphText);
+    }
+
+    // 3. Shared context from store
+    if (ctx.sharedContextStore) {
+      const shared = (ctx.sharedContextStore as ISharedContextStore).serializeForAgent(
+        'Flow Diagram',
+        budget.sharedContextBudget,
+      );
+      if (shared) {
+        parts.push('## Shared Context\n' + shared);
+      }
+    }
+
+    const prompt = parts.join('\n\n');
+
+    const tools: FunctionCall[] = [
+      findReferencesTool,
+      getRelatedFilesTool,
+      readFileTool,
+      getSymbolDefinitionTool,
+      queryContextTool,
+    ];
+
+    return {
+      role: 'Flow Diagram',
+      systemMessage,
+      prompt,
+      tools,
+      phase: 1,
+      outputSchema: 'flow-diagram',
+      selfAudit: true,
+      maxIterations: 3,
+      sharedStore: ctx.sharedContextStore,
+    };
+  }
+
+  // ────────────────────────────────────────────
+  // Public: Observer prompt (Phase 2)
+  // ────────────────────────────────────────────
+  buildObserverPrompt(
+    ctx: AgentPromptBuildContext,
+    budget: AgentBudgetAllocation,
+  ): AgentPrompt {
+    // System message: Observer instructions + hypothesis instructions if present
+    let systemMessage = OBSERVER_INSTRUCTIONS;
+
+    const hypotheses = ctx.riskHypotheses ?? [];
+    if (hypotheses.length > 0) {
+      systemMessage += '\n' + OBSERVER_HYPOTHESIS_INSTRUCTIONS;
+    }
+
+    const parts: string[] = [];
+
+    // 1. Diff summary (NOT full diff)
+    parts.push(this.buildDiffSummary(ctx.changedFiles));
+
+    // 2. Shared context from store (Phase 1 findings + hypotheses)
+    if (ctx.sharedContextStore) {
+      const shared = (ctx.sharedContextStore as ISharedContextStore).serializeForAgent(
+        'Observer',
+        budget.sharedContextBudget,
+      );
+      if (shared) {
+        parts.push('## Shared Context (Phase 1 Findings)\n' + shared);
+      }
+    }
+
+    // 3. Dependency graph serialized as 'summary'
+    if (ctx.dependencyGraph) {
+      const graphText = DependencyGraphIndex.serializeForPrompt(ctx.dependencyGraph, 'summary');
+      parts.push(graphText);
+    }
+
+    const prompt = parts.join('\n\n');
+
+    const tools: FunctionCall[] = [
+      getDiagnosticsTool,
+      getRelatedFilesTool,
+      readFileTool,
+      queryContextTool,
+    ];
+
+    return {
+      role: 'Observer',
+      systemMessage,
+      prompt,
+      tools,
+      phase: 2,
+      outputSchema: 'observer',
+      selfAudit: true,
+      maxIterations: 3,
+      sharedStore: ctx.sharedContextStore,
+    };
+  }
+
+  // ────────────────────────────────────────────
+  // Public: Synthesizer prompt (final merge)
+  // ────────────────────────────────────────────
+  buildSynthesizerPrompt(
+    agentReports: StructuredAgentReport[],
+    diffSummary: string,
+  ): string {
+    // Step 1: Extract structured data from each report
+    let crOutput: CodeReviewerOutput | undefined;
+    let fdOutput: FlowDiagramOutput | undefined;
+    let obsOutput: ObserverOutput | undefined;
+    const rawReports: string[] = [];
+
+    for (const report of agentReports) {
+      rawReports.push(`### ${report.role} Report\n${report.raw}`);
+      if (report.role === 'Code Reviewer') {
+        crOutput = report.structured;
+      } else if (report.role === 'Flow Diagram') {
+        fdOutput = report.structured;
+      } else if (report.role === 'Observer') {
+        obsOutput = report.structured;
+      }
+    }
+
+    // Step 2: Deduplicate issues
+    const deduplicatedLines: string[] = [];
+    const matchedObserverIndices = new Set<number>();
+
+    if (crOutput?.issues && obsOutput?.risks) {
+      for (const issue of crOutput.issues) {
+        let merged = false;
+        for (let i = 0; i < obsOutput.risks.length; i++) {
+          if (matchedObserverIndices.has(i)) { continue; }
+          const risk = obsOutput.risks[i];
+          if (
+            risk.affectedArea.includes(issue.file) &&
+            this.wordOverlapRatio(issue.description, risk.description) > 0.4
+          ) {
+            // Merge matched pair
+            deduplicatedLines.push(
+              `- [${issue.severity}] ${issue.file}:${issue.location} — ${issue.description}` +
+              ` | Observer risk: ${risk.description} (${risk.severity})` +
+              ` | Suggestion: ${issue.suggestion}`,
+            );
+            matchedObserverIndices.add(i);
+            merged = true;
+            break;
+          }
+        }
+        if (!merged) {
+          deduplicatedLines.push(
+            `- [${issue.severity}] ${issue.file}:${issue.location} — ${issue.description}` +
+            ` | Suggestion: ${issue.suggestion}`,
+          );
+        }
+      }
+      // Unmatched observer risks
+      for (let i = 0; i < obsOutput.risks.length; i++) {
+        if (!matchedObserverIndices.has(i)) {
+          const risk = obsOutput.risks[i];
+          deduplicatedLines.push(
+            `- [Observer ${risk.severity}] ${risk.affectedArea} — ${risk.description}`,
+          );
+        }
+      }
+    } else if (crOutput?.issues) {
+      for (const issue of crOutput.issues) {
+        deduplicatedLines.push(
+          `- [${issue.severity}] ${issue.file}:${issue.location} — ${issue.description}` +
+          ` | Suggestion: ${issue.suggestion}`,
+        );
+      }
+    } else if (obsOutput?.risks) {
+      for (const risk of obsOutput.risks) {
+        deduplicatedLines.push(
+          `- [Observer ${risk.severity}] ${risk.affectedArea} — ${risk.description}`,
+        );
+      }
+    }
+
+    const deduplicatedIssues =
+      deduplicatedLines.length > 0
+        ? '## Deduplicated Issues\n' + deduplicatedLines.join('\n')
+        : '';
+
+    // Step 3: Map hypothesis verdicts to risk sections
+    let riskMapping = '';
+    if (obsOutput?.hypothesisVerdicts && obsOutput.hypothesisVerdicts.length > 0) {
+      const verdictLines = obsOutput.hypothesisVerdicts.map(
+        (v) => `- Hypothesis #${v.hypothesisIndex}: **${v.verdict}** — ${v.evidence}`,
+      );
+      riskMapping = '## Hypothesis Verdicts\n' + verdictLines.join('\n');
+    }
+
+    // Step 4: Embed PlantUML diagrams from Flow Diagram
+    let diagrams = '';
+    if (fdOutput?.diagrams && fdOutput.diagrams.length > 0) {
+      const diagramBlocks = fdOutput.diagrams.map(
+        (d) =>
+          `### Diagram: ${d.name}\n${d.description}\n\n\`\`\`plantuml\n${d.plantumlCode}\n\`\`\``,
+      );
+      diagrams = '## Flow Diagrams\n' + diagramBlocks.join('\n\n');
+    }
+
+    // Step 5: Assemble final prompt
+    const sections = [
+      REVIEW_OUTPUT_CONTRACT,
+      '## Diff Summary\n' + diffSummary,
+      deduplicatedIssues,
+      diagrams,
+      riskMapping,
+      '## Raw Agent Reports\n' + rawReports.join('\n\n'),
+    ].filter(Boolean);
+
+    return sections.join('\n\n');
+  }
+
+  // ────────────────────────────────────────────
+  // Private: filterStructuralDiff
+  // ────────────────────────────────────────────
+  /** Keep only structural changes (signatures, imports, class/type defs) from a unified diff. */
+  filterStructuralDiff(diff: string, changedFiles: UnifiedDiffFile[]): string {
+    const lines = diff.split('\n');
+    const outputLines: string[] = [];
+    let inHunk = false;
+    let hunkLines: string[] = [];
+    let hunkHeader = '';
+
+    const flushHunk = () => {
+      if (!hunkHeader) { return; }
+
+      // Collect indices of structural change lines within the hunk
+      const structuralIndices: number[] = [];
+      for (let i = 0; i < hunkLines.length; i++) {
+        if (STRUCTURAL_LINE_PATTERN.test(hunkLines[i])) {
+          structuralIndices.push(i);
+        }
+      }
+
+      if (structuralIndices.length === 0) {
+        // Drop hunk — zero structural changes
+        hunkHeader = '';
+        hunkLines = [];
+        return;
+      }
+
+      // Keep structural lines + 2 context lines around each
+      const keepSet = new Set<number>();
+      for (const idx of structuralIndices) {
+        for (let j = Math.max(0, idx - 2); j <= Math.min(hunkLines.length - 1, idx + 2); j++) {
+          keepSet.add(j);
+        }
+      }
+
+      outputLines.push(hunkHeader);
+      for (let i = 0; i < hunkLines.length; i++) {
+        if (keepSet.has(i)) {
+          outputLines.push(hunkLines[i]);
+        }
+      }
+
+      hunkHeader = '';
+      hunkLines = [];
+    };
+
+    for (const line of lines) {
+      // File headers
+      if (line.startsWith('---') || line.startsWith('+++')) {
+        if (inHunk) { flushHunk(); inHunk = false; }
+        outputLines.push(line);
+        continue;
+      }
+
+      // Hunk header
+      if (line.startsWith('@@')) {
+        if (inHunk) { flushHunk(); }
+        inHunk = true;
+        hunkHeader = line;
+        hunkLines = [];
+        continue;
+      }
+
+      if (inHunk) {
+        hunkLines.push(line);
+      } else {
+        // Lines outside hunks (e.g. diff --git header) — keep
+        outputLines.push(line);
+      }
+    }
+
+    // Flush last hunk
+    if (inHunk) { flushHunk(); }
+
+    return outputLines.join('\n');
+  }
+
+  // ────────────────────────────────────────────
+  // Private: buildDiffSummary
+  // ────────────────────────────────────────────
+  /** Produce a concise per-file summary: path, status, +added/-removed, affected symbols. */
+  buildDiffSummary(changedFiles: UnifiedDiffFile[]): string {
+    const fileSummaries: string[] = [];
+
+    for (const file of changedFiles) {
+      let added = 0;
+      let removed = 0;
+      const symbols = new Set<string>();
+
+      const diffLines = (file.diff ?? '').split('\n');
+      for (const line of diffLines) {
+        if (line.startsWith('+') && !line.startsWith('+++')) {
+          added++;
+        } else if (line.startsWith('-') && !line.startsWith('---')) {
+          removed++;
+        }
+
+        // Extract function/class names from @@ hunk headers
+        if (line.startsWith('@@')) {
+          const match = line.match(/@@ .+ @@\s*(.*)/);
+          if (match?.[1]) {
+            const sym = match[1].trim();
+            if (sym) { symbols.add(sym); }
+          }
+        }
+      }
+
+      const symbolStr = symbols.size > 0 ? [...symbols].join(', ') : 'N/A';
+      fileSummaries.push(
+        `- ${file.relativePath} (${file.statusLabel}): +${added}/-${removed} lines, affects: ${symbolStr}`,
+      );
+    }
+
+    return '## Changed Files Summary\n' + fileSummaries.join('\n');
+  }
+
+  // ────────────────────────────────────────────
+  // Private: wordOverlapRatio
+  // ────────────────────────────────────────────
+  /** Compute word overlap ratio between two strings (words > 3 chars). */
+  wordOverlapRatio(a: string, b: string): number {
+    const toWords = (s: string) =>
+      new Set(
+        s
+          .split(/\s+/)
+          .map((w) => w.toLowerCase())
+          .filter((w) => w.length > 3),
+      );
+
+    const setA = toWords(a);
+    const setB = toWords(b);
+
+    if (setA.size === 0 || setB.size === 0) {
+      return 0;
+    }
+
+    let intersectionSize = 0;
+    for (const word of setA) {
+      if (setB.has(word)) {
+        intersectionSize++;
+      }
+    }
+
+    return intersectionSize / Math.min(setA.size, setB.size);
+  }
+}
