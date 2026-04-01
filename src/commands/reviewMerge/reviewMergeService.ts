@@ -5,6 +5,7 @@ import {
     ContextStrategy,
     ContextTaskSpec,
     GenerationCancelledError,
+    LlmRequestLogEntry,
     LLMService,
     UnifiedDiffFile
 } from '../../services/llm';
@@ -12,11 +13,11 @@ import { GitService } from '../../services/utils/gitService';
 import { ReviewWorkflowServiceBase } from '../reviewShared/reviewWorkflowServiceBase';
 import { AgentPrompt } from '../../services/llm/ContextOrchestratorService';
 import { SharedContextStoreImpl } from '../../services/llm/orchestrator/SharedContextStore';
-import { ContextBudgetManager, DEFAULT_BUDGET_CONFIG } from '../../services/llm/orchestrator/ContextBudgetManager';
+import { ContextBudgetManager, DEFAULT_BUDGET_CONFIG, DESCRIPTION_BUDGET_CONFIG } from '../../services/llm/orchestrator/ContextBudgetManager';
 import { AgentPromptBuilder } from '../../services/llm/orchestrator/AgentPromptBuilder';
 import { DependencyGraphIndex, DEFAULT_GRAPH_CONFIG } from '../../services/llm/orchestrator/DependencyGraphIndex';
 import { TokenEstimatorService } from '../../services/llm/TokenEstimatorService';
-import { AgentPromptBuildContext } from '../../services/llm/orchestrator/orchestratorTypes';
+import { AgentPromptBuildContext, StructuredAgentReport, CodeReviewerOutput, FlowDiagramOutput, ObserverOutput, DescriptionAgentReport, ChangeAnalyzerOutput, ContextInvestigatorOutput } from '../../services/llm/orchestrator/orchestratorTypes';
 
 export interface ReviewResult {
     success: boolean;
@@ -63,7 +64,8 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
         contextWindow?: number,
         maxOutputTokens?: number,
         onProgress?: (message: string) => void,
-        onLog?: (message: string) => void
+        onLog?: (message: string) => void,
+        onLlmLog?: (entry: LlmRequestLogEntry) => void
     ): Promise<ReviewResult> {
         return this.withAbortController(async (abortController) => {
             try {
@@ -92,15 +94,6 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                     customAgentInstructions
                 );
                 const basePrompt = this.buildReviewPrompt(baseBranch, compareBranch, branchDiff.diff, taskInfo);
-                const referenceContextResult = await this.gitService.buildReviewReferenceContext(branchDiff.changes, {
-                    strategy,
-                    model: dependencyState.adapter.getModel(),
-                    contextWindow: dependencyState.adapter.getContextWindow(),
-                    mode: 'auto',
-                    systemMessage,
-                    directPrompt: basePrompt,
-                });
-                this.logReferenceContextMetadata(referenceContextResult.metadata, onLog);
 
                 // ── Step 2: Initialize new pipeline components ──
                 const sharedStore = new SharedContextStoreImpl();
@@ -110,7 +103,7 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
 
                 // ── Step 3: Pre-Analysis Phase ──
                 onProgress?.("Building dependency graph from VS Code index...");
-                const graphIndex = new DependencyGraphIndex(DEFAULT_GRAPH_CONFIG);
+                const graphIndex = new DependencyGraphIndex(DEFAULT_GRAPH_CONFIG, this.gitService, compareBranch);
                 let dependencyGraph;
                 try {
                     dependencyGraph = await graphIndex.build(branchDiff.changes);
@@ -154,6 +147,8 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                     customSystemPrompt,
                     customRules,
                     customAgentInstructions,
+                    compareBranch,
+                    gitService: this.gitService,
                 };
                 const codeReviewerAgent = promptBuilder.buildCodeReviewerPrompt(buildContext, safeBudgets[0]);
                 const flowDiagramAgent = promptBuilder.buildFlowDiagramPrompt(buildContext, safeBudgets[1]);
@@ -165,14 +160,45 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                     dependencyState.adapter,
                     agents,
                     systemMessage,
-                    (reports) => promptBuilder.buildSynthesizerPrompt(
-                        reports.map((r, i) => ({
-                            role: i === 0 ? 'Code Reviewer' as const : i === 1 ? 'Flow Diagram' as const : 'Observer' as const,
-                            structured: {} as any,
-                            raw: r,
-                        })),
-                        promptBuilder.buildDiffSummary(branchDiff.changes),
-                    ),
+                    (reports) => {
+                        // Reconstruct structured reports from SharedContextStore (has real parsed data)
+                        const structuredReports: StructuredAgentReport[] = [];
+                        const crFindings = sharedStore.getAgentFindings('Code Reviewer');
+                        const fdFindings = sharedStore.getAgentFindings('Flow Diagram');
+                        const obsFindings = sharedStore.getAgentFindings('Observer');
+
+                        if (crFindings.length > 0) {
+                            structuredReports.push({
+                                role: 'Code Reviewer',
+                                structured: crFindings[0].data as CodeReviewerOutput,
+                                raw: reports[0] ?? '',
+                            });
+                        }
+                        if (fdFindings.length > 0) {
+                            structuredReports.push({
+                                role: 'Flow Diagram',
+                                structured: fdFindings[0].data as FlowDiagramOutput,
+                                raw: reports[1] ?? '',
+                            });
+                        }
+                        if (obsFindings.length > 0) {
+                            structuredReports.push({
+                                role: 'Observer',
+                                structured: obsFindings[0].data as ObserverOutput,
+                                raw: reports[2] ?? '',
+                            });
+                        }
+
+                        // Fallback: if no structured data, build from raw text
+                        if (structuredReports.length === 0) {
+                            return reports.join('\n\n---\n\n');
+                        }
+
+                        return promptBuilder.buildSynthesizerPrompt(
+                            structuredReports,
+                            promptBuilder.buildDiffSummary(branchDiff.changes),
+                        );
+                    },
                     abortController.signal,
                     {
                         adapter: dependencyState.adapter,
@@ -181,6 +207,7 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                         signal: abortController.signal,
                         onProgress,
                         onLog,
+                        onLlmLog,
                         task: this.buildMergeReviewTaskSpec(
                             baseBranch,
                             compareBranch,
@@ -228,19 +255,14 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
         contextWindow?: number,
         maxOutputTokens?: number,
         onProgress?: (message: string) => void,
-        onLog?: (message: string) => void
+        onLog?: (message: string) => void,
+        onLlmLog?: (entry: LlmRequestLogEntry) => void
     ): Promise<DescriptionResult> {
         return this.withAbortController(async (abortController) => {
             try {
                 const dependencyState = await this.prepareAdapter(
-                    provider,
-                    model,
-                    language,
-                    strategy,
-                    apiKey,
-                    baseURL,
-                    contextWindow,
-                    maxOutputTokens
+                    provider, model, language, strategy,
+                    apiKey, baseURL, contextWindow, maxOutputTokens
                 );
                 if (!dependencyState.adapter) {
                     return { success: false, error: dependencyState.error };
@@ -251,33 +273,118 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                     : await this.getBranchDiffPreview(baseBranch, compareBranch);
                 const customSystemPrompt = await this.gitService.getCustomDescriptionMergeSystemPrompt();
                 const systemMessage = SYSTEM_PROMPT_GENERATE_DESCRIPTION_MERGE(language, customSystemPrompt, '');
+
+                // ── Initialize multi-agent pipeline ──
+                const sharedStore = new SharedContextStoreImpl();
+                const tokenEstimator = new TokenEstimatorService();
+                const budgetManager = new ContextBudgetManager(DESCRIPTION_BUDGET_CONFIG, tokenEstimator);
+                const promptBuilder = new AgentPromptBuilder(budgetManager, tokenEstimator);
+
+                // ── Pre-Analysis Phase ──
+                onProgress?.("Building dependency graph...");
+                const graphIndex = new DependencyGraphIndex(DEFAULT_GRAPH_CONFIG, this.gitService, compareBranch);
+                let dependencyGraph;
+                try {
+                    dependencyGraph = await graphIndex.build(branchDiff.changes);
+                    sharedStore.setDependencyGraph(dependencyGraph);
+                    onLog?.(`[pre-analysis] graph: ${dependencyGraph.fileDependencies.size} files, ${dependencyGraph.symbolMap.size} symbols`);
+                } catch (error) {
+                    onLog?.(`[pre-analysis] failed: ${error}`);
+                }
+
+                // ── Calculate budgets ──
+                const adapterContextWindow = dependencyState.adapter.getContextWindow();
+                const adapterMaxOutputTokens = dependencyState.adapter.getMaxOutputTokens();
+                const systemTokens = tokenEstimator.estimateTextTokens(systemMessage, dependencyState.adapter.getModel());
+                const diffTokens = tokenEstimator.estimateTextTokens(branchDiff.diff, dependencyState.adapter.getModel());
+                const budgetAllocations = budgetManager.allocateAgentBudgets(adapterContextWindow, adapterMaxOutputTokens, systemTokens, diffTokens);
+                const safeBudgets = budgetManager.enforceGlobalBudget(budgetAllocations, adapterContextWindow);
+
+                // ── Reference context with dynamic limits ──
                 const basePrompt = this.buildDescriptionPrompt(baseBranch, compareBranch, branchDiff.diff, taskInfo);
                 const referenceContextResult = await this.gitService.buildReviewReferenceContext(branchDiff.changes, {
                     strategy,
                     model: dependencyState.adapter.getModel(),
-                    contextWindow: dependencyState.adapter.getContextWindow(),
+                    contextWindow: adapterContextWindow,
                     mode: 'auto',
                     systemMessage,
                     directPrompt: basePrompt,
+                    maxSymbols: budgetManager.computeMaxSymbols(adapterContextWindow),
+                    maxReferenceFiles: budgetManager.computeMaxReferenceFiles(adapterContextWindow),
+                    tokenBudget: budgetManager.computeReferenceContextBudget(adapterContextWindow),
                 });
                 this.logReferenceContextMetadata(referenceContextResult.metadata, onLog);
 
-                const description = await this.contextOrchestrator.generate({
-                    adapter: dependencyState.adapter,
-                    strategy,
-                    changes: branchDiff.changes,
-                    signal: abortController.signal,
-                    onProgress,
-                    onLog,
-                    task: this.buildMergeDescriptionTaskSpec(
-                        baseBranch,
-                        compareBranch,
-                        branchDiff.diff,
-                        taskInfo,
-                        systemMessage,
-                        referenceContextResult.context
-                    ),
-                });
+                // ── Build description agent prompts ──
+                const buildContext: AgentPromptBuildContext = {
+                    fullDiff: branchDiff.diff,
+                    changedFiles: branchDiff.changes,
+                    referenceContext: referenceContextResult.context,
+                    dependencyGraph,
+                    sharedContextStore: sharedStore,
+                    language,
+                    taskInfo,
+                    compareBranch,
+                    gitService: this.gitService,
+                };
+                const changeAnalyzerAgent = promptBuilder.buildChangeAnalyzerPrompt(buildContext, safeBudgets[0]);
+                const contextInvestigatorAgent = promptBuilder.buildContextInvestigatorPrompt(buildContext, safeBudgets[1]);
+
+                // ── Execute multi-agent description pipeline ──
+                const description = await this.contextOrchestrator.generateMultiAgentDescription(
+                    dependencyState.adapter,
+                    [changeAnalyzerAgent, contextInvestigatorAgent],
+                    systemMessage,
+                    (reports) => {
+                        // Reconstruct structured reports from SharedContextStore
+                        const descReports: DescriptionAgentReport[] = [];
+                        const caFindings = sharedStore.getAgentFindings('Change Analyzer');
+                        const ciFindings = sharedStore.getAgentFindings('Context Investigator');
+
+                        if (caFindings.length > 0) {
+                            descReports.push({
+                                role: 'Change Analyzer',
+                                structured: caFindings[0].data as ChangeAnalyzerOutput,
+                                raw: reports[0] ?? '',
+                            });
+                        }
+                        if (ciFindings.length > 0) {
+                            descReports.push({
+                                role: 'Context Investigator',
+                                structured: ciFindings[0].data as ContextInvestigatorOutput,
+                                raw: reports[1] ?? '',
+                            });
+                        }
+
+                        if (descReports.length === 0) {
+                            return reports.join('\n\n---\n\n');
+                        }
+
+                        return promptBuilder.buildDescriptionSynthesizerPrompt(
+                            descReports,
+                            promptBuilder.buildDiffSummary(branchDiff.changes),
+                            systemMessage,
+                            baseBranch,
+                            compareBranch,
+                            taskInfo,
+                        );
+                    },
+                    sharedStore,
+                    abortController.signal,
+                    {
+                        adapter: dependencyState.adapter,
+                        strategy,
+                        changes: branchDiff.changes,
+                        signal: abortController.signal,
+                        onProgress,
+                        onLog,
+                        onLlmLog,
+                        task: this.buildMergeDescriptionTaskSpec(
+                            baseBranch, compareBranch, branchDiff.diff,
+                            taskInfo, systemMessage, referenceContextResult.context
+                        ),
+                    },
+                );
 
                 return {
                     success: true,

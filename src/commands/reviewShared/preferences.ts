@@ -9,7 +9,6 @@ import * as vscode from 'vscode';
 export function loadReviewPreferences(llmService: LLMService): ReviewPreferences {
     const savedProvider = ReviewMergeConfigManager.getProvider();
     const savedLanguage = ReviewMergeConfigManager.getLanguage();
-    const savedContextStrategy = ReviewMergeConfigManager.getContextStrategy();
     const currentProvider = savedProvider || llmService.getProvider();
     const currentModel = savedProvider
         ? ReviewMergeConfigManager.getModel()
@@ -21,7 +20,6 @@ export function loadReviewPreferences(llmService: LLMService): ReviewPreferences
         currentProvider,
         currentModel,
         savedLanguage,
-        savedContextStrategy,
     };
 }
 

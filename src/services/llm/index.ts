@@ -20,6 +20,7 @@ export type {
   ContextStrategy,
   ContextTaskSpec,
   DiffChunk,
+  LlmRequestLogEntry,
   TaskKind,
   UnifiedDiffFile,
 } from "./contextTypes";

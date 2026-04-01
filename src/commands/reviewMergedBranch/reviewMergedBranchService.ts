@@ -1,5 +1,5 @@
 import { LLMProvider } from '../../llm-adapter';
-import { REVIEW_AGENT_INSTRUCTIONS, REVIEW_OUTPUT_CONTRACT } from '../../prompts/reviewOutputContract';
+import { SYSTEM_PROMPT_GENERATE_REVIEW_MERGE } from '../../prompts/systemPromptGenerateReviewMerge';
 import {
     ContextStrategy,
     ContextTaskSpec,
@@ -8,20 +8,27 @@ import {
     LLMService,
     UnifiedDiffFile
 } from '../../services/llm';
+import { ContextBudgetManager, DEFAULT_BUDGET_CONFIG } from '../../services/llm/orchestrator/ContextBudgetManager';
+import { DependencyGraphIndex, DEFAULT_GRAPH_CONFIG } from '../../services/llm/orchestrator/DependencyGraphIndex';
+import { SharedContextStoreImpl } from '../../services/llm/orchestrator/SharedContextStore';
+import { AgentPromptBuilder } from '../../services/llm/orchestrator/AgentPromptBuilder';
+import { TokenEstimatorService } from '../../services/llm/TokenEstimatorService';
+import {
+    AgentPrompt,
+    AgentPromptBuildContext,
+    CodeReviewerOutput,
+    FlowDiagramOutput,
+    ObserverOutput,
+    StructuredAgentReport
+} from '../../services/llm/orchestrator/orchestratorTypes';
 import { GitService } from '../../services/utils/gitService';
 import { ReviewWorkflowServiceBase } from '../reviewShared/reviewWorkflowServiceBase';
-import { AgentPrompt } from '../../services/llm/ContextOrchestratorService';
-import { SharedContextStoreImpl } from '../../services/llm/orchestrator/SharedContextStore';
-import { ContextBudgetManager, DEFAULT_BUDGET_CONFIG } from '../../services/llm/orchestrator/ContextBudgetManager';
-import { AgentPromptBuilder } from '../../services/llm/orchestrator/AgentPromptBuilder';
-import { DependencyGraphIndex, DEFAULT_GRAPH_CONFIG } from '../../services/llm/orchestrator/DependencyGraphIndex';
-import { TokenEstimatorService } from '../../services/llm/TokenEstimatorService';
-import { AgentPromptBuildContext, StructuredAgentReport, CodeReviewerOutput, FlowDiagramOutput, ObserverOutput } from '../../services/llm/orchestrator/orchestratorTypes';
 
 export interface ReviewResult {
     success: boolean;
     review?: string;
     diff?: string;
+    changes?: UnifiedDiffFile[];
     error?: string;
 }
 
@@ -32,17 +39,22 @@ export interface PlantUmlRepairResult {
 }
 
 /**
- * Service for handling review staged changes operations
+ * Service for handling review operations on already-merged branches.
+ * Extends ReviewWorkflowServiceBase to reuse the entire multi-agent pipeline,
+ * adapter management, abort handling, and PlantUML repair.
  */
-export class ReviewStagedChangesService extends ReviewWorkflowServiceBase {
+export class ReviewMergedBranchService extends ReviewWorkflowServiceBase {
     constructor(gitService: GitService, llmService: LLMService) {
         super(gitService, llmService);
     }
 
     /**
-     * Generate a review for staged changes
+     * Generate a review for a branch that has already been merged.
+     * Uses the merge commit SHA to extract the first-parent diff,
+     * then runs the full multi-agent review pipeline.
      */
     async generateReview(
+        mergeCommitSha: string,
         provider: LLMProvider,
         model: string,
         language: string,
@@ -58,81 +70,87 @@ export class ReviewStagedChangesService extends ReviewWorkflowServiceBase {
     ): Promise<ReviewResult> {
         return this.withAbortController(async (abortController) => {
             try {
+                // Step 1: Prepare LLM adapter
                 const dependencyState = await this.prepareAdapter(
-                    provider,
-                    model,
-                    language,
-                    strategy,
-                    apiKey,
-                    baseURL,
-                    contextWindow,
-                    maxOutputTokens
+                    provider, model, language, strategy,
+                    apiKey, baseURL, contextWindow, maxOutputTokens
                 );
                 if (!dependencyState.adapter) {
                     return { success: false, error: dependencyState.error };
                 }
 
-                const preview = await this.getStagedDiffPreview();
-                if (!preview) {
-                    return {
-                        success: false,
-                        error: 'No staged files found. Please stage some files before reviewing.'
-                    };
-                }
+                // Step 2: Get diff from merge commit
+                const branchDiff = await this.gitService.getMergedBranchDiff(mergeCommitSha);
 
+                // Step 3: Load custom prompts
                 const customSystemPrompt = await this.gitService.getCustomReviewMergeSystemPrompt();
                 const customAgentInstructions = await this.gitService.getCustomReviewMergeAgentPrompt();
                 const customRules = await this.gitService.getCustomReviewMergeRules();
-                const systemPrompt = this.withCustomAgentInstructions(
-                    this.buildStagedReviewSystemPrompt(language, customSystemPrompt, customRules),
-                    customAgentInstructions
-                );
-                const basePrompt = this.buildReviewPrompt(preview.diff, taskInfo);
 
-                // ── Step 2: Initialize new pipeline components ──
+                // Step 4: Build system message
+                const systemMessage = SYSTEM_PROMPT_GENERATE_REVIEW_MERGE(
+                    language, customSystemPrompt, customRules, customAgentInstructions
+                );
+                const basePrompt = this.buildMergedBranchReviewPrompt(
+                    mergeCommitSha, branchDiff.diff, taskInfo
+                );
+
+                // Step 5: Initialize pipeline components
                 const sharedStore = new SharedContextStoreImpl();
                 const tokenEstimator = new TokenEstimatorService();
                 const budgetManager = new ContextBudgetManager(DEFAULT_BUDGET_CONFIG, tokenEstimator);
                 const promptBuilder = new AgentPromptBuilder(budgetManager, tokenEstimator);
 
-                // ── Step 3: Pre-Analysis Phase ──
+                // Step 6: Build dependency graph
                 onProgress?.("Building dependency graph from VS Code index...");
-                const graphIndex = new DependencyGraphIndex(DEFAULT_GRAPH_CONFIG);
+                const graphIndex = new DependencyGraphIndex(
+                    DEFAULT_GRAPH_CONFIG, this.gitService, mergeCommitSha
+                );
                 let dependencyGraph;
                 try {
-                    dependencyGraph = await graphIndex.build(preview.changes);
+                    dependencyGraph = await graphIndex.build(branchDiff.changes);
                     sharedStore.setDependencyGraph(dependencyGraph);
                     onLog?.(`[pre-analysis] graph built: ${dependencyGraph.fileDependencies.size} files, ${dependencyGraph.symbolMap.size} symbols, ${dependencyGraph.criticalPaths.length} critical paths`);
                 } catch (error) {
                     onLog?.(`[pre-analysis] failed, falling back to legacy: ${error}`);
                 }
 
-                // ── Step 4: Calculate budgets ──
+                // Step 7: Calculate budgets
                 const adapterContextWindow = dependencyState.adapter.getContextWindow();
                 const adapterMaxOutputTokens = dependencyState.adapter.getMaxOutputTokens();
-                const systemTokens = tokenEstimator.estimateTextTokens(systemPrompt, dependencyState.adapter.getModel());
-                const diffTokens = tokenEstimator.estimateTextTokens(preview.diff, dependencyState.adapter.getModel());
-                const budgetAllocations = budgetManager.allocateAgentBudgets(adapterContextWindow, adapterMaxOutputTokens, systemTokens, diffTokens);
-                const safeBudgets = budgetManager.enforceGlobalBudget(budgetAllocations, adapterContextWindow);
+                const systemTokens = tokenEstimator.estimateTextTokens(
+                    systemMessage, dependencyState.adapter.getModel()
+                );
+                const diffTokens = tokenEstimator.estimateTextTokens(
+                    branchDiff.diff, dependencyState.adapter.getModel()
+                );
+                const budgetAllocations = budgetManager.allocateAgentBudgets(
+                    adapterContextWindow, adapterMaxOutputTokens, systemTokens, diffTokens
+                );
+                const safeBudgets = budgetManager.enforceGlobalBudget(
+                    budgetAllocations, adapterContextWindow
+                );
 
-                // ── Step 5: Re-build reference context with dynamic limits ──
-                const dynamicReferenceContextResult = await this.gitService.buildReviewReferenceContext(preview.changes, {
-                    strategy,
-                    model: dependencyState.adapter.getModel(),
-                    contextWindow: adapterContextWindow,
-                    mode: 'auto',
-                    systemMessage: systemPrompt,
-                    directPrompt: basePrompt,
-                    maxSymbols: budgetManager.computeMaxSymbols(adapterContextWindow),
-                    maxReferenceFiles: budgetManager.computeMaxReferenceFiles(adapterContextWindow),
-                    tokenBudget: budgetManager.computeReferenceContextBudget(adapterContextWindow),
-                });
+                // Step 8: Build reference context
+                const dynamicReferenceContextResult = await this.gitService.buildReviewReferenceContext(
+                    branchDiff.changes, {
+                        strategy,
+                        model: dependencyState.adapter.getModel(),
+                        contextWindow: adapterContextWindow,
+                        mode: 'auto',
+                        systemMessage,
+                        directPrompt: basePrompt,
+                        maxSymbols: budgetManager.computeMaxSymbols(adapterContextWindow),
+                        maxReferenceFiles: budgetManager.computeMaxReferenceFiles(adapterContextWindow),
+                        tokenBudget: budgetManager.computeReferenceContextBudget(adapterContextWindow),
+                    }
+                );
                 this.logReferenceContextMetadata(dynamicReferenceContextResult.metadata, onLog);
 
-                // ── Step 6: Build agent-specific prompts ──
+                // Step 9: Build AgentPromptBuildContext
                 const buildContext: AgentPromptBuildContext = {
-                    fullDiff: preview.diff,
-                    changedFiles: preview.changes,
+                    fullDiff: branchDiff.diff,
+                    changedFiles: branchDiff.changes,
                     referenceContext: dynamicReferenceContextResult.context,
                     dependencyGraph,
                     sharedContextStore: sharedStore,
@@ -141,19 +159,25 @@ export class ReviewStagedChangesService extends ReviewWorkflowServiceBase {
                     customSystemPrompt,
                     customRules,
                     customAgentInstructions,
+                    compareBranch: mergeCommitSha,
+                    gitService: this.gitService,
                 };
-                const codeReviewerAgent = promptBuilder.buildCodeReviewerPrompt(buildContext, safeBudgets[0]);
-                const flowDiagramAgent = promptBuilder.buildFlowDiagramPrompt(buildContext, safeBudgets[1]);
 
+                // Step 10: Build agent prompts
+                const codeReviewerAgent = promptBuilder.buildCodeReviewerPrompt(
+                    buildContext, safeBudgets[0]
+                );
+                const flowDiagramAgent = promptBuilder.buildFlowDiagramPrompt(
+                    buildContext, safeBudgets[1]
+                );
                 const agents: AgentPrompt[] = [codeReviewerAgent, flowDiagramAgent];
 
-                // ── Step 7: Execute with phased config ──
+                // Step 11: Execute multi-agent pipeline
                 const review = await this.contextOrchestrator.generateMultiAgentFinalText(
                     dependencyState.adapter,
                     agents,
-                    systemPrompt,
+                    systemMessage,
                     (reports) => {
-                        // Reconstruct structured reports from SharedContextStore (has real parsed data)
                         const structuredReports: StructuredAgentReport[] = [];
                         const crFindings = sharedStore.getAgentFindings('Code Reviewer');
                         const fdFindings = sharedStore.getAgentFindings('Flow Diagram');
@@ -181,30 +205,27 @@ export class ReviewStagedChangesService extends ReviewWorkflowServiceBase {
                             });
                         }
 
-                        // Fallback: if no structured data, build from raw text
                         if (structuredReports.length === 0) {
                             return reports.join('\n\n---\n\n');
                         }
 
                         return promptBuilder.buildSynthesizerPrompt(
                             structuredReports,
-                            promptBuilder.buildDiffSummary(preview.changes),
+                            promptBuilder.buildDiffSummary(branchDiff.changes),
                         );
                     },
                     abortController.signal,
                     {
                         adapter: dependencyState.adapter,
                         strategy,
-                        changes: preview.changes,
+                        changes: branchDiff.changes,
                         signal: abortController.signal,
                         onProgress,
                         onLog,
                         onLlmLog,
-                        task: this.buildStagedReviewTaskSpec(
-                            preview.diff,
-                            taskInfo,
-                            systemPrompt,
-                            dynamicReferenceContextResult.context
+                        task: this.buildMergedBranchReviewTaskSpec(
+                            mergeCommitSha, branchDiff.diff, taskInfo,
+                            systemMessage, dynamicReferenceContextResult.context
                         ),
                     },
                     {
@@ -215,26 +236,23 @@ export class ReviewStagedChangesService extends ReviewWorkflowServiceBase {
                     }
                 );
 
+                // Step 12: Return result
                 return {
                     success: true,
-                    review: this.gitService.normalizeGeneratedPaths(review, preview.changes),
-                    diff: preview.diff
+                    review: this.gitService.normalizeGeneratedPaths(review, branchDiff.changes),
+                    diff: branchDiff.diff,
+                    changes: branchDiff.changes,
                 };
             } catch (error) {
-                if (error instanceof GenerationCancelledError) {
-                    return {
-                        success: false,
-                        error: 'Review generation cancelled.'
-                    };
-                }
-                return {
-                    success: false,
-                    error: `${error}`
-                };
+                return this.handleGenerationError(error, 'Review generation cancelled.');
             }
         });
     }
 
+    /**
+     * Repair PlantUML diagrams in the review output.
+     * Delegates to the base class repairPlantUmlMarkdown method.
+     */
     async repairPlantUml(
         provider: LLMProvider,
         model: string,
@@ -251,18 +269,10 @@ export class ReviewStagedChangesService extends ReviewWorkflowServiceBase {
         onLog?: (message: string) => void
     ): Promise<PlantUmlRepairResult> {
         const result = await this.repairPlantUmlMarkdown(
-            provider,
-            model,
-            language,
-            strategy,
-            content,
-            renderError,
-            apiKey,
-            baseURL,
-            contextWindow,
-            maxOutputTokens,
-            onProgress,
-            onLog
+            provider, model, language, strategy,
+            content, renderError,
+            apiKey, baseURL, contextWindow, maxOutputTokens,
+            onProgress, onLog
         );
 
         if (result.success && result.content) {
@@ -276,33 +286,46 @@ export class ReviewStagedChangesService extends ReviewWorkflowServiceBase {
     }
 
     /**
-     * Build the prompt for the LLM
+     * Build the review prompt for a merged branch.
      */
-    private buildReviewPrompt(diff: string, taskInfo?: string): string {
-        return `# Staged Changes Review
+    private buildMergedBranchReviewPrompt(
+        mergeCommitSha: string,
+        diff: string,
+        taskInfo?: string
+    ): string {
+        return `# Merged Branch Review
 
-${taskInfo ? `**Task Context:** ${taskInfo}\n\n` : ''}
-## Staged Changes:
+**Merge Commit:** ${mergeCommitSha}
+${taskInfo ? `\n**Task Context:** ${taskInfo}\n` : ''}
+
+## Changes:
 
 ${diff}
 
-Please analyze these staged changes and provide a comprehensive code review.`;
+Please analyze these changes and provide a comprehensive review of the merged branch.`;
     }
 
-    private buildStagedReviewTaskSpec(
+    private buildMergedBranchReviewTaskSpec(
+        mergeCommitSha: string,
         diff: string,
         taskInfo: string | undefined,
         systemMessage: string,
         referenceContext?: string
     ): ContextTaskSpec {
         return {
-            kind: 'stagedReview',
-            label: 'staged changes review',
+            kind: 'mergeReview',
+            label: 'merged branch review',
             systemMessage,
-            directPrompt: this.withReferenceContext(this.buildReviewPrompt(diff, taskInfo), referenceContext),
-            buildCoordinatorPrompt: ({ changedFilesSummary, analysesSummary }) => `# Staged Changes Review
+            directPrompt: this.withReferenceContext(
+                this.buildMergedBranchReviewPrompt(mergeCommitSha, diff, taskInfo),
+                referenceContext
+            ),
+            buildCoordinatorPrompt: ({ changedFilesSummary, analysesSummary }) => `# Merged Branch Review
 
-${taskInfo ? `**Task Context:** ${taskInfo}\n\n` : ''}${referenceContext ? `${referenceContext}\n\n` : ''}## Changed Files:
+**Merge Commit:** ${mergeCommitSha}
+${taskInfo ? `\n**Task Context:** ${taskInfo}\n` : ''}
+
+## Changed Files:
 
 ${changedFilesSummary}
 
@@ -310,54 +333,23 @@ ${changedFilesSummary}
 
 ${analysesSummary}
 
-Please analyze these staged changes and provide a comprehensive code review.
+${referenceContext ? `${referenceContext}\n\n` : ''}Please analyze these changes and provide a comprehensive review of the merged branch.
 Do not mention that the diff was summarized in multiple stages.`
         };
-    }
-
-    /**
-     * Build the system prompt for code review
-     */
-    private buildStagedReviewSystemPrompt(language: string, customSystemPrompt?: string, customRules?: string): string {
-        const basePrompt = customSystemPrompt || `You are an expert code reviewer. Your task is to review staged changes and provide constructive feedback.
-
-${REVIEW_AGENT_INSTRUCTIONS}
-
-${REVIEW_OUTPUT_CONTRACT}
-
-Be constructive, specific, and actionable in your feedback.`;
-
-        const rulesSection = customRules ? `\n\n## Custom Review Rules:\n${customRules}` : '';
-        const languageInstruction = `\n\nIMPORTANT: Provide your review in ${language} language.`;
-
-        return basePrompt + rulesSection + languageInstruction;
-    }
-
-    private async getStagedDiffPreview(): Promise<{ changes: Awaited<ReturnType<GitService['getStagedDiffFiles']>>; diff: string; } | undefined> {
-        const hasStagedFiles = await this.gitService.hasStagedFiles();
-        if (!hasStagedFiles) {
-            return undefined;
-        }
-
-        const changes = await this.gitService.getStagedDiffFiles();
-        const diff = this.gitService.renderStagedDiffFiles(changes);
-        return { changes, diff };
     }
 
     private withReferenceContext(prompt: string, referenceContext?: string): string {
         if (!referenceContext) {
             return prompt;
         }
-
         return `${prompt}\n\n${referenceContext}`;
     }
 
-    private withCustomAgentInstructions(systemPrompt: string, customAgentInstructions?: string): string {
-        if (!customAgentInstructions) {
-            return systemPrompt;
+    private handleGenerationError(error: unknown, cancelledMessage: string): ReviewResult {
+        if (error instanceof GenerationCancelledError) {
+            return { success: false, error: cancelledMessage };
         }
-
-        return `${systemPrompt}\n\n## Custom Review Agents\n\n${customAgentInstructions}`;
+        return { success: false, error: `${error}` };
     }
 
     private logReferenceContextMetadata(

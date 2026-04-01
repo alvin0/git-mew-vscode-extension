@@ -12,6 +12,8 @@ export const functionCallExecute = async ({
   onStream = () => {},
   sharedStore,
   queryContextCallCount,
+  compareBranch,
+  gitService,
 }: {
   functionCalls: FunctionCall[];
   onStream?: (content: string, isDone: boolean, state?: any) => void;
@@ -19,6 +21,8 @@ export const functionCallExecute = async ({
   llmAdapter: ILLMAdapter;
   sharedStore?: any;
   queryContextCallCount?: { value: number };
+  compareBranch?: string;
+  gitService?: any;
 }): Promise<
   {
     tool: ToolCallResult;
@@ -66,6 +70,8 @@ export const functionCallExecute = async ({
           llmAdapter: llmAdapter,
           sharedStore,
           queryContextCallCount,
+          compareBranch,
+          gitService,
         });
 
         // Cache successful results in shared store (skip query_context)

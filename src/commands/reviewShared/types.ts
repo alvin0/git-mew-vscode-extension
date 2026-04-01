@@ -1,5 +1,7 @@
 import { LLMProvider } from '../../llm-adapter';
-import { ContextStrategy } from '../../services/llm';
+import { LlmRequestLogEntry } from '../../services/llm';
+
+export { LlmRequestLogEntry } from '../../services/llm';
 
 export const REVIEW_PROVIDERS: LLMProvider[] = ['openai', 'claude', 'gemini', 'ollama', 'custom'];
 
@@ -19,7 +21,6 @@ export interface ReviewPreferences {
     currentProvider?: LLMProvider;
     currentModel?: string;
     savedLanguage: string;
-    savedContextStrategy: ContextStrategy;
 }
 
 export interface AvailableReviewModels {
@@ -32,6 +33,7 @@ export interface AvailableReviewModels {
 export interface ReviewGenerationCallbacks {
     onProgress?: (message: string) => void;
     onLog?: (message: string) => void;
+    onLlmLog?: (entry: LlmRequestLogEntry) => void;
 }
 
 export interface ReviewResultPayload {

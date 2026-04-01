@@ -1,12 +1,11 @@
 import { LLMProvider } from '../../llm-adapter';
-import { ContextStrategy } from '../../services/llm';
 import { ReviewCustomModelSettings, ReviewCustomProviderConfig } from '../reviewShared/types';
 import { buildEmptyState, buildPanelSection, buildReviewShell } from '../reviewShared/webview/layout';
-import { buildBranchOptionsHtml, buildContextStrategyOptionsHtml, buildLanguageOptionsHtml, buildModelOptionsMap, buildProviderOptionsHtml } from '../reviewShared/webview/options';
+import { buildBranchOptionsHtml, buildLanguageOptionsHtml, buildModelOptionsMap, buildProviderOptionsHtml } from '../reviewShared/webview/options';
 import { buildPlantUmlRepairMessageHandler, buildSharedClientActions, buildSharedWebviewScriptState, buildTabbedResultMessageHandler } from '../reviewShared/webview/scriptFragments';
 import { buildSharedStyles } from '../reviewShared/webview/styles';
 
-export function generateWebviewContent(
+export function generateMergeWebviewContent(
     branches: string[],
     currentBranch?: string,
     providers?: LLMProvider[],
@@ -14,7 +13,6 @@ export function generateWebviewContent(
     currentProvider?: LLMProvider,
     currentModel?: string,
     savedLanguage?: string,
-    savedContextStrategy?: ContextStrategy,
     customModelSettings?: ReviewCustomModelSettings,
     customProviderConfig?: ReviewCustomProviderConfig
 ): string {
@@ -36,7 +34,7 @@ export function generateWebviewContent(
         title: 'Review Merge',
         description: 'Compare two branches, generate an AI review, draft an MR description, or produce both in one run from a single workspace.',
         heroActions: renderHeroActions(),
-        controlPanel: renderControlPanel(branchOptions, providerOptions, savedLanguage, savedContextStrategy),
+        controlPanel: renderControlPanel(branchOptions, providerOptions, savedLanguage),
         outputPanel: renderOutputPanel()
     })}
     <script>${getClientScript(modelOptionsMap, customModelSettings || {}, customProviderConfig || { hasApiKey: false })}</script>
@@ -48,7 +46,6 @@ function renderControlPanel(
     branchOptions: string,
     providerOptions: string,
     savedLanguage?: string,
-    savedContextStrategy?: ContextStrategy
 ): string {
     return [
         buildPanelSection({
@@ -92,10 +89,6 @@ function renderControlPanel(
                         <div class="field">
                             <label for="language">Response language</label>
                             <select id="language">${buildLanguageOptionsHtml(savedLanguage)}</select>
-                        </div>
-                        <div class="field">
-                            <label for="contextStrategy">Context strategy</label>
-                            <select id="contextStrategy">${buildContextStrategyOptionsHtml(savedContextStrategy)}</select>
                         </div>
                     </div>
                 </div>
@@ -174,8 +167,17 @@ function renderOutputPanel(): string {
                 </div>
             </div>
             <details id="logPanel" class="status-log hidden is-collapsed">
-                <summary>Execution log</summary>
-                <pre id="logOutput" class="log-output"></pre>
+                <summary>Activity log</summary>
+                <div class="log-tabs">
+                    <button class="log-tab-btn active" data-log-tab="execution" aria-selected="true">Execution log</button>
+                    <button class="log-tab-btn" data-log-tab="llm" aria-selected="false">LLM requests <span id="llmLogCount" class="log-tab-count">0</span></button>
+                </div>
+                <div id="executionLogPane" class="log-tab-pane active">
+                    <pre id="logOutput" class="log-output"></pre>
+                </div>
+                <div id="llmLogPane" class="log-tab-pane">
+                    <div id="llmLogEntries" class="llm-entries"></div>
+                </div>
             </details>
         </section>
         ${buildEmptyState({
@@ -242,7 +244,6 @@ function getClientScript(
         const maxOutputTokensInput = document.getElementById('maxOutputTokens');
         const taskInfoInput = document.getElementById('taskInfo');
         const languageSelect = document.getElementById('language');
-        const contextStrategySelect = document.getElementById('contextStrategy');
         const reviewBtn = document.getElementById('reviewBtn');
         const descriptionBtn = document.getElementById('descriptionBtn');
         const reviewAndDescBtn = document.getElementById('reviewAndDescBtn');
@@ -289,6 +290,11 @@ function getClientScript(
         function postGenerateRequest(mode) {
             setGeneratingState(true);
             logOutput.textContent = '';
+            llmLogCounter = 0;
+            var llmCountEl = document.getElementById('llmLogCount');
+            if (llmCountEl) { llmCountEl.textContent = '0'; }
+            var llmEntriesEl = document.getElementById('llmLogEntries');
+            if (llmEntriesEl) { llmEntriesEl.innerHTML = ''; }
             appendLogMessage('Starting ' + mode + ' generation.');
             setResultVisible(false);
             if (mode === 'review' || mode === 'both') {
@@ -340,7 +346,7 @@ function getClientScript(
                 maxOutputTokens: isCustomModel ? customCapabilities.maxOutputTokens : undefined,
                 taskInfo: taskInfoInput.value.trim(),
                 language: languageSelect.value,
-                contextStrategy: contextStrategySelect.value
+                contextStrategy: 'auto'
             });
         }
 
@@ -384,6 +390,10 @@ function getClientScript(
                 case 'showLog':
                     logToggleBtn.classList.remove('hidden');
                     appendLogMessage(message.message);
+                    break;
+                case 'showLlmLog':
+                    logToggleBtn.classList.remove('hidden');
+                    appendLlmLogEntry(message.entry);
                     break;
                 case 'showError':
                     handleWebviewErrorMessage(message);

@@ -479,6 +479,143 @@ export function buildSharedStyles(options?: { includeTabs?: boolean; }): string 
             display: none;
         }
 
+        .log-tabs {
+            display: flex;
+            gap: 0;
+            border-bottom: 1px solid var(--gm-border);
+        }
+
+        .log-tab-btn {
+            min-height: 0;
+            padding: 8px 14px;
+            border: none;
+            border-bottom: 2px solid transparent;
+            border-radius: 0;
+            background: transparent;
+            color: var(--gm-muted);
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            cursor: pointer;
+        }
+
+        .log-tab-btn:hover:not(:disabled) {
+            color: var(--vscode-foreground);
+            background: transparent;
+            transform: none;
+        }
+
+        .log-tab-btn.active {
+            color: var(--vscode-foreground);
+            border-bottom-color: var(--gm-accent);
+        }
+
+        .log-tab-btn .log-tab-count {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 18px;
+            height: 18px;
+            margin-left: 6px;
+            padding: 0 5px;
+            border-radius: 999px;
+            background: var(--gm-surface-alt);
+            font-size: 10px;
+            font-weight: 800;
+        }
+
+        .log-tab-pane {
+            display: none;
+        }
+
+        .log-tab-pane.active {
+            display: block;
+        }
+
+        .llm-entries {
+            padding: 0 14px 14px;
+            max-height: 400px;
+            overflow: auto;
+        }
+
+        .llm-entry {
+            margin-bottom: 10px;
+            border: 1px solid var(--gm-border);
+            border-radius: var(--gm-radius-sm);
+            background: var(--gm-surface);
+            overflow: hidden;
+        }
+
+        .llm-entry__header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--gm-space-3);
+            padding: 8px 10px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .llm-entry__header:hover {
+            background: var(--gm-surface-alt);
+        }
+
+        .llm-entry__meta {
+            display: flex;
+            gap: var(--gm-space-3);
+            color: var(--gm-muted);
+            font-size: 11px;
+            font-weight: 400;
+        }
+
+        .llm-entry__meta span {
+            white-space: nowrap;
+        }
+
+        .llm-entry__body {
+            display: none;
+            border-top: 1px solid var(--gm-border);
+        }
+
+        .llm-entry.is-expanded .llm-entry__body {
+            display: block;
+        }
+
+        .llm-entry__section {
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--gm-border);
+        }
+
+        .llm-entry__section:last-child {
+            border-bottom: none;
+        }
+
+        .llm-entry__section-label {
+            display: block;
+            margin-bottom: 4px;
+            color: var(--gm-muted);
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .llm-entry__section pre {
+            margin: 0;
+            padding: 8px;
+            max-height: 200px;
+            overflow: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 11px;
+            line-height: 1.5;
+            font-family: var(--vscode-editor-font-family);
+            background: var(--vscode-textCodeBlock-background);
+            border-radius: 4px;
+        }
+
         .action-bar {
             display: flex;
             flex-wrap: wrap;

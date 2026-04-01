@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { DependencyGraphData, DependencyGraphConfig } from './orchestratorTypes';
 import { UnifiedDiffFile } from '../contextTypes';
 
@@ -44,7 +45,11 @@ function flattenSymbols(symbols: vscode.DocumentSymbol[]): vscode.DocumentSymbol
 }
 
 export class DependencyGraphIndex {
-  constructor(private readonly config: DependencyGraphConfig) {}
+  constructor(
+    private readonly config: DependencyGraphConfig,
+    private readonly gitService?: any,
+    private readonly compareBranch?: string,
+  ) {}
 
   async build(changedFiles: UnifiedDiffFile[]): Promise<DependencyGraphData> {
     const fileDependencies: DependencyGraphData['fileDependencies'] = new Map();
@@ -57,6 +62,8 @@ export class DependencyGraphIndex {
 
     try {
       // Phase A — Scan changed files (priority)
+      // For changed files, prefer reading from compareBranch (git show) since
+      // working tree may be on a different branch
       const changedFilePaths = new Set<string>();
       for (const file of changedFiles) {
         if (abortController.signal.aborted) { break; }
@@ -65,10 +72,28 @@ export class DependencyGraphIndex {
 
         changedFilePaths.add(file.filePath);
         try {
-          const imports = await this.scanImports(file.filePath);
-          fileDependencies.set(file.filePath, { imports, importedBy: [] });
+          // Try branch-aware import scanning first (from diff content or git show)
+          let imports: string[];
+          let symbols: Array<{ name: string; type: string; range: vscode.Range }>;
 
-          const symbols = await this.extractSymbols(file.filePath);
+          if (this.gitService && this.compareBranch) {
+            // Read file from the compare branch — this is the accurate version
+            const content = await this.gitService.showFileFromRef(this.compareBranch, file.relativePath);
+            if (content) {
+              imports = this.parseImportsFromContent(content, file.filePath);
+              symbols = this.parseSymbolsFromContent(content);
+            } else {
+              // File doesn't exist on compareBranch, try LSP fallback
+              imports = await this.scanImports(file.filePath);
+              symbols = await this.extractSymbols(file.filePath);
+            }
+          } else {
+            // No branch context — use LSP (original behavior)
+            imports = await this.scanImports(file.filePath);
+            symbols = await this.extractSymbols(file.filePath);
+          }
+
+          fileDependencies.set(file.filePath, { imports, importedBy: [] });
           for (const sym of symbols) {
             symbolMap.set(sym.name, {
               definedIn: file.filePath,
@@ -465,5 +490,99 @@ export class DependencyGraphIndex {
     }
 
     return lines.join('\n');
+  }
+
+  // ── Branch-aware parsing (regex-based, no LSP needed) ──
+
+  /**
+   * Parse import paths from file content using regex.
+   * Handles: import ... from '...', require('...'), dynamic import('...')
+   * Resolves relative paths against the file's directory.
+   */
+  private parseImportsFromContent(content: string, filePath: string): string[] {
+    const imports: string[] = [];
+    const fileDir = path.dirname(filePath);
+
+    // ES module imports: import ... from './foo' or import './foo'
+    const esImportRegex = /(?:import\s+(?:[\s\S]*?\s+from\s+)?['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\))/g;
+    let match: RegExpExecArray | null;
+    while ((match = esImportRegex.exec(content)) !== null) {
+      const specifier = match[1] || match[2];
+      if (specifier && (specifier.startsWith('.') || specifier.startsWith('/'))) {
+        const resolved = this.resolveImportPath(fileDir, specifier);
+        if (resolved) { imports.push(resolved); }
+      }
+    }
+
+    // CommonJS require: require('./foo')
+    const requireRegex = /require\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+    while ((match = requireRegex.exec(content)) !== null) {
+      const specifier = match[1];
+      if (specifier && (specifier.startsWith('.') || specifier.startsWith('/'))) {
+        const resolved = this.resolveImportPath(fileDir, specifier);
+        if (resolved) { imports.push(resolved); }
+      }
+    }
+
+    return [...new Set(imports)];
+  }
+
+  /**
+   * Resolve a relative import specifier to an absolute file path.
+   * Since we can't check filesystem (file may not exist on disk when on different branch),
+   * we use heuristics: if specifier has no extension, assume .ts (TypeScript project).
+   */
+  private resolveImportPath(fromDir: string, specifier: string): string | undefined {
+    const base = path.resolve(fromDir, specifier);
+    const ext = path.extname(specifier);
+
+    if (ext) {
+      // Specifier already has extension (e.g., './foo.js', './bar.ts')
+      return base;
+    }
+
+    // No extension — assume .ts for TypeScript projects
+    return base + '.ts';
+  }
+
+  /**
+   * Parse exported symbols from file content using regex.
+   * Extracts: export function, export class, export interface, export type,
+   * export const, export enum, export default, export abstract class
+   */
+  private parseSymbolsFromContent(content: string): Array<{
+    name: string;
+    type: string;
+    range: vscode.Range;
+  }> {
+    const symbols: Array<{ name: string; type: string; range: vscode.Range }> = [];
+    const lines = content.split('\n');
+
+    const exportPatterns: Array<{ regex: RegExp; type: SymbolType }> = [
+      { regex: /export\s+(?:async\s+)?function\s+(\w+)/,       type: 'function' },
+      { regex: /export\s+(?:abstract\s+)?class\s+(\w+)/,       type: 'class' },
+      { regex: /export\s+interface\s+(\w+)/,                    type: 'interface' },
+      { regex: /export\s+type\s+(\w+)/,                         type: 'type' },
+      { regex: /export\s+const\s+(\w+)/,                        type: 'constant' },
+      { regex: /export\s+enum\s+(\w+)/,                         type: 'enum' },
+      { regex: /export\s+default\s+(?:class|function)\s+(\w+)/, type: 'class' },
+    ];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      for (const { regex, type } of exportPatterns) {
+        const match = line.match(regex);
+        if (match?.[1]) {
+          symbols.push({
+            name: match[1],
+            type,
+            range: new vscode.Range(i, 0, i, line.length),
+          });
+          break; // One match per line
+        }
+      }
+    }
+
+    return symbols;
   }
 }

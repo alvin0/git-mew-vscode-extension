@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { LLMProvider } from '../../llm-adapter';
 import { ContextStrategy } from '../../services/llm';
 import { createReviewErrorPayload } from '../reviewShared/errorReport';
-import { openDiffDocument, postError, postLog, postPlantUmlRepairResult, postProgress, postResult } from '../reviewShared/panelMessaging';
+import { openDiffDocument, postError, postLog, postLlmLog, postPlantUmlRepairResult, postProgress, postResult } from '../reviewShared/panelMessaging';
 import { ReviewMergeService } from './reviewMergeService';
 import { validateMergeRequestInput } from './validation';
 
@@ -93,7 +93,8 @@ export class WebviewMessageHandler {
                 contextWindow,
                 maxOutputTokens,
                 (progressMessage) => postProgress(this.panel, progressMessage),
-                (logMessage) => postLog(this.panel, logMessage)
+                (logMessage) => postLog(this.panel, logMessage),
+                (entry) => postLlmLog(this.panel, entry)
             );
 
             if (!result.success && result.error === 'Review generation cancelled.') {
@@ -198,7 +199,8 @@ export class WebviewMessageHandler {
                 contextWindow,
                 maxOutputTokens,
                 (progressMessage) => postProgress(this.panel, progressMessage),
-                (logMessage) => postLog(this.panel, logMessage)
+                (logMessage) => postLog(this.panel, logMessage),
+                (entry) => postLlmLog(this.panel, entry)
             );
 
             if (!descResult.success && descResult.error === 'Description generation cancelled.') {
@@ -273,7 +275,8 @@ export class WebviewMessageHandler {
             contextWindow,
             maxOutputTokens,
             (progressMessage) => postProgress(this.panel, progressMessage),
-            (logMessage) => postLog(this.panel, logMessage)
+            (logMessage) => postLog(this.panel, logMessage),
+            (entry) => postLlmLog(this.panel, entry)
         );
 
         if (!descResult.success && descResult.error === 'Description generation cancelled.') {

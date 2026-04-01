@@ -6,6 +6,7 @@ import { registerManageApiKeysCommand } from './manageApiKeysCommand';
 import { registerMarkdownViewerCommand } from './markdownViewerCommand';
 import { createPublishCommand } from './publishCommand';
 import { registerReviewMergeCommand } from './reviewMergeCommand';
+import { registerReviewMergedBranchCommand } from './reviewMergedBranchCommand';
 import { registerReviewStagedChangesCommand } from './reviewStagedChangesCommand';
 import { registerSetupModelCommand } from './setupModelGenerateCommitCommand';
 
@@ -25,6 +26,7 @@ export function registerAllCommands(
 		registerSetupModelCommand(context, llmService),
 		registerReviewMergeCommand(context, gitService, llmService),
 		registerReviewStagedChangesCommand(context, gitService, llmService),
+		registerReviewMergedBranchCommand(context, gitService, llmService),
 		createPublishCommand(context),
 		registerMarkdownViewerCommand(context)
 	];

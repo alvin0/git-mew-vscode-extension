@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ReviewErrorPayload, ReviewResultPayload } from './types';
+import { LlmRequestLogEntry, ReviewErrorPayload, ReviewResultPayload } from './types';
 
 export function postProgress(panel: vscode.WebviewPanel, message: string): void {
     panel.webview.postMessage({ command: 'showProgress', message });
@@ -7,6 +7,10 @@ export function postProgress(panel: vscode.WebviewPanel, message: string): void 
 
 export function postLog(panel: vscode.WebviewPanel, message: string): void {
     panel.webview.postMessage({ command: 'showLog', message });
+}
+
+export function postLlmLog(panel: vscode.WebviewPanel, entry: LlmRequestLogEntry): void {
+    panel.webview.postMessage({ command: 'showLlmLog', entry });
 }
 
 export function postError(panel: vscode.WebviewPanel, error: ReviewErrorPayload): void {

@@ -1,5 +1,5 @@
 import { ILLMAdapter } from "../../../llm-adapter";
-import { ChunkAnalysis, ContextGenerationRequest, CoordinatorPromptInput, DiffChunk, UnifiedDiffFile } from "../contextTypes";
+import { ChunkAnalysis, ContextGenerationRequest, CoordinatorPromptInput, DiffChunk, LlmRequestLogEntry, UnifiedDiffFile } from "../contextTypes";
 import { TokenEstimatorService } from "../TokenEstimatorService";
 import { GenerationCancelledError } from "../ContextOrchestratorService";
 import {
@@ -76,13 +76,29 @@ export class ChunkAnalysisReducer {
   ): Promise<ChunkAnalysis> {
     const prompt = this.buildChunkPrompt(chunk, taskLabel, request?.task.taskContext);
     this.reportLog(request, `[worker:${chunk.id}] reading ${this.describeChunk(chunk)}`);
+    const workerSystemMessage = this.getWorkerSystemPrompt(request);
+    const startTime = Date.now();
     const response = await adapter.generateText(prompt, {
-      systemMessage: this.getWorkerSystemPrompt(request),
+      systemMessage: workerSystemMessage,
       maxTokens: Math.min(executionProfile?.workerMaxTokens ?? 900, adapter.getMaxOutputTokens()),
       temperature: this.isDefaultTemperatureOnlyModel(adapter) ? undefined : 0,
     });
     this.throwIfCancelled(signal);
-    this.reportLog(request, `[worker:${chunk.id}] api response\n${this.truncateLog(response.text)}`);
+    this.reportLog(request, `[worker:${chunk.id}] response received (${response.promptTokens ?? '?'} prompt, ${response.completionTokens ?? '?'} completion tokens)`);
+    this.reportLlmLog(request, {
+      stage: `worker:${chunk.id}`,
+      provider: adapter.getProvider(),
+      model: adapter.getModel(),
+      systemMessage: workerSystemMessage,
+      prompt,
+      response: response.text,
+      promptTokens: response.promptTokens,
+      completionTokens: response.completionTokens,
+      totalTokens: response.totalTokens,
+      finishReason: response.finishReason,
+      durationMs: Date.now() - startTime,
+      timestamp: new Date().toISOString(),
+    });
     return this.parseChunkAnalysis(response.text, chunk);
   }
 
@@ -198,13 +214,29 @@ export class ChunkAnalysisReducer {
           const batchLabel = this.describeAnalysisGroup(group);
           this.reportLog(request, `[reducer] reducing batch with ${group.length} summary item(s): ${batchLabel}`);
           const prompt = this.buildReducerPrompt(group, request?.task.taskContext);
+          const reducerSystemMessage = this.getReducerSystemPrompt(request);
+          const startTime = Date.now();
           const response = await adapter.generateText(prompt, {
-            systemMessage: this.getReducerSystemPrompt(request),
+            systemMessage: reducerSystemMessage,
             maxTokens: Math.min(executionProfile?.reducerMaxTokens ?? 900, adapter.getMaxOutputTokens()),
             temperature: this.isDefaultTemperatureOnlyModel(adapter) ? undefined : 0,
           });
           this.throwIfCancelled(signal);
-          this.reportLog(request, `[reducer] api response\n${this.truncateLog(response.text)}`);
+          this.reportLog(request, `[reducer] batch ${currentIndex + 1} response received (${response.promptTokens ?? '?'} prompt, ${response.completionTokens ?? '?'} completion tokens)`);
+          this.reportLlmLog(request, {
+            stage: `reducer:batch${currentIndex + 1}`,
+            provider: adapter.getProvider(),
+            model: adapter.getModel(),
+            systemMessage: reducerSystemMessage,
+            prompt,
+            response: response.text,
+            promptTokens: response.promptTokens,
+            completionTokens: response.completionTokens,
+            totalTokens: response.totalTokens,
+            finishReason: response.finishReason,
+            durationMs: Date.now() - startTime,
+            timestamp: new Date().toISOString(),
+          });
           results[currentIndex] = this.parseReducedAnalysis(response.text, group);
           if (request) {
             this.reportProgress(request, `Reduced summary batch ${currentIndex + 1}/${groups.length}...`);
@@ -367,6 +399,10 @@ export class ChunkAnalysisReducer {
 
   private reportLog(request: ContextGenerationRequest | undefined, message: string): void {
     request?.onLog?.(message);
+  }
+
+  private reportLlmLog(request: ContextGenerationRequest | undefined, entry: LlmRequestLogEntry): void {
+    request?.onLlmLog?.(entry);
   }
 
   private throwIfCancelled(signal?: AbortSignal): void {

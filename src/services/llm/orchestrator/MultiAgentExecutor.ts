@@ -1,6 +1,6 @@
 import { GenerateOptions, ILLMAdapter } from "../../../llm-adapter";
 import { functionCallExecute } from "../../../llm-tools/utils";
-import { ContextGenerationRequest } from "../contextTypes";
+import { ContextGenerationRequest, LlmRequestLogEntry } from "../contextTypes";
 import { GenerationCancelledError } from "../ContextOrchestratorService";
 import { TokenEstimatorService } from "../TokenEstimatorService";
 import { AdapterCalibrationService } from "./AdapterCalibrationService";
@@ -112,12 +112,20 @@ export class MultiAgentExecutor {
     const hypothesisGenerator = new RiskHypothesisGenerator(estimator);
     let hypotheses: RiskHypothesis[] = [];
     try {
-      hypotheses = await hypothesisGenerator.generate(
-        structuredReports.find(r => r.role === 'Code Reviewer')?.structured as CodeReviewerOutput,
-        structuredReports.find(r => r.role === 'Flow Diagram')?.structured as FlowDiagramOutput,
-        (sharedStore as ISharedContextStore).getDependencyGraph()!,
-        adapter, signal
-      );
+      const crReport = structuredReports.find(r => r.role === 'Code Reviewer');
+      const fdReport = structuredReports.find(r => r.role === 'Flow Diagram');
+      const graph = (sharedStore as ISharedContextStore).getDependencyGraph();
+
+      if (crReport && fdReport && graph) {
+        hypotheses = await hypothesisGenerator.generate(
+          crReport.structured as CodeReviewerOutput,
+          fdReport.structured as FlowDiagramOutput,
+          graph,
+          adapter, signal
+        );
+      } else {
+        this.reportLog(request, `[hypothesis] skipped: missing Phase 1 outputs (CR=${!!crReport}, FD=${!!fdReport}, graph=${!!graph})`);
+      }
       (sharedStore as ISharedContextStore).setRiskHypotheses(hypotheses);
     } catch (error) {
       this.reportLog(request, `[hypothesis] generation failed, Observer runs without hypotheses: ${error}`);
@@ -134,6 +142,17 @@ export class MultiAgentExecutor {
     let observerResult: string;
     try {
       observerResult = await this.runAgent(observerAgent, adapter, signal, request);
+
+      // Parse and store Observer structured output
+      const parsedObserver = this.parseStructuredOutput(observerResult, 'observer');
+      if (parsedObserver) {
+        (sharedStore as ISharedContextStore).addAgentFindings('Observer', [{
+          agentRole: 'Observer',
+          type: 'risk',
+          data: parsedObserver.structured,
+          timestamp: Date.now(),
+        }]);
+      }
     } catch (error) {
       this.reportLog(request, `[phase2] Observer failed: ${error}`);
       observerResult = `### Agent: Observer\n\nObserver analysis unavailable due to error.`;
@@ -145,6 +164,83 @@ export class MultiAgentExecutor {
       observerResult,
     ];
     return allResults;
+  }
+
+  /**
+   * Execute description agents: Phase 1 (Change Analyzer ∥ Context Investigator) in parallel.
+   * No Phase 2 agent — synthesis is handled by the caller via generateMultiAgentFinalText.
+   * Stores structured findings in SharedContextStore for the synthesis callback.
+   */
+  async executeDescriptionAgents(
+    agents: AgentPrompt[],
+    sharedStore: ISharedContextStore,
+    adapter: ILLMAdapter,
+    signal?: AbortSignal,
+    request?: ContextGenerationRequest
+  ): Promise<string[]> {
+    this.reportProgress(request, "Executing Change Analyzer and Context Investigator agents...");
+    const results: (string | Error)[] = new Array(agents.length);
+
+    let nextIndex = 0;
+    const runAgent = async () => {
+      while (true) {
+        this.throwIfCancelled(signal);
+        const idx = nextIndex++;
+        if (idx >= agents.length) { return; }
+        try {
+          results[idx] = await this.runAgent(agents[idx], adapter, signal, request);
+        } catch (error) {
+          results[idx] = error instanceof Error ? error : new Error(String(error));
+          this.reportLog(request, `[description] agent ${agents[idx].role} failed: ${error}`);
+        }
+      }
+    };
+    await Promise.all(Array.from(
+      { length: Math.min(this.config.concurrency, agents.length) },
+      () => runAgent()
+    ));
+
+    // Parse and store structured outputs
+    for (let i = 0; i < agents.length; i++) {
+      const result = results[i];
+      if (typeof result !== 'string') { continue; }
+
+      const parsed = this.parseDescriptionOutput(result, agents[i].role);
+      if (parsed) {
+        sharedStore.addAgentFindings(agents[i].role, [{
+          agentRole: agents[i].role,
+          type: agents[i].role === 'Change Analyzer' ? 'issue' : 'risk',
+          data: parsed,
+          timestamp: Date.now(),
+        }]);
+      }
+    }
+
+    return results.filter((r): r is string => typeof r === 'string');
+  }
+
+  /** Parse description agent output — separate from review parsing */
+  private parseDescriptionOutput(rawText: string, role: string): unknown | null {
+    const bodyMatch = rawText.match(/### Agent: .+?\n\n([\s\S]*)/);
+    const body = bodyMatch?.[1]?.trim() ?? rawText;
+
+    const jsonMatch = body.match(/```json\s*([\s\S]*?)```/) || body.match(/(\{[\s\S]*\})/);
+    if (!jsonMatch) { return null; }
+
+    try {
+      const parsed = JSON.parse(jsonMatch[1].trim());
+      if (role === 'Change Analyzer' && Array.isArray(parsed.changeGroups)) {
+        return parsed;
+      }
+      if (role === 'Context Investigator' && Array.isArray(parsed.impactedModules)) {
+        return parsed;
+      }
+    } catch {
+      // fallback
+    }
+
+    this.reportLog(undefined, `[parseDescriptionOutput] failed to parse ${role} output`);
+    return null;
   }
 
   private parseStructuredOutput(rawText: string, schema?: string): StructuredAgentReport | null {
@@ -241,10 +337,27 @@ export class MultiAgentExecutor {
       auditPrompt, agent.systemMessage, adapter, request, 'Observer:self-audit'
     );
 
+    const startTime = Date.now();
     const auditResponse = await this.calibration.generateTextWithAutoRetry(
       safeAuditPrompt, agent.systemMessage, auditOptions, adapter, request, 'Observer:self-audit'
     );
     this.throwIfCancelled(signal);
+
+    this.reportLlmLog(request, {
+      stage: 'agent:Observer:self-audit',
+      provider: adapter.getProvider(),
+      model: adapter.getModel(),
+      systemMessage: agent.systemMessage,
+      prompt: safeAuditPrompt,
+      response: auditResponse.text,
+      promptTokens: auditResponse.promptTokens,
+      completionTokens: auditResponse.completionTokens,
+      totalTokens: auditResponse.totalTokens,
+      finishReason: auditResponse.finishReason,
+      durationMs: Date.now() - startTime,
+      timestamp: new Date().toISOString(),
+    });
+
     return auditResponse;
   }
 
@@ -274,13 +387,27 @@ export class MultiAgentExecutor {
         currentPrompt, options.systemMessage || "", adapter, request, agent.role
       );
 
-      this.reportLog(request, `[agent:${agent.role}] payload:\nSystem Message:\n${options.systemMessage}\n\nPrompt:\n${safePrompt}`);
-
+      const startTime = Date.now();
       const response = await this.calibration.generateTextWithAutoRetry(
         safePrompt, options.systemMessage || "", options, adapter, request, agent.role
       );
       this.throwIfCancelled(signal);
       lastResponse = response;
+
+      this.reportLlmLog(request, {
+        stage: `agent:${agent.role}:iter${iteration + 1}`,
+        provider: adapter.getProvider(),
+        model: adapter.getModel(),
+        systemMessage: options.systemMessage || "",
+        prompt: safePrompt,
+        response: response.text,
+        promptTokens: response.promptTokens,
+        completionTokens: response.completionTokens,
+        totalTokens: response.totalTokens,
+        finishReason: response.finishReason,
+        durationMs: Date.now() - startTime,
+        timestamp: new Date().toISOString(),
+      });
 
       if (response.toolCalls && response.toolCalls.length > 0 && agent.tools) {
         this.reportLog(request, `[agent:${agent.role}] executing ${response.toolCalls.length} tool call(s)`);
@@ -295,6 +422,8 @@ export class MultiAgentExecutor {
           onStream: () => {},
           sharedStore: agent.sharedStore,
           queryContextCallCount,
+          compareBranch: agent.compareBranch,
+          gitService: agent.gitService,
         });
         this.throwIfCancelled(signal);
         const toolContext = toolResults
@@ -337,9 +466,6 @@ export class MultiAgentExecutor {
       maxTokens: adapter.getMaxOutputTokens(),
     });
 
-    // Self-audit ONLY needs the previous analysis — the model already "knows" the diff
-    // from the prior iteration. Re-submitting agent.prompt (full diff) is wasteful
-    // and can exceed context limits even on large-context models.
     const previousAnalysis = lastResponse?.text?.trim() ?? "";
 
     const auditPrompt =
@@ -356,10 +482,27 @@ export class MultiAgentExecutor {
       auditPrompt, agent.systemMessage, adapter, request, `${agent.role}:self-audit`
     );
 
+    const startTime = Date.now();
     const auditResponse = await this.calibration.generateTextWithAutoRetry(
       safeAuditPrompt, agent.systemMessage, auditOptions, adapter, request, `${agent.role}:self-audit`
     );
     this.throwIfCancelled(signal);
+
+    this.reportLlmLog(request, {
+      stage: `agent:${agent.role}:self-audit`,
+      provider: adapter.getProvider(),
+      model: adapter.getModel(),
+      systemMessage: agent.systemMessage,
+      prompt: safeAuditPrompt,
+      response: auditResponse.text,
+      promptTokens: auditResponse.promptTokens,
+      completionTokens: auditResponse.completionTokens,
+      totalTokens: auditResponse.totalTokens,
+      finishReason: auditResponse.finishReason,
+      durationMs: Date.now() - startTime,
+      timestamp: new Date().toISOString(),
+    });
+
     return auditResponse;
   }
 
@@ -376,6 +519,10 @@ export class MultiAgentExecutor {
 
   private reportLog(request: ContextGenerationRequest | undefined, message: string): void {
     request?.onLog?.(message);
+  }
+
+  private reportLlmLog(request: ContextGenerationRequest | undefined, entry: LlmRequestLogEntry): void {
+    request?.onLlmLog?.(entry);
   }
 
   private throwIfCancelled(signal?: AbortSignal): void {

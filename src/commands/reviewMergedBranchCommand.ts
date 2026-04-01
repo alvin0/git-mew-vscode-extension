@@ -1,35 +1,40 @@
 import * as vscode from 'vscode';
 import { LLMService } from '../services/llm';
 import { GitService } from '../services/utils/gitService';
-import { generateMergeWebviewContent } from './reviewMerge/webviewContentGenerator';
+import { generateMergedBranchWebviewContent } from './reviewMergedBranch/webviewContentGenerator';
 import { ModelProvider } from './reviewMerge/modelProvider';
-import { ReviewMergeService } from './reviewMerge/reviewMergeService';
-import { WebviewMessageHandler } from './reviewMerge/webviewMessageHandler';
+import { ReviewMergedBranchService } from './reviewMergedBranch/reviewMergedBranchService';
+import { WebviewMessageHandler } from './reviewMergedBranch/webviewMessageHandler';
 import { loadReviewPreferences } from './reviewShared/preferences';
 
 /**
- * Register the review merge command
+ * Register the review merged branch command
  */
-export function registerReviewMergeCommand(
+export function registerReviewMergedBranchCommand(
     context: vscode.ExtensionContext,
     gitService: GitService,
     llmService: LLMService
 ): vscode.Disposable {
-    return vscode.commands.registerCommand('git-mew.review-merge', async () => {
+    return vscode.commands.registerCommand('git-mew.review-merged-branch', async () => {
         try {
-            const branches = await gitService.getAllBranches();
-            if (branches.length === 0) {
-                vscode.window.showWarningMessage('No branches found in this repository. Make sure you have a Git repository with branches.');
+            const currentBranch = await gitService.getCurrentBranch();
+            if (!currentBranch) {
+                vscode.window.showWarningMessage('Could not determine current branch.');
                 return;
             }
 
-            const currentBranch = await gitService.getCurrentBranch();
+            const mergedBranches = await gitService.getMergedBranches(currentBranch, 50);
+            if (mergedBranches.length === 0) {
+                vscode.window.showWarningMessage('Không tìm thấy nhánh đã merge nào trong repository.');
+                return;
+            }
+
             const { currentProvider, currentModel, savedLanguage } = loadReviewPreferences(llmService);
             const { providers, availableModels, customModelSettings, customProviderConfig } = await ModelProvider.getAvailableModels(llmService);
 
             const panel = vscode.window.createWebviewPanel(
-                'reviewMerge',
-                'Review Merge',
+                'reviewMergedBranch',
+                'Review Merged Branch',
                 vscode.ViewColumn.One,
                 {
                     enableScripts: true,
@@ -37,9 +42,8 @@ export function registerReviewMergeCommand(
                 }
             );
 
-            panel.webview.html = generateMergeWebviewContent(
-                branches,
-                currentBranch,
+            panel.webview.html = generateMergedBranchWebviewContent(
+                mergedBranches,
                 providers,
                 availableModels,
                 currentProvider,
@@ -49,8 +53,8 @@ export function registerReviewMergeCommand(
                 customProviderConfig
             );
 
-            const reviewMergeService = new ReviewMergeService(gitService, llmService);
-            const messageHandler = new WebviewMessageHandler(panel, reviewMergeService);
+            const service = new ReviewMergedBranchService(gitService, llmService);
+            const messageHandler = new WebviewMessageHandler(panel, service);
 
             panel.webview.onDidReceiveMessage(
                 async message => {
@@ -59,9 +63,8 @@ export function registerReviewMergeCommand(
                 undefined,
                 context.subscriptions
             );
-
         } catch (error) {
-            vscode.window.showErrorMessage(`Error reviewing merge: ${error}`);
+            vscode.window.showErrorMessage(`Error reviewing merged branch: ${error}`);
         }
     });
 }

@@ -6,6 +6,9 @@ import {
   CodeReviewerOutput,
   FlowDiagramOutput,
   ObserverOutput,
+  DescriptionAgentReport,
+  ChangeAnalyzerOutput,
+  ContextInvestigatorOutput,
 } from './orchestratorTypes';
 import { UnifiedDiffFile } from '../contextTypes';
 import { ContextBudgetManager } from './ContextBudgetManager';
@@ -21,51 +24,12 @@ import {
   getSymbolDefinitionTool,
   readFileTool,
   searchCodeTool,
+  queryContextTool,
 } from '../../../llm-tools/tools';
 
 // ── Structural diff regex ──
 const STRUCTURAL_LINE_PATTERN =
   /^[+-]\s*(export |import |class |interface |type |enum |function |async function |const \w+ = \(|public |private |protected |abstract |static )/;
-
-// ── Placeholder for query_context tool (implemented in task 8) ──
-// We define a minimal stub so AgentPromptBuilder can reference it now.
-// The real implementation will be in src/llm-tools/tools/queryContext.ts.
-const queryContextTool: FunctionCall = {
-  id: 'query_context',
-  functionCalling: {
-    type: 'function',
-    function: {
-      name: 'query_context',
-      description:
-        'Query the shared context store for dependency information. ' +
-        'Use this to find files that import a symbol, get the dependency chain of a file, ' +
-        'or retrieve cached tool results from other agents.',
-      parameters: {
-        type: 'object',
-        properties: {
-          query_type: {
-            type: 'string',
-            description:
-              'Type of query: "imports_of" (files importing symbol X), ' +
-              '"dependency_chain" (dependency chain of file Y), ' +
-              '"references_of" (all references to symbol X), ' +
-              '"cached_result" (get cached tool result)',
-          },
-          target: {
-            type: 'string',
-            description: 'The symbol name or file path to query about',
-          },
-        },
-        required: ['query_type', 'target'],
-        additionalProperties: false,
-      },
-    },
-  },
-  execute: async () => ({
-    description: '[query_context] Not yet implemented — stub placeholder.',
-    contentType: 'text' as const,
-  }),
-};
 
 // ── Helper: truncate text to a token budget (approx 4 chars/token) ──
 function truncateToTokenBudget(text: string, tokenBudget: number): string {
@@ -138,6 +102,47 @@ Include your verdicts in the "hypothesisVerdicts" array:
 {
   "hypothesisVerdicts": [{ "hypothesisIndex", "verdict", "evidence" }]
 }`;
+
+// ── MR Description Agent Instructions ──
+
+const CHANGE_ANALYZER_INSTRUCTIONS = `## Change Analyzer Agent
+You analyze the diff to produce a structured summary of all changes. Your task:
+- **Group changes by scope**: feature, bugfix, refactor, docs, test, infra, config.
+- **Detect breaking changes**: API signature changes, removed exports, schema migrations.
+- **Extract issue references**: #123, PROJ-456, or similar patterns from diff and commit messages.
+- **Detect template hint**: if branch name contains "hotfix/" or "fix/" → "hotfix"; if "release/" or version pattern → "release"; otherwise "default".
+- **Note migrations**: database migrations, config changes, dependency updates.
+
+Use the tools to read related files if you need more context about the intent of changes.
+
+Output your findings as JSON matching the ChangeAnalyzerOutput schema:
+{
+  "changeGroups": [{ "scope", "files", "summary", "breakingChange" }],
+  "detectedIssueRefs": [],
+  "migrationNotes": [],
+  "templateHint": "default | release | hotfix"
+}
+Return ONLY valid JSON. Do not wrap in markdown fences.`;
+
+const CONTEXT_INVESTIGATOR_INSTRUCTIONS = `## Context Investigator Agent
+You investigate the broader impact of the changes beyond what the diff shows. Your task:
+- **Identify impacted modules**: which parts of the system are affected by these changes.
+- **Assess risks**: deployment risks, data risks, performance risks.
+- **Gather related context**: read related files, check dependencies, understand the architecture around the changes.
+- **Evaluate backward compatibility**: will existing consumers/APIs/schemas still work?
+- **Rollback notes**: what would need to happen to revert these changes safely.
+
+Use the tools extensively to read files, find references, and understand the dependency graph.
+
+Output your findings as JSON matching the ContextInvestigatorOutput schema:
+{
+  "impactedModules": [],
+  "risks": [{ "description", "severity" }],
+  "relatedContext": [],
+  "backwardCompatibility": "",
+  "rollbackNotes": ""
+}
+Return ONLY valid JSON. Do not wrap in markdown fences.`;
 
 export class AgentPromptBuilder {
   constructor(
@@ -214,6 +219,8 @@ export class AgentPromptBuilder {
       selfAudit: true,
       maxIterations: 3,
       sharedStore: ctx.sharedContextStore,
+      compareBranch: ctx.compareBranch,
+      gitService: ctx.gitService,
     };
   }
 
@@ -272,6 +279,8 @@ export class AgentPromptBuilder {
       selfAudit: true,
       maxIterations: 3,
       sharedStore: ctx.sharedContextStore,
+      compareBranch: ctx.compareBranch,
+      gitService: ctx.gitService,
     };
   }
 
@@ -331,6 +340,8 @@ export class AgentPromptBuilder {
       selfAudit: true,
       maxIterations: 3,
       sharedStore: ctx.sharedContextStore,
+      compareBranch: ctx.compareBranch,
+      gitService: ctx.gitService,
     };
   }
 
@@ -597,5 +608,193 @@ export class AgentPromptBuilder {
     }
 
     return intersectionSize / Math.min(setA.size, setB.size);
+  }
+
+  // ────────────────────────────────────────────
+  // MR Description Agents
+  // ────────────────────────────────────────────
+
+  /** Build prompt for Change Analyzer (Phase 1) — groups changes, detects breaking changes, issue refs */
+  buildChangeAnalyzerPrompt(
+    ctx: AgentPromptBuildContext,
+    budget: AgentBudgetAllocation,
+  ): AgentPrompt {
+    const systemMessage = CHANGE_ANALYZER_INSTRUCTIONS;
+
+    const parts: string[] = [];
+
+    // Full diff — the analyzer needs to see everything to group correctly
+    parts.push('## Diff\n' + truncateToTokenBudget(ctx.fullDiff, budget.diffBudget));
+
+    // Branch info for template routing
+    if (ctx.compareBranch) {
+      parts.push(`## Branch Info\nCompare branch: ${ctx.compareBranch}`);
+    }
+    if (ctx.taskInfo) {
+      parts.push(`## Task Context\n${ctx.taskInfo}`);
+    }
+
+    // Dependency graph as summary
+    if (ctx.dependencyGraph) {
+      const graphText = DependencyGraphIndex.serializeForPrompt(ctx.dependencyGraph, 'summary');
+      parts.push(graphText);
+    }
+
+    const prompt = parts.join('\n\n');
+
+    const tools: FunctionCall[] = [
+      readFileTool,
+      searchCodeTool,
+      getRelatedFilesTool,
+      queryContextTool,
+    ];
+
+    return {
+      role: 'Change Analyzer',
+      systemMessage,
+      prompt,
+      tools,
+      phase: 1,
+      selfAudit: false,
+      maxIterations: 2,
+      sharedStore: ctx.sharedContextStore,
+      compareBranch: ctx.compareBranch,
+      gitService: ctx.gitService,
+    };
+  }
+
+  /** Build prompt for Context Investigator (Phase 1, parallel) — impact analysis, risks, compatibility */
+  buildContextInvestigatorPrompt(
+    ctx: AgentPromptBuildContext,
+    budget: AgentBudgetAllocation,
+  ): AgentPrompt {
+    const systemMessage = CONTEXT_INVESTIGATOR_INSTRUCTIONS;
+
+    const parts: string[] = [];
+
+    // Diff summary (not full diff — investigator focuses on impact, not line-by-line)
+    parts.push(this.buildDiffSummary(ctx.changedFiles));
+
+    // Reference context
+    if (ctx.referenceContext) {
+      parts.push(
+        '## Reference Context\n' +
+          truncateToTokenBudget(ctx.referenceContext, budget.referenceBudget),
+      );
+    }
+
+    // Full dependency graph for impact analysis
+    if (ctx.dependencyGraph) {
+      const graphText = DependencyGraphIndex.serializeForPrompt(ctx.dependencyGraph, 'full');
+      const usedTokens = Math.ceil(parts.join('\n\n').length / 4);
+      const remaining = Math.max(0, budget.totalBudget - usedTokens - budget.sharedContextBudget);
+      parts.push(truncateToTokenBudget(graphText, remaining));
+    }
+
+    // Shared context from store
+    if (ctx.sharedContextStore) {
+      const shared = (ctx.sharedContextStore as ISharedContextStore).serializeForAgent(
+        'Context Investigator',
+        budget.sharedContextBudget,
+      );
+      if (shared) {
+        parts.push('## Shared Context\n' + shared);
+      }
+    }
+
+    const prompt = parts.join('\n\n');
+
+    const tools: FunctionCall[] = [
+      findReferencesTool,
+      readFileTool,
+      getRelatedFilesTool,
+      getSymbolDefinitionTool,
+      queryContextTool,
+    ];
+
+    return {
+      role: 'Context Investigator',
+      systemMessage,
+      prompt,
+      tools,
+      phase: 1,
+      selfAudit: false,
+      maxIterations: 2,
+      sharedStore: ctx.sharedContextStore,
+      compareBranch: ctx.compareBranch,
+      gitService: ctx.gitService,
+    };
+  }
+
+  /** Build synthesizer prompt for MR description — assembles findings into final description */
+  buildDescriptionSynthesizerPrompt(
+    agentReports: DescriptionAgentReport[],
+    diffSummary: string,
+    descriptionSystemPrompt: string,
+    baseBranch?: string,
+    compareBranch?: string,
+    taskInfo?: string,
+  ): string {
+    const caReport = agentReports.find(r => r.role === 'Change Analyzer');
+    const ciReport = agentReports.find(r => r.role === 'Context Investigator');
+
+    const sections: string[] = [];
+
+    // Branch context
+    if (baseBranch || compareBranch) {
+      sections.push(`## Branch Info\nBase: ${baseBranch ?? 'N/A'}\nCompare: ${compareBranch ?? 'N/A'}`);
+    }
+    if (taskInfo) {
+      sections.push(`## Task Context\n${taskInfo}`);
+    }
+
+    // Diff summary
+    sections.push('## Diff Summary\n' + diffSummary);
+
+    // Change Analyzer findings
+    if (caReport?.structured) {
+      const ca = caReport.structured;
+      const groupLines = ca.changeGroups.map(g =>
+        `- [${g.scope}${g.breakingChange ? ' BREAKING' : ''}] ${g.summary} (${g.files.join(', ')})`
+      );
+      sections.push('## Change Analysis\n' + groupLines.join('\n'));
+
+      if (ca.detectedIssueRefs.length > 0) {
+        sections.push('## Detected Issue References\n' + ca.detectedIssueRefs.join(', '));
+      }
+      if (ca.migrationNotes.length > 0) {
+        sections.push('## Migration Notes\n' + ca.migrationNotes.map(n => `- ${n}`).join('\n'));
+      }
+      sections.push(`Template hint: ${ca.templateHint}`);
+    }
+
+    // Context Investigator findings
+    if (ciReport?.structured) {
+      const ci = ciReport.structured;
+      if (ci.impactedModules.length > 0) {
+        sections.push('## Impacted Modules\n' + ci.impactedModules.map(m => `- ${m}`).join('\n'));
+      }
+      if (ci.risks.length > 0) {
+        sections.push('## Risks\n' + ci.risks.map(r => `- [${r.severity}] ${r.description}`).join('\n'));
+      }
+      if (ci.backwardCompatibility) {
+        sections.push('## Backward Compatibility\n' + ci.backwardCompatibility);
+      }
+      if (ci.rollbackNotes) {
+        sections.push('## Rollback Notes\n' + ci.rollbackNotes);
+      }
+    }
+
+    // Raw reports as fallback context
+    const rawReports = agentReports.map(r => `### ${r.role} Report\n${r.raw}`);
+    sections.push('## Raw Agent Reports\n' + rawReports.join('\n\n'));
+
+    // Final instruction
+    sections.push(
+      'Using ALL the information above, generate the MR description following the system prompt template exactly. ' +
+      'Choose the correct template based on the template hint and branch info.'
+    );
+
+    return sections.join('\n\n');
   }
 }

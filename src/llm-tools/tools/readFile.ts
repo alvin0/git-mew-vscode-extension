@@ -62,15 +62,56 @@ export const readFileTool: FunctionCall = {
 
       const workspaceRoot = workspaceFolders[0].uri.fsPath;
 
-      // Resolve the file path
-      let filePath: string;
+      // Resolve relative path for branch-aware reading
+      let relativePath: string;
       if (path.isAbsolute(filename)) {
-        filePath = filename;
+        relativePath = path.relative(workspaceRoot, filename);
       } else {
-        filePath = path.join(workspaceRoot, filename);
+        relativePath = filename;
+      }
+      const filePath = path.join(workspaceRoot, relativePath);
+
+      // Branch-aware reading: if compareBranch is set, read from that git ref
+      const compareBranch = optional?.compareBranch;
+      const gitService = optional?.gitService;
+
+      if (compareBranch && gitService) {
+        try {
+          const content = await gitService.showFileFromRef(compareBranch, relativePath);
+          if (content !== undefined) {
+            const allLines = content.split('\n');
+            const totalLines = allLines.length;
+            const actualStartLine = Math.max(1, startLine);
+            const actualEndLine = endLine ? Math.min(totalLines, endLine) : totalLines;
+
+            if (actualStartLine > actualEndLine) {
+              return {
+                error: 'Invalid line range',
+                description: `Start line (${actualStartLine}) cannot be greater than end line (${actualEndLine})`,
+                contentType: 'text',
+              };
+            }
+
+            const lines = allLines.slice(actualStartLine - 1, actualEndLine);
+            const resultDescription = formatFileContentResponse(
+              [{
+                path: relativePath,
+                startLine: actualStartLine,
+                endLine: actualEndLine,
+                lines,
+                note: `Read from branch: ${compareBranch}`,
+              }],
+              'read_file'
+            );
+            return { description: resultDescription, contentType: 'text' };
+          }
+          // File doesn't exist on compareBranch — fall through to working tree
+        } catch {
+          // git show failed — fall through to working tree
+        }
       }
 
-      // Check if file exists
+      // Fallback: read from working tree (current behavior)
       let document: vscode.TextDocument;
       try {
         document = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
@@ -99,11 +140,11 @@ export const readFileTool: FunctionCall = {
         lines.push(document.lineAt(i).text);
       }
 
-      const relativePath = vscode.workspace.asRelativePath(document.uri);
+      const docRelativePath = vscode.workspace.asRelativePath(document.uri);
       
       const resultDescription = formatFileContentResponse(
         [{
-          path: relativePath,
+          path: docRelativePath,
           startLine: actualStartLine,
           endLine: actualEndLine,
           lines: lines

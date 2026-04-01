@@ -1,6 +1,5 @@
 import { MODEL_UI_METADATA, PROVIDER_UI_METADATA } from '../../../constant/llm';
 import { LLMProvider } from '../../../llm-adapter';
-import { ContextStrategy } from '../../../services/llm';
 
 export function buildBranchOptionsHtml(branches: string[], currentBranch?: string): string {
     return branches.map((branch) => {
@@ -67,18 +66,5 @@ export function buildLanguageOptionsHtml(savedLanguage?: string): string {
     return languages.map((lang) => {
         const isSelected = savedLanguage === lang.value || (!savedLanguage && lang.value === 'Vietnamese');
         return `<option value="${lang.value}"${isSelected ? ' selected' : ''}>${lang.label}</option>`;
-    }).join('\n');
-}
-
-export function buildContextStrategyOptionsHtml(savedContextStrategy?: ContextStrategy): string {
-    const strategies: Array<{ value: ContextStrategy; label: string; }> = [
-        { value: 'direct', label: 'Direct' },
-        { value: 'auto', label: 'Auto' },
-        { value: 'hierarchical', label: 'Hierarchical' }
-    ];
-
-    return strategies.map((strategy) => {
-        const isSelected = savedContextStrategy === strategy.value || (!savedContextStrategy && strategy.value === 'auto');
-        return `<option value="${strategy.value}"${isSelected ? ' selected' : ''}>${strategy.label}</option>`;
     }).join('\n');
 }

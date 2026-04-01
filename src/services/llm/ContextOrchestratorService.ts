@@ -6,6 +6,7 @@ import {
   CoordinatorPromptInput,
   DiffChunk,
   DiffChunkEntry,
+  LlmRequestLogEntry,
   UnifiedDiffFile,
 } from "./contextTypes";
 import { TokenEstimatorService } from "./TokenEstimatorService";
@@ -164,18 +165,32 @@ export class ContextOrchestratorService {
     this.reportLog(request, `[${stageLabel}] sending final request to ${adapter.getProvider()}/${adapter.getModel()}`);
 
     const safePrompt = this.calibration.safeTruncatePrompt(prompt, systemMessage, adapter, request, stageLabel);
-    this.reportLog(request, `[${stageLabel}] payload:\nSystem Message:\n${systemMessage}\n\nPrompt:\n${safePrompt}`);
 
     const finalOptions = this.buildGenerateOptions(adapter, {
       systemMessage,
       maxTokens: adapter.getMaxOutputTokens(),
     });
+    const startTime = Date.now();
     const response = await this.calibration.generateTextWithAutoRetry(
       safePrompt, systemMessage, finalOptions, adapter, request, stageLabel
     );
 
     this.throwIfCancelled(signal);
-    this.reportLog(request, `[${stageLabel}] api response\n${this.truncateLog(response.text)}`);
+    this.reportLog(request, `[${stageLabel}] response received (${response.promptTokens ?? '?'} prompt tokens, ${response.completionTokens ?? '?'} completion tokens)`);
+    this.reportLlmLog(request, {
+      stage: stageLabel,
+      provider: adapter.getProvider(),
+      model: adapter.getModel(),
+      systemMessage,
+      prompt: safePrompt,
+      response: response.text,
+      promptTokens: response.promptTokens,
+      completionTokens: response.completionTokens,
+      totalTokens: response.totalTokens,
+      finishReason: response.finishReason,
+      durationMs: Date.now() - startTime,
+      timestamp: new Date().toISOString(),
+    });
     return response.text.trim();
   }
 
@@ -221,6 +236,37 @@ export class ContextOrchestratorService {
     return this.generateFinalText(adapter, synthesisSystemMessage, synthesisPrompt, signal, request, "multi-agent-synthesis");
   }
 
+  /**
+   * Multi-agent MR description generation.
+   * Phase 1: Change Analyzer + Context Investigator run in parallel.
+   * Synthesis: Description Writer merges findings into final MR description.
+   */
+  public async generateMultiAgentDescription(
+    adapter: ILLMAdapter,
+    agents: AgentPrompt[],
+    synthesisSystemMessage: string,
+    buildSynthesisPrompt: (agentReports: string[]) => string,
+    sharedStore: SharedContextStore,
+    signal?: AbortSignal,
+    request?: ContextGenerationRequest,
+  ): Promise<string> {
+    this.reportLog(request, `[description] starting multi-agent description with ${agents.length} agent(s)`);
+
+    const agentReports = await this.multiAgentExecutor.executeDescriptionAgents(
+      agents,
+      sharedStore as any,
+      adapter,
+      signal,
+      request
+    );
+
+    this.reportLog(request, `[description] synthesizing final description from ${agentReports.length} agent(s)`);
+    this.reportProgress(request, "Writing MR description...");
+
+    const synthesisPrompt = buildSynthesisPrompt(agentReports);
+    return this.generateFinalText(adapter, synthesisSystemMessage, synthesisPrompt, signal, request, "description-synthesis");
+  }
+
   private buildGenerateOptions(adapter: ILLMAdapter, options: GenerateOptions): GenerateOptions {
     if (adapter.getProvider() === "openai" && adapter.getModel().startsWith("gpt-5")) {
       return { ...options, reasoning: { effort: "low" } };
@@ -261,6 +307,10 @@ export class ContextOrchestratorService {
 
   private reportLog(request: ContextGenerationRequest | undefined, message: string): void {
     request?.onLog?.(message);
+  }
+
+  private reportLlmLog(request: ContextGenerationRequest | undefined, entry: LlmRequestLogEntry): void {
+    request?.onLlmLog?.(entry);
   }
 
   private truncateLog(text: string, maxLength: number = 1600): string {

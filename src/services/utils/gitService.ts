@@ -1,3 +1,4 @@
+import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -38,6 +39,14 @@ export enum GitStatus {
     INTENT_TO_ADD = 9,
 }
 
+export interface MergedBranchInfo {
+    branchName: string;
+    mergeCommitSha: string;
+    mergeDate: Date;
+    mergeAuthor: string;
+    mergeMessage: string;
+}
+
 export class GitService {
     private gitExtension: any;
     private git: any;
@@ -72,6 +81,31 @@ export class GitService {
         }
 
         return this.git.repositories[0];
+    }
+
+    /**
+     * Read file content from a specific git ref (branch, tag, commit).
+     * Uses VS Code Git Extension API's `show()` method.
+     * Returns undefined if the file doesn't exist at that ref.
+     */
+    public async showFileFromRef(ref: string, relativePath: string): Promise<string | undefined> {
+        try {
+            const repository = this.getRepository();
+            // VS Code Git API: repository.show(ref, path) returns file content as string
+            const content = await repository.show(ref, relativePath);
+            return content ?? undefined;
+        } catch {
+            // File doesn't exist at this ref, or ref is invalid
+            return undefined;
+        }
+    }
+
+    /**
+     * Get the workspace root path from the git repository.
+     */
+    public getWorkspaceRoot(): string {
+        const repository = this.getRepository();
+        return repository.rootUri.fsPath;
     }
 
     /**
@@ -813,5 +847,165 @@ export class GitService {
             console.error('Error reading custom system prompt:', error);
             return undefined;
         }
+    }
+
+    /**
+     * Execute a git CLI command directly via child_process.execFile.
+     * Uses the repository root as the working directory.
+     * @param args - Arguments to pass to the git command
+     * @returns stdout output from the git command
+     */
+    private async execGitCommand(args: string[]): Promise<string> {
+        const repository = this.getRepository();
+        const cwd = repository.rootUri.fsPath;
+        return new Promise((resolve, reject) => {
+            execFile('git', args, { cwd, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+                if (error) { reject(new Error(`git ${args[0]} failed: ${stderr || error.message}`)); }
+                else { resolve(stdout); }
+            });
+        });
+    }
+
+    /**
+     * Parse branch name from a merge commit message.
+     * Supports multiple merge message formats:
+     * - "Merge branch 'feature/xyz' into main"
+     * - "Merge branch 'feature/xyz'"
+     * - "Merge pull request #123 from user/branch"
+     * - "Merge remote-tracking branch 'origin/feature'"
+     * Falls back to returning the full message if no pattern matches.
+     */
+    private parseBranchNameFromMergeMessage(message: string): string {
+        // Pattern 1: "Merge branch 'feature/xyz' into main" (must check before Pattern 2 — more specific)
+        const branchInto = message.match(/Merge branch '(.+?)' into .+/);
+        if (branchInto) { return branchInto[1]; }
+        // Pattern 2: "Merge branch 'feature/xyz'"
+        const branch = message.match(/Merge branch '(.+?)'/);
+        if (branch) { return branch[1]; }
+        // Pattern 3: "Merge pull request #123 from user/branch"
+        const pr = message.match(/Merge pull request #\d+ from (.+)/);
+        if (pr) { return pr[1]; }
+        // Pattern 4: "Merge remote-tracking branch 'origin/feature'"
+        const remote = message.match(/Merge remote-tracking branch '(.+?)'/);
+        if (remote) { return remote[1]; }
+        // Fallback
+        return message;
+    }
+
+    /**
+     * Get list of branches that have been merged into the target branch.
+     * Runs: git log --merges --first-parent --format=%H|%ai|%an|%s <targetBranch> -n <limit>
+     * Results are sorted by merge date descending (git log default).
+     */
+    public async getMergedBranches(targetBranch: string, limit: number = 50): Promise<MergedBranchInfo[]> {
+        const output = await this.execGitCommand([
+            'log', '--merges', '--first-parent',
+            '--format=%H|%ai|%an|%s',
+            targetBranch,
+            '-n', String(limit)
+        ]);
+        if (!output.trim()) { return []; }
+        return output.trim().split('\n')
+            .filter(line => line.trim())
+            .map(line => {
+                const [sha, date, author, ...messageParts] = line.split('|');
+                const message = messageParts.join('|');
+                return {
+                    mergeCommitSha: sha,
+                    mergeDate: new Date(date),
+                    mergeAuthor: author,
+                    mergeMessage: message,
+                    branchName: this.parseBranchNameFromMergeMessage(message),
+                };
+            });
+    }
+
+    /**
+     * Map git status character (A/M/D/R/C) to GitStatus enum value.
+     */
+    private mapGitStatusChar(statusChar: string): number {
+        const map: Record<string, number> = {
+            'A': GitStatus.INDEX_ADDED,
+            'M': GitStatus.MODIFIED,
+            'D': GitStatus.INDEX_DELETED,
+            'R': GitStatus.INDEX_RENAMED,
+            'C': GitStatus.INDEX_COPIED,
+        };
+        return map[statusChar] ?? GitStatus.MODIFIED;
+    }
+
+    /**
+     * Map git status character to human-readable label string.
+     */
+    private mapGitStatusLabel(statusChar: string): string {
+        const map: Record<string, string> = {
+            'A': 'Added', 'M': 'Modified', 'D': 'Deleted',
+            'R': 'Renamed', 'C': 'Copied',
+        };
+        return map[statusChar] ?? 'Modified';
+    }
+
+    /**
+     * Extract diff from a merge commit using first-parent diff.
+     * 
+     * Step 1: Get list of changed files via `git diff --name-status <sha>^1..<sha>`
+     * Step 2: Get unified diff for each file
+     * Step 3: Render diff string using existing renderBranchDiffFiles()
+     * 
+     * @param mergeCommitSha - SHA of the merge commit
+     * @returns Object with structured changes and rendered diff string
+     */
+    public async getMergedBranchDiff(mergeCommitSha: string): Promise<{ changes: UnifiedDiffFile[]; diff: string }> {
+        const repository = this.getRepository();
+        const workspaceRoot = repository.rootUri.fsPath;
+
+        // Step 1: Get list of changed files
+        const nameStatusOutput = await this.execGitCommand([
+            'diff', '--name-status', `${mergeCommitSha}^1..${mergeCommitSha}`
+        ]);
+        if (!nameStatusOutput.trim()) { return { changes: [], diff: '' }; }
+
+        const fileEntries = nameStatusOutput.trim().split('\n')
+            .filter(line => line.trim())
+            .map(line => {
+                const parts = line.split('\t');
+                const status = parts[0].charAt(0);
+                // Handle rename: R100\told-path\tnew-path
+                const filePath = parts[parts.length - 1];
+                const originalPath = parts.length > 2 ? parts[1] : undefined;
+                return { status, filePath, originalPath };
+            });
+
+        // Step 2: Get diff for each file
+        const changes: UnifiedDiffFile[] = [];
+        for (const entry of fileEntries) {
+            const fullPath = path.join(workspaceRoot, entry.filePath);
+            let diff: string;
+            let isBinary = false;
+            try {
+                const fileDiff = await this.execGitCommand([
+                    'diff', `${mergeCommitSha}^1..${mergeCommitSha}`, '--', entry.filePath
+                ]);
+                const sanitized = this.sanitizeDiffContent(fileDiff);
+                isBinary = await this.isBinaryFile(sanitized, fullPath);
+                diff = isBinary ? 'Binary file' : sanitized;
+            } catch (error) {
+                diff = `Error getting diff: ${error}`;
+            }
+            changes.push({
+                filePath: fullPath,
+                relativePath: entry.filePath,
+                diff,
+                status: this.mapGitStatusChar(entry.status),
+                statusLabel: this.mapGitStatusLabel(entry.status),
+                isDeleted: entry.status === 'D',
+                isBinary,
+                originalFilePath: entry.originalPath ? path.join(workspaceRoot, entry.originalPath) : undefined,
+            });
+        }
+
+        // Step 3: Render diff string (reuse existing method)
+        const diff = this.renderBranchDiffFiles(changes);
+        return { changes, diff };
     }
 }

@@ -66,4 +66,20 @@ export interface ContextGenerationRequest {
   signal?: AbortSignal;
   onProgress?: (message: string) => void;
   onLog?: (message: string) => void;
+  onLlmLog?: (entry: LlmRequestLogEntry) => void;
+}
+
+export interface LlmRequestLogEntry {
+  stage: string;
+  provider: string;
+  model: string;
+  systemMessage: string;
+  prompt: string;
+  response?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  finishReason?: string;
+  durationMs?: number;
+  timestamp: string;
 }

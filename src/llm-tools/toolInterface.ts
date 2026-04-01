@@ -27,6 +27,10 @@ export type ToolOptional = {
   abortController?: AbortController;
   sharedStore?: any; // SharedContextStore — typed as `any` to avoid circular dependency, cast in query_context tool
   queryContextCallCount?: { value: number };
+  /** When set, read_file and query_context will read file content from this git ref instead of working tree */
+  compareBranch?: string;
+  /** GitService instance for branch-aware file reading */
+  gitService?: any;
 };
 
 export type ToolExecuteResponse = {

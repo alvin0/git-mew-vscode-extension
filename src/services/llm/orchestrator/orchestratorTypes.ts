@@ -30,10 +30,13 @@ export type AgentPrompt = {
   phase?: number;
   outputSchema?: 'code-reviewer' | 'flow-diagram' | 'observer';
   sharedStore?: SharedContextStore;
+  /** Git ref for branch-aware file reading */
+  compareBranch?: string;
+  /** GitService instance for branch-aware file reading */
+  gitService?: any;
 };
 
 // Forward reference — actual implementation in SharedContextStore.ts
-// eslint-disable-next-line @typescript-eslint/no-empty-interface
 export type SharedContextStore = any;
 
 // Forward reference — actual implementation in AgentPromptBuilder.ts
@@ -247,6 +250,10 @@ export interface AgentPromptBuildContext {
   customSystemPrompt?: string;
   customRules?: string;
   customAgentInstructions?: string;
+  /** The branch being reviewed — tools will read file content from this ref */
+  compareBranch?: string;
+  /** GitService instance for branch-aware file reading */
+  gitService?: any;
 }
 
 // ─── Dependency Graph ───
@@ -289,3 +296,29 @@ export interface AgentFinding {
   data: unknown;
   timestamp: number;
 }
+
+// ─── MR Description Agent Output Schemas ───
+
+export interface ChangeAnalyzerOutput {
+  changeGroups: Array<{
+    scope: 'feature' | 'bugfix' | 'refactor' | 'docs' | 'test' | 'infra' | 'config';
+    files: string[];
+    summary: string;
+    breakingChange: boolean;
+  }>;
+  detectedIssueRefs: string[];
+  migrationNotes: string[];
+  templateHint: 'default' | 'release' | 'hotfix';
+}
+
+export interface ContextInvestigatorOutput {
+  impactedModules: string[];
+  risks: Array<{ description: string; severity: 'high' | 'medium' | 'low' }>;
+  relatedContext: string[];
+  backwardCompatibility: string;
+  rollbackNotes: string;
+}
+
+export type DescriptionAgentReport =
+  | { role: 'Change Analyzer'; structured: ChangeAnalyzerOutput; raw: string }
+  | { role: 'Context Investigator'; structured: ContextInvestigatorOutput; raw: string };

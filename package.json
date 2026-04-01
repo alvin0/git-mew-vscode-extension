@@ -68,6 +68,11 @@
         "icon": "$(eye)"
       },
       {
+        "command": "git-mew.review-merged-branch",
+        "title": "git-mew: Review Merged Branch",
+        "icon": "$(git-merge)"
+      },
+      {
         "command": "git-mew.showCommands",
         "title": "git-mew: Show Commands"
       },
@@ -95,6 +100,11 @@
         },
         {
           "command": "git-mew.review-staged-changes",
+          "when": "scmProvider == git",
+          "group": "navigation"
+        },
+        {
+          "command": "git-mew.review-merged-branch",
           "when": "scmProvider == git",
           "group": "navigation"
         }
@@ -267,6 +277,7 @@
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.7.1",
     "eslint": "^9.36.0",
+    "fast-check": "^4.6.0",
     "typescript": "^5.9.3"
   },
   "dependencies": {

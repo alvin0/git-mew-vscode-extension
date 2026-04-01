@@ -66,7 +66,8 @@ export class RiskHypothesisGenerator {
     graph: DependencyGraphData,
   ): RiskHypothesis[] {
     const hypotheses: RiskHypothesis[] = [];
-    const changedFiles = new Set(crOutput.issues.map((i) => i.file));
+    const crIssues = crOutput?.issues ?? [];
+    const changedFiles = new Set(crIssues.map((i) => i.file));
 
     // Rule 1 (API change): symbols with >= 2 references whose file is changed
     for (const [symbolName, info] of graph.symbolMap) {
@@ -95,7 +96,7 @@ export class RiskHypothesisGenerator {
     }
 
     // Rule 3 (Deleted export): CR issues with severity 'critical' or 'major'
-    const severeIssues = crOutput.issues.filter(
+    const severeIssues = crIssues.filter(
       (i) => i.severity === "critical" || i.severity === "major",
     );
     for (const issue of severeIssues) {
@@ -113,7 +114,7 @@ export class RiskHypothesisGenerator {
     }
 
     // Rule 4 (New dependency): CR issues mentioning 'import' or 'dependency'
-    const importIssues = crOutput.issues.filter(
+    const importIssues = crIssues.filter(
       (i) =>
         i.description.toLowerCase().includes("import") ||
         i.description.toLowerCase().includes("dependency"),
@@ -130,7 +131,7 @@ export class RiskHypothesisGenerator {
     }
 
     // Rule 5 (Error handling): CR issues with category 'correctness'
-    const correctnessIssues = crOutput.issues.filter(
+    const correctnessIssues = crIssues.filter(
       (i) => i.category === "correctness",
     );
     if (correctnessIssues.length > 0) {
@@ -160,7 +161,7 @@ export class RiskHypothesisGenerator {
     }
 
     // Rule 7 (Test gap): CR issues with category 'testing'
-    const testingIssues = crOutput.issues.filter(
+    const testingIssues = crIssues.filter(
       (i) => i.category === "testing",
     );
     if (testingIssues.length > 0) {
@@ -178,7 +179,7 @@ export class RiskHypothesisGenerator {
     const schemaFiles = allAffectedFiles.filter((f) =>
       SCHEMA_KEYWORDS.some((kw) => f.toLowerCase().includes(kw)),
     );
-    const schemaIssues = crOutput.issues.filter((i) =>
+    const schemaIssues = crIssues.filter((i) =>
       SCHEMA_KEYWORDS.some(
         (kw) =>
           i.description.toLowerCase().includes(kw) ||
@@ -291,10 +292,13 @@ Max ${MAX_LLM_HYPOTHESES} additional hypotheses. Return ONLY the JSON array, no 
     fdOutput: FlowDiagramOutput,
   ): string {
     const parts: string[] = [];
+    const crIssues = crOutput?.issues ?? [];
+    const fdFlows = fdOutput?.affectedFlows ?? [];
+    const fdDiagrams = fdOutput?.diagrams ?? [];
 
-    if (crOutput.issues.length > 0) {
+    if (crIssues.length > 0) {
       parts.push("Code Review Issues:");
-      for (const issue of crOutput.issues.slice(0, 10)) {
+      for (const issue of crIssues.slice(0, 10)) {
         parts.push(
           `- [${issue.severity}] ${issue.file}:${issue.location} — ${issue.description}`,
         );
@@ -302,16 +306,16 @@ Max ${MAX_LLM_HYPOTHESES} additional hypotheses. Return ONLY the JSON array, no 
       parts.push(`Quality verdict: ${crOutput.qualityVerdict}`);
     }
 
-    if (fdOutput.affectedFlows.length > 0) {
+    if (fdFlows.length > 0) {
       parts.push("\nAffected Flows:");
-      for (const flow of fdOutput.affectedFlows) {
+      for (const flow of fdFlows) {
         parts.push(`- ${flow}`);
       }
     }
 
-    if (fdOutput.diagrams.length > 0) {
+    if (fdDiagrams.length > 0) {
       parts.push("\nDiagrams:");
-      for (const d of fdOutput.diagrams) {
+      for (const d of fdDiagrams) {
         parts.push(`- ${d.name} (${d.type}): ${d.description}`);
       }
     }
@@ -371,7 +375,7 @@ Max ${MAX_LLM_HYPOTHESES} additional hypotheses. Return ONLY the JSON array, no 
     graph: DependencyGraphData,
   ): string[] {
     const files = new Set<string>();
-    for (const issue of crOutput.issues) {
+    for (const issue of crOutput?.issues ?? []) {
       files.add(issue.file);
     }
     for (const [file] of graph.fileDependencies) {

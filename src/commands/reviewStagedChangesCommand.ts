@@ -25,7 +25,7 @@ export function registerReviewStagedChangesCommand(
                 return;
             }
 
-            const { currentProvider, currentModel, savedLanguage, savedContextStrategy } = loadReviewPreferences(llmService);
+            const { currentProvider, currentModel, savedLanguage } = loadReviewPreferences(llmService);
             const { providers, availableModels, customModelSettings, customProviderConfig } = await ModelProvider.getAvailableModels(llmService);
 
             const panel = vscode.window.createWebviewPanel(
@@ -44,7 +44,6 @@ export function registerReviewStagedChangesCommand(
                 currentProvider,
                 currentModel,
                 savedLanguage,
-                savedContextStrategy,
                 customModelSettings,
                 customProviderConfig
             );

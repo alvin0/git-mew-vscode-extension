@@ -19,6 +19,8 @@ const DIFF_BUDGET_RATIOS: Record<string, number> = {
   'Code Reviewer': 1.00,
   'Flow Diagram': 0.35,
   'Observer': 0.15,
+  'Change Analyzer': 1.00,
+  'Context Investigator': 0.25,
 };
 
 /** Reference budget ratios per agent role (fraction of total referenceBudget) */
@@ -26,6 +28,21 @@ const REFERENCE_BUDGET_RATIOS: Record<string, number> = {
   'Code Reviewer': 0.50,
   'Flow Diagram': 0.30,
   'Observer': 0.20,
+  'Change Analyzer': 0.35,
+  'Context Investigator': 0.65,
+};
+
+/** Budget config for MR description generation (2 agents instead of 3) */
+export const DESCRIPTION_BUDGET_CONFIG: BudgetManagerConfig = {
+  referenceContextRatio: 0.40,
+  minReferenceTokens: 80_000,
+  maxSymbolsFormula: (cw: number) => Math.min(Math.floor(cw / 2500), 120),
+  maxFilesFormula: (cw: number) => Math.min(Math.floor(cw / 5000), 40),
+  agentBudgetRatios: {
+    'Change Analyzer': 0.55,
+    'Context Investigator': 0.45,
+  },
+  safetyThreshold: 0.85,
 };
 
 export class ContextBudgetManager {

@@ -23,12 +23,93 @@ export function buildSharedClientActions(actionButtonIds: string[], options?: { 
     const buttonRefs = actionButtonIds.join(', ');
 
     return `
+        let llmLogCounter = 0;
+
         function appendLogMessage(message) {
             const timestamp = new Date().toLocaleTimeString();
             const line = '[' + timestamp + '] ' + message;
             logOutput.textContent += (logOutput.textContent ? '\\n' : '') + line;
             logOutput.scrollTop = logOutput.scrollHeight;
         }
+
+        function appendLlmLogEntry(entry) {
+            llmLogCounter++;
+            const countEl = document.getElementById('llmLogCount');
+            if (countEl) {
+                countEl.textContent = String(llmLogCounter);
+            }
+
+            const container = document.getElementById('llmLogEntries');
+            if (!container) { return; }
+
+            const entryEl = document.createElement('div');
+            entryEl.className = 'llm-entry';
+
+            const ts = new Date(entry.timestamp).toLocaleTimeString();
+            const duration = entry.durationMs ? (entry.durationMs / 1000).toFixed(1) + 's' : '?';
+            const tokens = [
+                entry.promptTokens ? 'in:' + entry.promptTokens : '',
+                entry.completionTokens ? 'out:' + entry.completionTokens : '',
+            ].filter(Boolean).join(' / ') || '?';
+
+            const headerEl = document.createElement('div');
+            headerEl.className = 'llm-entry__header';
+            headerEl.innerHTML =
+                '<span>' + escapeHtml(entry.stage) + ' — ' + escapeHtml(entry.provider) + '/' + escapeHtml(entry.model) + '</span>' +
+                '<span class="llm-entry__meta">' +
+                '<span>' + ts + '</span>' +
+                '<span>' + duration + '</span>' +
+                '<span>' + tokens + '</span>' +
+                '</span>';
+            headerEl.addEventListener('click', function() {
+                entryEl.classList.toggle('is-expanded');
+            });
+
+            const bodyEl = document.createElement('div');
+            bodyEl.className = 'llm-entry__body';
+
+            function makeSection(label, text) {
+                const section = document.createElement('div');
+                section.className = 'llm-entry__section';
+                const labelEl = document.createElement('span');
+                labelEl.className = 'llm-entry__section-label';
+                labelEl.textContent = label;
+                const pre = document.createElement('pre');
+                pre.textContent = text || '(empty)';
+                section.appendChild(labelEl);
+                section.appendChild(pre);
+                return section;
+            }
+
+            bodyEl.appendChild(makeSection('System message', entry.systemMessage));
+            bodyEl.appendChild(makeSection('Prompt', entry.prompt));
+            bodyEl.appendChild(makeSection('Response', entry.response));
+
+            entryEl.appendChild(headerEl);
+            entryEl.appendChild(bodyEl);
+            container.appendChild(entryEl);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function switchLogTab(targetTab) {
+            document.querySelectorAll('.log-tab-btn').forEach(function(btn) {
+                var isActive = btn.getAttribute('data-log-tab') === targetTab;
+                btn.classList.toggle('active', isActive);
+                btn.setAttribute('aria-selected', String(isActive));
+            });
+            var execPane = document.getElementById('executionLogPane');
+            var llmPane = document.getElementById('llmLogPane');
+            if (execPane) { execPane.classList.toggle('active', targetTab === 'execution'); }
+            if (llmPane) { llmPane.classList.toggle('active', targetTab === 'llm'); }
+        }
+
+        (function initLogTabs() {
+            document.querySelectorAll('.log-tab-btn').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    switchLogTab(btn.getAttribute('data-log-tab'));
+                });
+            });
+        })();
 
         function setStatusState(state, title, detail) {
             statusCard.dataset.state = state;
@@ -518,7 +599,7 @@ export function buildSharedClientActions(actionButtonIds: string[], options?: { 
                 contextWindow: (providerSelect.value === 'custom' || modelSelect.value === CUSTOM_MODEL_SENTINEL) ? getCustomCapabilities().contextWindow : undefined,
                 maxOutputTokens: (providerSelect.value === 'custom' || modelSelect.value === CUSTOM_MODEL_SENTINEL) ? getCustomCapabilities().maxOutputTokens : undefined,
                 language: languageSelect.value,
-                contextStrategy: contextStrategySelect.value,
+                contextStrategy: 'auto',
                 ${options?.idleHook?.includes('checkBranchSelection') ? "baseBranch: typeof baseBranchSelect !== 'undefined' ? baseBranchSelect.value : undefined,\n                compareBranch: typeof compareBranchSelect !== 'undefined' ? compareBranchSelect.value : undefined," : ''}
             });
         }

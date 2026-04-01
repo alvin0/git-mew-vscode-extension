@@ -7,6 +7,7 @@ import {
   FlowDiagramOutput,
 } from './orchestratorTypes';
 import { ToolExecuteResponse } from '../../../llm-tools/toolInterface';
+import { DependencyGraphIndex } from './DependencyGraphIndex';
 
 /**
  * Shared context store interface — Blackboard pattern for multi-agent review sessions.
@@ -164,7 +165,7 @@ export class SharedContextStoreImpl implements ISharedContextStore {
       sections.push({
         priority: 3,
         label: 'Dependency Graph',
-        content: this.serializeDependencyGraph(this.graph, filter),
+        content: DependencyGraphIndex.serializeForPrompt(this.graph, filter),
       });
     }
 
@@ -276,76 +277,4 @@ export class SharedContextStoreImpl implements ISharedContextStore {
       ).join('\n');
   }
 
-  /**
-   * Serialize dependency graph for prompt injection.
-   * Handles 3 filter modes: 'full', 'critical-paths', 'summary'.
-   * This is a local implementation to avoid depending on DependencyGraphIndex
-   * which may not exist yet.
-   */
-  private serializeDependencyGraph(
-    data: DependencyGraphData,
-    filter: 'full' | 'critical-paths' | 'summary',
-  ): string {
-    if (filter === 'summary') {
-      const fileCount = data.fileDependencies.size;
-      const symbolCount = data.symbolMap.size;
-      const pathCount = data.criticalPaths.length;
-      let result = `Files: ${fileCount}, Symbols: ${symbolCount}, Critical paths: ${pathCount}`;
-      if (pathCount > 0) {
-        result += '\n' + data.criticalPaths.map(p => `- ${p.description}`).join('\n');
-      }
-      return result;
-    }
-
-    if (filter === 'critical-paths') {
-      const parts: string[] = [];
-      if (data.criticalPaths.length > 0) {
-        parts.push('### Critical Paths');
-        for (const cp of data.criticalPaths) {
-          parts.push(`- ${cp.files.join(' → ')} (${cp.changedFileCount} changed files): ${cp.description}`);
-        }
-      }
-      // Include symbols referenced in critical paths
-      const criticalFiles = new Set(data.criticalPaths.flatMap(p => p.files));
-      const relevantSymbols = [...data.symbolMap.entries()]
-        .filter(([, info]) => criticalFiles.has(info.definedIn));
-      if (relevantSymbols.length > 0) {
-        parts.push('### Symbol Map (critical path)');
-        for (const [name, info] of relevantSymbols) {
-          parts.push(`- ${name} (${info.type}) defined in ${info.definedIn}, referenced by: ${info.referencedBy.join(', ')}`);
-        }
-      }
-      return parts.join('\n');
-    }
-
-    // 'full' filter
-    const parts: string[] = [];
-
-    if (data.fileDependencies.size > 0) {
-      parts.push('### File Dependencies');
-      for (const [file, deps] of data.fileDependencies) {
-        parts.push(`- ${file}: imports [${deps.imports.join(', ')}], importedBy [${deps.importedBy.join(', ')}]`);
-      }
-    }
-
-    if (data.symbolMap.size > 0) {
-      // Top 20 by reference count
-      const sorted = [...data.symbolMap.entries()]
-        .sort((a, b) => b[1].referencedBy.length - a[1].referencedBy.length)
-        .slice(0, 20);
-      parts.push('### Symbol Map');
-      for (const [name, info] of sorted) {
-        parts.push(`- ${name} (${info.type}) defined in ${info.definedIn}, referenced by: ${info.referencedBy.join(', ')}`);
-      }
-    }
-
-    if (data.criticalPaths.length > 0) {
-      parts.push('### Critical Paths');
-      for (const cp of data.criticalPaths) {
-        parts.push(`- ${cp.files.join(' → ')} (${cp.changedFileCount} changed files): ${cp.description}`);
-      }
-    }
-
-    return parts.join('\n');
-  }
 }
