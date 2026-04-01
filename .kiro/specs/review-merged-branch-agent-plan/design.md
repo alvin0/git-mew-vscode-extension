@@ -507,7 +507,7 @@ registerReviewMergedBranchCommand(context, gitService, llmService),
 {
     "command": "git-mew.review-merged-branch",
     "title": "git-mew: Review Merged Branch",
-    "icon": "$(git-merge)"
+    "icon": "$(history)"
 }
 
 // contributes.menus.scm/title — thêm:
@@ -646,7 +646,7 @@ src/commands/
 
 | File | Thay đổi | Chi tiết |
 |------|----------|----------|
-| `package.json` | Thêm command + menu entry | Command `git-mew.review-merged-branch` với icon `$(git-merge)`, menu entry trong `scm/title` |
+| `package.json` | Thêm command + menu entry | Command `git-mew.review-merged-branch` với icon `$(history)`, menu entry trong `scm/title` |
 | `src/commands/index.ts` | Import + đăng ký command | Thêm `registerReviewMergedBranchCommand` vào mảng commands |
 | `src/services/utils/gitService.ts` | Thêm 5 methods mới | `getMergedBranches()`, `getMergedBranchDiff()`, `parseBranchNameFromMergeMessage()`, `execGitCommand()`, `mapGitStatusChar()`, `mapGitStatusLabel()` |
 

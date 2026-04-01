@@ -102,7 +102,7 @@ Tính năng "Review Merged Branch" cho phép người dùng review lại một n
 1. THE Extension SHALL đăng ký lệnh "git-mew.review-merged-branch" trong package.json với title "git-mew: Review Merged Branch"
 2. THE Extension SHALL hiển thị lệnh "Review Merged Branch" trong SCM title menu khi scmProvider là git
 3. WHEN người dùng kích hoạt lệnh, THE Extension SHALL mở Webview_Panel với giao diện chọn nhánh đã merge
-4. THE Extension SHALL sử dụng icon "$(git-merge)" cho lệnh trong SCM menu
+4. THE Extension SHALL sử dụng icon "$(history)" cho lệnh trong SCM menu
 
 ### Yêu cầu 8: Hỗ trợ custom prompt và rules từ repository
 

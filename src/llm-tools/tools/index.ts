@@ -4,5 +4,6 @@ export * from './getDiagnostics';
 export * from './findReferences';
 export * from './readFile';
 export * from './searchCode';
+export * from './readCommitMessages';
 
 export * from './queryContext';

@@ -4,11 +4,11 @@
 
 ### Your AI kitty for Git chaos
 
-**Transform your Git workflow with AI-powered commit messages, code reviews, and merge request descriptions**
+**Transform your Git workflow with AI-powered commit messages, staged reviews, merged-branch reviews, and merge request descriptions**
 
-[![VS Code](https://img.shields.io/badge/VS%20Code-1.104.0+-blue.svg)](https://code.visualstudio.com/)
+[![VS Code](https://img.shields.io/badge/VS%20Code-1.110.0+-blue.svg)](https://code.visualstudio.com/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE.md)
-[![Version](https://img.shields.io/badge/version-0.2.1-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.0-orange.svg)](CHANGELOG.md)
 
 [Features](#features) • [Quick Start](#quick-start) • [Usage](#usage) • [Customization](#customization) • [Providers](#supported-llm-providers)
 
@@ -18,7 +18,7 @@
 
 ## Features
 
-Git Mew is your intelligent Git companion that leverages AI to streamline your development workflow. Say goodbye to commit message writer's block and hello to professional, consistent Git practices.
+Git Mew is your intelligent Git companion that leverages AI to streamline commit creation, code review, and merge history analysis inside VS Code. It helps you move faster without losing visibility into what changed, why it changed, and what still needs attention.
 
 ### Core Capabilities
 
@@ -31,6 +31,9 @@ Get AI-powered analysis of your staged changes before committing. Catch potentia
 #### Comprehensive Code Review
 Generate detailed code reviews for merge requests by comparing any two branches. Includes quality assessment, security considerations, and actionable feedback.
 
+#### Review Merged Branch History
+Inspect code that has already been merged into the current branch by selecting a historical merge commit. This is useful for understanding past work, auditing risky merges, or reviewing work after integration.
+
 #### Professional MR Descriptions
 Create polished merge request descriptions with smart template selection:
 - **Default**: Standard feature/bugfix descriptions
@@ -39,6 +42,9 @@ Create polished merge request descriptions with smart template selection:
 
 #### Visual Flow Analysis
 Reviews include PlantUML diagrams to visualize code flow, architecture changes, and component interactions. Diagrams can be fixed with AI if syntax errors occur.
+
+#### Deep Change Explanations
+Review outputs now include both a concise summary and a longer `Detail Change` section to explain the logic, behavior, and implementation impact of code changes in more depth.
 
 #### Context-Aware Analysis
 Git Mew intelligently inspects related files outside the diff to understand runtime flow and catch hidden integration risks.
@@ -51,6 +57,7 @@ Git Mew intelligently inspects related files outside the diff to understand runt
 - **Multi-Language Support**: Get reviews and descriptions in 8+ languages
 - **Custom Rules**: Define project-specific guidelines via `.gitmew/` folder
 - **Quick Access**: Integrated buttons in VS Code's Source Control panel
+- **History-Safe Review Picker**: Review Merged Branch shows the 20 most recent merges by default and uses search for older history to avoid UI lag
 - **Status Bar Menu**: Fast access to frequently used commands
 - **Template Publishing**: One-click distribution of customization templates
 - **Cancellable Operations**: Stop generation mid-flight if needed
@@ -70,6 +77,10 @@ Git Mew intelligently inspects related files outside the diff to understand runt
    - **OpenAI/Claude/Gemini**: Enter your API key
    - **Ollama**: Just select your local model (no API key needed)
    - **Custom**: Provide your OpenAI-compatible endpoint URL
+5. Start with one of the review commands from the Source Control panel:
+   - `git-mew: Review Staged Changes`
+   - `git-mew: Review Merge`
+   - `git-mew: Review Merged Branch`
 
 That's it! You're ready to go.
 
@@ -128,10 +139,39 @@ Get AI-powered feedback on your changes before committing. Catch issues early an
 - Code quality assessment
 - Potential bugs and issues
 - Improvement suggestions
+- Summary of changes
+- Detail Change walkthrough
 - Security considerations
 - PlantUML diagrams showing code flow
 - Related file analysis for context
 - Observer warnings for hidden risks
+
+---
+
+### Review Merged Branch
+
+Review code that has already been merged into your current branch. This is useful when you want to audit completed work, understand a past merge, or inspect a risky integration after the fact.
+
+**How to use:**
+
+1. Check out the branch you want to review from
+2. Click the history icon in the Source Control panel
+   - Or run: `git-mew: Review Merged Branch`
+3. A dashboard opens with options:
+   - Browse the 20 most recent merged branches
+   - Search older merged branches without loading the entire history into the UI
+   - Select LLM provider, model, and output language
+   - Add optional task or issue context
+4. Click **"Generate review"**
+5. Inspect the result in separate **Review** and **Diff** tabs
+
+**What you get:**
+- Review generated from the exact merge commit patch
+- Summary of changes
+- Detail Change walkthrough
+- Commit-message context from the merged branch history
+- Potential bugs, risks, and follow-up suggestions
+- PlantUML diagrams and repair support when needed
 
 ---
 
@@ -154,6 +194,7 @@ Create comprehensive code reviews for merge requests by comparing branches.
 
 **Review includes:**
 - Summary of all changes
+- Detail Change walkthrough
 - Code quality assessment
 - Security and performance considerations
 - Improvement suggestions
@@ -187,7 +228,7 @@ Create professional merge request descriptions with smart template selection.
 
 ## Requirements
 
-- Visual Studio Code 1.104.0 or higher
+- Visual Studio Code 1.110.0 or higher
 - Git installed and configured
 - API key for your chosen LLM provider (OpenAI, Claude, or Gemini)
   - **Note**: Ollama does not require an API key - just have it running locally
@@ -334,6 +375,8 @@ Configure Git Mew through VS Code settings:
 - `git-mew.reviewMerge.model`: Last used model for reviews
 - `git-mew.reviewMerge.language`: Default output language (English, Vietnamese, Japanese, etc.)
 - `git-mew.reviewMerge.contextStrategy`: Context handling strategy for reviews
+
+These review settings are shared across the review workspaces, including Review Merge, Review Staged Changes, and Review Merged Branch.
 
 #### Custom Model Limits
 Configure context window and max output tokens for custom models:

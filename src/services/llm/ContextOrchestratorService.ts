@@ -65,13 +65,14 @@ export class ContextOrchestratorService {
       typeof contextWindowOrModel === "number"
         ? contextWindowOrModel
         : this.config.defaultContextWindow;
+    const clampToWindow = (tokens: number) => Math.min(contextWindow, tokens);
 
     return {
       contextWindow,
-      directInputBudget: Math.max(2400, Math.floor(contextWindow * this.config.directBudgetRatio)),
-      workerInputBudget: Math.max(1400, Math.floor(contextWindow * this.config.workerBudgetRatio)),
-      reducerInputBudget: Math.max(1400, Math.floor(contextWindow * this.config.reducerBudgetRatio)),
-      finalInputBudget: Math.max(2000, Math.floor(contextWindow * this.config.finalBudgetRatio)),
+      directInputBudget: clampToWindow(Math.max(2400, Math.floor(contextWindow * this.config.directBudgetRatio))),
+      workerInputBudget: clampToWindow(Math.max(1400, Math.floor(contextWindow * this.config.workerBudgetRatio))),
+      reducerInputBudget: clampToWindow(Math.max(1400, Math.floor(contextWindow * this.config.reducerBudgetRatio))),
+      finalInputBudget: clampToWindow(Math.max(2000, Math.floor(contextWindow * this.config.finalBudgetRatio))),
     };
   }
 
@@ -84,6 +85,14 @@ export class ContextOrchestratorService {
   ): ContextStrategy {
     if (strategy !== "auto") { return strategy; }
     const budget = this.getBudgetProfile(contextWindow);
+    const approximatePromptTokens = Math.ceil((systemMessage.length + prompt.length) / 4);
+    if (approximatePromptTokens > budget.directInputBudget) {
+      return "hierarchical";
+    }
+    if (approximatePromptTokens <= Math.floor(budget.directInputBudget * 0.5)) {
+      return "direct";
+    }
+
     const estimatedPrompt = this.estimateTokens(systemMessage, model) + this.estimateTokens(prompt, model);
     return estimatedPrompt <= budget.directInputBudget ? "direct" : "hierarchical";
   }
@@ -98,9 +107,10 @@ export class ContextOrchestratorService {
     this.reportLog(request, `[context] preparing ${request.changes.length} changed file(s) for ${request.task.label}`);
 
     const executionProfile = this.getExecutionProfile(request);
+    const effectiveContextWindow = this.getEffectiveContextWindow(request.adapter);
     const effectiveStrategy = this.resolveStrategy(
       request.strategy,
-      request.adapter.getContextWindow(),
+      effectiveContextWindow,
       request.adapter.getModel(),
       request.task.systemMessage,
       request.task.directPrompt
@@ -115,7 +125,7 @@ export class ContextOrchestratorService {
       );
     }
 
-    const budgets = this.getBudgetProfile(request.adapter.getContextWindow());
+    const budgets = this.getBudgetProfile(effectiveContextWindow);
     const workerPayloadBudget = Math.max(
       900,
       Math.floor(budgets.workerInputBudget * executionProfile.workerBudgetMultiplier) - this.config.workerOverheadTokens
@@ -133,7 +143,7 @@ export class ContextOrchestratorService {
     const reducedAnalyses = await this.reducer.reduceAnalysesUntilFit(
       analyses, request.adapter, request.task.systemMessage, request.task.buildCoordinatorPrompt,
       request.changes, request.signal, request, executionProfile,
-      (cw) => this.getBudgetProfile(cw)
+      () => this.getBudgetProfile(effectiveContextWindow)
     );
 
     const coordinatorInput = this.reducer.buildCoordinatorPromptInput(
@@ -272,6 +282,14 @@ export class ContextOrchestratorService {
       return { ...options, reasoning: { effort: "low" } };
     }
     return options;
+  }
+
+  private getEffectiveContextWindow(adapter: ILLMAdapter): number {
+    const adapterContextWindow = adapter.getContextWindow();
+    if (!Number.isFinite(adapterContextWindow) || adapterContextWindow <= 0) {
+      return this.config.defaultContextWindow;
+    }
+    return Math.min(adapterContextWindow, this.config.defaultContextWindow);
   }
 
   private getExecutionProfile(request: ContextGenerationRequest): TaskExecutionProfile {

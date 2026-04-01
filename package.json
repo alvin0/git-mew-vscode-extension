@@ -2,11 +2,11 @@
   "name": "git-mew",
   "displayName": "Git Mew",
   "description": "Your AI kitty for Git chaos - Generate intelligent commit messages using AI",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "icon": "resources/images/logo.png",
   "publisher": "GitMew",
   "engines": {
-    "vscode": "^1.104.0"
+    "vscode": "^1.110.0"
   },
   "categories": [
     "SCM Providers",
@@ -70,7 +70,7 @@
       {
         "command": "git-mew.review-merged-branch",
         "title": "git-mew: Review Merged Branch",
-        "icon": "$(git-merge)"
+        "icon": "$(history)"
       },
       {
         "command": "git-mew.showCommands",
@@ -269,14 +269,14 @@
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
-    "@types/node": "22.x",
-    "@types/vscode": "^1.104.0",
-    "@typescript-eslint/eslint-plugin": "^8.45.0",
-    "@typescript-eslint/parser": "^8.45.0",
+    "@types/node": "^22.19.15",
+    "@types/vscode": "^1.110.0",
+    "@typescript-eslint/eslint-plugin": "^8.58.0",
+    "@typescript-eslint/parser": "^8.58.0",
     "@vscode/test-cli": "^0.0.11",
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.7.1",
-    "eslint": "^9.36.0",
+    "eslint": "^9.39.4",
     "fast-check": "^4.6.0",
     "typescript": "^5.9.3"
   },
@@ -284,8 +284,8 @@
     "@types/markdown-it": "^14.1.2",
     "gpt-tokenizer": "^3.4.0",
     "highlight.js": "^11.11.1",
-    "markdown-it": "^14.1.0",
-    "markdown-it-highlightjs": "^4.2.0",
+    "markdown-it": "^14.1.1",
+    "markdown-it-highlightjs": "^4.3.0",
     "plantuml-encoder": "^1.4.0"
   }
 }

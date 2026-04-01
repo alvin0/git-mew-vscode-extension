@@ -1,5 +1,32 @@
 # Change Log
 
+## [0.4.0] - 2026-04-01
+
+This release focuses on a new review workflow for code that has already been merged. The headline feature is **Review Merged Branch**, along with deeper review output, safer branch browsing on large repositories, and several reliability fixes across the merged-branch experience.
+
+### Added
+- **Review Merged Branch**: Added a new `git-mew: Review Merged Branch` command to review code that has already been merged into the current branch by selecting a historical merge commit.
+- **Merged Branch Review Workspace**: Added a dedicated UI for browsing merged branches, selecting a branch, and generating AI review output directly from the merge commit diff.
+- **Commit Message Context Tool**: Merged-branch review agents can now read commit messages from the merged branch range to better understand implementation intent, not just the final patch.
+- **Detail Change Section**: Review outputs now include a dedicated `Detail Change` section for longer, more complete explanations of logic flow, code behavior, and implementation details.
+
+### Changed
+- **Review + Diff Tabs**: Review Merged Branch now renders separate `Review` and `Diff` tabs so users can inspect AI feedback and the exact merge patch side by side.
+- **Top-20 Recent Branches by Default**: The merged-branch list now shows only the 20 most recent results initially and keeps the list scrollable to reduce webview load.
+- **Server-Side Branch Search**: Older merged branches are now discovered through search instead of rendering large branch histories in the UI.
+- **Newest-First Ordering**: Merged branch discovery and search results are consistently sorted by merge time descending so the latest merged work always appears first.
+- **Dedicated Detail Change Agent**: Long-form change explanation is now handled by a separate agent to preserve context quality and reduce pressure on the main review summary.
+- **Additive Prompt Customization**: Custom review prompts and rules are now injected additively across review agents, preserving the default review contract while still allowing project-specific guidance.
+
+### Fixed
+- **Final Result Rendering**: Fixed merged-branch webview result handling so completed reviews display correctly in the final output panel.
+- **PlantUML Repair Flow**: Corrected merged-branch validation so `Fix with AI` works properly for PlantUML repair requests.
+- **Search Selection State**: Fixed stale branch-selection behavior during search so users cannot generate a review from an outdated selection.
+
+### Improved
+- **Structured Error Handling**: Merged branch review now benefits from the same structured error-reporting patterns used across the newer review workspaces.
+- **Regression Coverage**: Added test coverage for merged-branch parsing, list sorting, search behavior, prompt generation, validation, and webview rendering.
+
 ## [0.3.1] - 2026-03-25
 
 ### Added

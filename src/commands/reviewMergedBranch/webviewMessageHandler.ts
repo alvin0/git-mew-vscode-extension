@@ -1,13 +1,14 @@
 import * as vscode from 'vscode';
 import { LLMProvider } from '../../llm-adapter';
 import { ContextStrategy } from '../../services/llm';
+import { MergedBranchInfo } from '../../services/utils/gitService';
 import { createReviewErrorPayload } from '../reviewShared/errorReport';
 import { openDiffDocument, postError, postLog, postLlmLog, postPlantUmlRepairResult, postProgress, postResult } from '../reviewShared/panelMessaging';
 import { ReviewMergedBranchService } from './reviewMergedBranchService';
-import { validateMergedBranchReviewInput } from './validation';
+import { validateMergedBranchRepairInput, validateMergedBranchReviewInput } from './validation';
 
 export interface ReviewMergedBranchMessage {
-    command: 'reviewMergedBranch' | 'viewRawDiff' | 'cancel' | 'repairPlantUml';
+    command: 'reviewMergedBranch' | 'searchMergedBranches' | 'viewRawDiff' | 'cancel' | 'repairPlantUml';
     mergeCommitSha?: string;
     branchName?: string;
     provider?: LLMProvider;
@@ -24,18 +25,25 @@ export interface ReviewMergedBranchMessage {
     errorMessage?: string;
     target?: 'review';
     attempt?: number;
+    query?: string;
+    requestId?: number;
 }
 
 export class WebviewMessageHandler {
     constructor(
         private panel: vscode.WebviewPanel,
-        private service: ReviewMergedBranchService
+        private service: ReviewMergedBranchService,
+        private targetBranch: string,
+        private branchSearchLimit: number = 20
     ) {}
 
     async handleMessage(message: ReviewMergedBranchMessage): Promise<void> {
         switch (message.command) {
             case 'reviewMergedBranch':
                 await this.generateMergedBranchReview(message);
+                break;
+            case 'searchMergedBranches':
+                await this.searchMergedBranches(message);
                 break;
             case 'viewRawDiff':
                 await openDiffDocument(message.diff);
@@ -47,6 +55,28 @@ export class WebviewMessageHandler {
                 await this.repairPlantUmlContent(message);
                 break;
         }
+    }
+
+    private serializeMergedBranch(info: MergedBranchInfo): { sha: string; branch: string; author: string; mergeDateLabel: string; } {
+        return {
+            sha: info.mergeCommitSha,
+            branch: info.branchName,
+            author: info.mergeAuthor,
+            mergeDateLabel: info.mergeDate.toLocaleDateString(),
+        };
+    }
+
+    private postBranchSearchResults(
+        branches: MergedBranchInfo[],
+        requestId?: number,
+        emptyMessage?: string
+    ): void {
+        this.panel.webview.postMessage({
+            command: 'updateMergedBranchList',
+            branches: branches.map(branch => this.serializeMergedBranch(branch)),
+            requestId,
+            emptyMessage,
+        });
     }
 
     private async generateMergedBranchReview(message: ReviewMergedBranchMessage): Promise<void> {
@@ -126,9 +156,38 @@ export class WebviewMessageHandler {
         }
     }
 
+    private async searchMergedBranches(message: ReviewMergedBranchMessage): Promise<void> {
+        const query = message.query?.trim() ?? '';
+
+        try {
+            const branches = await this.service.searchMergedBranches(
+                this.targetBranch,
+                query,
+                this.branchSearchLimit
+            );
+
+            this.postBranchSearchResults(
+                branches,
+                message.requestId,
+                query
+                    ? `No merged branches match "${query}".`
+                    : 'No merged branches found in this repository.'
+            );
+        } catch (error) {
+            postLog(this.panel, `Merged branch search failed: ${error}`);
+            this.postBranchSearchResults(
+                [],
+                message.requestId,
+                query
+                    ? `Could not search merged branches for "${query}".`
+                    : 'Could not load merged branches.'
+            );
+        }
+    }
+
     private async repairPlantUmlContent(message: ReviewMergedBranchMessage): Promise<void> {
-        const validationError = validateMergedBranchReviewInput(message);
-        if (validationError || !message.content || !message.errorMessage || !message.target) {
+        const validationError = validateMergedBranchRepairInput(message);
+        if (validationError) {
             postError(this.panel, createReviewErrorPayload(validationError || 'Missing PlantUML repair payload.', {
                 operation: 'repair PlantUML',
                 provider: message.provider,
@@ -147,8 +206,8 @@ export class WebviewMessageHandler {
             message.model!,
             message.language!,
             message.contextStrategy!,
-            message.content,
-            message.errorMessage,
+            message.content!,
+            message.errorMessage!,
             undefined,
             message.apiKey,
             message.baseURL,

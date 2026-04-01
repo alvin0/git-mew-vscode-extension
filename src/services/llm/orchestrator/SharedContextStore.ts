@@ -165,7 +165,9 @@ export class SharedContextStoreImpl implements ISharedContextStore {
       sections.push({
         priority: 3,
         label: 'Dependency Graph',
-        content: DependencyGraphIndex.serializeForPrompt(this.graph, filter),
+        content: filter === 'summary'
+          ? this.serializeGraphSummary(this.graph)
+          : DependencyGraphIndex.serializeForPrompt(this.graph, filter),
       });
     }
 
@@ -266,6 +268,23 @@ export class SharedContextStoreImpl implements ISharedContextStore {
       `   Affected: ${h.affectedFiles.join(', ')}\n` +
       `   Evidence needed: ${h.evidenceNeeded}`
     ).join('\n');
+  }
+
+  private serializeGraphSummary(graph: DependencyGraphData): string {
+    const lines = [
+      `Files: ${graph.fileDependencies.size}`,
+      `Symbols: ${graph.symbolMap.size}`,
+      `Critical Paths: ${graph.criticalPaths.length}`,
+    ];
+
+    if (graph.criticalPaths.length > 0) {
+      lines.push('', 'Top Critical Paths:');
+      for (const criticalPath of graph.criticalPaths) {
+        lines.push(`- ${criticalPath.description}`);
+      }
+    }
+
+    return lines.join('\n');
   }
 
   private serializeToolCache(): string {

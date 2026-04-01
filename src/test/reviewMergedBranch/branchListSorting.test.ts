@@ -8,7 +8,7 @@ import * as fc from 'fast-check';
 
 /**
  * Pure-function tests for branch list sorting (descending by mergeDate)
- * and max items limit (at most 50 elements).
+ * and max items limit (at most 20 elements).
  *
  * These replicate the sorting and limiting logic that getMergedBranches()
  * applies (git log returns results sorted by date descending, and the
@@ -34,10 +34,10 @@ function sortByMergeDateDescending(branches: MergedBranchInfo[]): MergedBranchIn
 }
 
 /**
- * Apply the max-items limit (default 50).
- * Replicates the `-n 50` limit from getMergedBranches().
+ * Apply the max-items limit (default 20).
+ * Replicates the `-n 20` limit from getMergedBranches().
  */
-function applyLimit(branches: MergedBranchInfo[], limit: number = 50): MergedBranchInfo[] {
+function applyLimit(branches: MergedBranchInfo[], limit: number = 20): MergedBranchInfo[] {
     return branches.slice(0, limit);
 }
 
@@ -46,7 +46,11 @@ function applyLimit(branches: MergedBranchInfo[], limit: number = 50): MergedBra
 const mergedBranchInfoArb: fc.Arbitrary<MergedBranchInfo> = fc.record({
     branchName: fc.string({ minLength: 1 }),
     mergeCommitSha: fc.stringMatching(/^[0-9a-f]{40}$/),
-    mergeDate: fc.date({ min: new Date('2020-01-01'), max: new Date('2026-12-31') }),
+    mergeDate: fc.date({
+        min: new Date('2020-01-01'),
+        max: new Date('2026-12-31'),
+        noInvalidDate: true,
+    }),
     mergeAuthor: fc.string({ minLength: 1 }),
     mergeMessage: fc.string({ minLength: 1 }),
 });
@@ -88,19 +92,19 @@ suite('Property 3: Branch list sorted by merge date descending', () => {
     });
 });
 
-// ── Property 4: Branch list has at most 50 elements ──
+// ── Property 4: Branch list has at most 20 elements ──
 
-suite('Property 4: Branch list has at most 50 elements', () => {
+suite('Property 4: Branch list has at most 20 elements', () => {
 
-    test('applying limit ensures result.length <= 50', () => {
+    test('applying limit ensures result.length <= 20', () => {
         fc.assert(
             fc.property(
                 fc.array(mergedBranchInfoArb, { minLength: 0, maxLength: 200 }),
                 (branches) => {
                     const result = applyLimit(branches);
                     assert.ok(
-                        result.length <= 50,
-                        `result.length (${result.length}) should be <= 50`
+                        result.length <= 20,
+                        `result.length (${result.length}) should be <= 20`
                     );
                 }
             ),
@@ -108,10 +112,10 @@ suite('Property 4: Branch list has at most 50 elements', () => {
         );
     });
 
-    test('applying limit preserves elements when input has <= 50 items', () => {
+    test('applying limit preserves elements when input has <= 20 items', () => {
         fc.assert(
             fc.property(
-                fc.array(mergedBranchInfoArb, { minLength: 0, maxLength: 50 }),
+                fc.array(mergedBranchInfoArb, { minLength: 0, maxLength: 20 }),
                 (branches) => {
                     const result = applyLimit(branches);
                     assert.strictEqual(result.length, branches.length);
@@ -121,13 +125,13 @@ suite('Property 4: Branch list has at most 50 elements', () => {
         );
     });
 
-    test('applying limit truncates to exactly 50 when input has > 50 items', () => {
+    test('applying limit truncates to exactly 20 when input has > 20 items', () => {
         fc.assert(
             fc.property(
-                fc.array(mergedBranchInfoArb, { minLength: 51, maxLength: 200 }),
+                fc.array(mergedBranchInfoArb, { minLength: 21, maxLength: 200 }),
                 (branches) => {
                     const result = applyLimit(branches);
-                    assert.strictEqual(result.length, 50);
+                    assert.strictEqual(result.length, 20);
                 }
             ),
             { numRuns: 100 }

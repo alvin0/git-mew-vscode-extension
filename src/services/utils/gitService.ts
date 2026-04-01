@@ -47,6 +47,14 @@ export interface MergedBranchInfo {
     mergeMessage: string;
 }
 
+export interface MergedBranchCommitInfo {
+    commitSha: string;
+    authoredAt: Date;
+    author: string;
+    subject: string;
+    body: string;
+}
+
 export class GitService {
     private gitExtension: any;
     private git: any;
@@ -892,19 +900,11 @@ export class GitService {
         return message;
     }
 
-    /**
-     * Get list of branches that have been merged into the target branch.
-     * Runs: git log --merges --first-parent --format=%H|%ai|%an|%s <targetBranch> -n <limit>
-     * Results are sorted by merge date descending (git log default).
-     */
-    public async getMergedBranches(targetBranch: string, limit: number = 50): Promise<MergedBranchInfo[]> {
-        const output = await this.execGitCommand([
-            'log', '--merges', '--first-parent',
-            '--format=%H|%ai|%an|%s',
-            targetBranch,
-            '-n', String(limit)
-        ]);
-        if (!output.trim()) { return []; }
+    private parseMergedBranchLogOutput(output: string): MergedBranchInfo[] {
+        if (!output.trim()) {
+            return [];
+        }
+
         return output.trim().split('\n')
             .filter(line => line.trim())
             .map(line => {
@@ -916,6 +916,91 @@ export class GitService {
                     mergeAuthor: author,
                     mergeMessage: message,
                     branchName: this.parseBranchNameFromMergeMessage(message),
+                };
+            });
+    }
+
+    private normalizeMergedBranchLimit(limit: number): number {
+        return Math.max(1, Math.min(20, Math.floor(limit)));
+    }
+
+    /**
+     * Get list of branches that have been merged into the target branch.
+     * Runs: git log --merges --first-parent --format=%H|%ai|%an|%s <targetBranch> -n <limit>
+     * Results are sorted by merge date descending (git log default).
+     */
+    public async getMergedBranches(targetBranch: string, limit: number = 20): Promise<MergedBranchInfo[]> {
+        const safeLimit = this.normalizeMergedBranchLimit(limit);
+        const output = await this.execGitCommand([
+            'log', '--merges', '--first-parent',
+            '--format=%H|%ai|%an|%s',
+            targetBranch,
+            '-n', String(safeLimit)
+        ]);
+        return this.parseMergedBranchLogOutput(output);
+    }
+
+    /**
+     * Search merged branches by merge commit message / branch identifier.
+     * Results remain sorted by merge date descending (git log default).
+     */
+    public async searchMergedBranches(
+        targetBranch: string,
+        query: string,
+        limit: number = 20
+    ): Promise<MergedBranchInfo[]> {
+        const trimmedQuery = query.trim();
+        if (!trimmedQuery) {
+            return this.getMergedBranches(targetBranch, limit);
+        }
+
+        const safeLimit = this.normalizeMergedBranchLimit(limit);
+        const output = await this.execGitCommand([
+            'log', '--merges', '--first-parent',
+            '--regexp-ignore-case', '--fixed-strings',
+            '--grep', trimmedQuery,
+            '--format=%H|%ai|%an|%s',
+            targetBranch,
+            '-n', String(safeLimit)
+        ]);
+
+        return this.parseMergedBranchLogOutput(output);
+    }
+
+    /**
+     * Get the commit messages that were introduced by a merged branch.
+     * Uses the merge commit parents to read commits reachable from the merged branch tip
+     * but not from the target branch parent, ordered oldest to newest.
+     */
+    public async getMergedBranchCommitMessages(
+        mergeCommitSha: string,
+        limit: number = 20
+    ): Promise<MergedBranchCommitInfo[]> {
+        const safeLimit = Math.max(1, Math.min(50, Math.floor(limit)));
+        const output = await this.execGitCommand([
+            'log',
+            '--reverse',
+            `-n`, String(safeLimit),
+            '--format=%H%x1f%ai%x1f%an%x1f%s%x1f%b%x1e',
+            `${mergeCommitSha}^1..${mergeCommitSha}^2`,
+        ]);
+
+        if (!output.trim()) {
+            return [];
+        }
+
+        return output
+            .split('\x1e')
+            .map(record => record.trim())
+            .filter(Boolean)
+            .map(record => {
+                const [commitSha = '', authoredAt = '', author = '', subject = '', ...bodyParts] = record.split('\x1f');
+                return {
+                    commitSha: commitSha.trim(),
+                    authoredAt: new Date(authoredAt.trim()),
+                    author: author.trim(),
+                    subject: subject.trim(),
+                    body: bodyParts.join('\x1f').trim(),
                 };
             });
     }

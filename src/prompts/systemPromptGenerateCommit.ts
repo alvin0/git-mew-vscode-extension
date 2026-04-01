@@ -48,7 +48,7 @@ Files changed:
 - tests/productService.test.js: Added cache tests
 
 Boosts performance by reducing DB queries.
-\`\`\``
+\`\`\``;
 
 export const getSystemPrompt = (customPrompt?: string) => `
 You are an expert at writing Git commit messages.

@@ -439,7 +439,9 @@ export class FileTypeDetector {
       const byte = sample[i];
 
       // Allow common whitespace chars
-      if (byte === 0x09 || byte === 0x0a || byte === 0x0d) continue;
+      if (byte === 0x09 || byte === 0x0a || byte === 0x0d) {
+        continue;
+      }
 
       // Count problematic characters
       if (byte < 0x20 || byte === 0x7f) {
@@ -770,10 +772,14 @@ export class FileTypeDetector {
     bytes: Uint8Array,
     signature: number[]
   ): boolean {
-    if (bytes.length < signature.length) return false;
+    if (bytes.length < signature.length) {
+      return false;
+    }
 
     for (let i = 0; i < signature.length; i++) {
-      if (bytes[i] !== signature[i]) return false;
+      if (bytes[i] !== signature[i]) {
+        return false;
+      }
     }
 
     return true;
@@ -785,7 +791,9 @@ export class FileTypeDetector {
   private static hasNullBytes(bytes: Uint8Array): boolean {
     const sampleSize = Math.min(bytes.length, 8192);
     for (let i = 0; i < sampleSize; i++) {
-      if (bytes[i] === 0) return true;
+      if (bytes[i] === 0) {
+        return true;
+      }
     }
     return false;
   }
@@ -807,7 +815,9 @@ export class FileTypeDetector {
    */
   private static getExtension(filename: string): string | undefined {
     const lastDot = filename.lastIndexOf(".");
-    if (lastDot === -1 || lastDot === filename.length - 1) return undefined;
+    if (lastDot === -1 || lastDot === filename.length - 1) {
+      return undefined;
+    }
     return filename.slice(lastDot);
   }
 

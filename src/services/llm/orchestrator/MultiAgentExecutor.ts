@@ -66,7 +66,13 @@ export class MultiAgentExecutor {
     const { phase1, sharedStore, promptBuilder, buildContext, budgetAllocations } = config;
 
     // ── Phase 1: Parallel execution ──
-    this.reportProgress(request, "Executing Code Reviewer and Flow Diagram agents...");
+    const phase1Roles = phase1.map(agent => agent.role).join(', ');
+    this.reportProgress(
+      request,
+      phase1.length > 0
+        ? `Executing phase 1 agents: ${phase1Roles}...`
+        : 'Executing phase 1 agents...'
+    );
     const phase1Results: (string | Error)[] = new Array(phase1.length);
 
     let nextIndex = 0;
@@ -383,8 +389,12 @@ export class MultiAgentExecutor {
 
       this.reportLog(request, `[agent:${agent.role}] iteration ${iteration + 1}/${maxIterations}`);
 
+      const promptForGeneration = agent.role === 'Observer'
+        ? this.sanitizeObserverPrompt(currentPrompt)
+        : currentPrompt;
+
       const safePrompt = this.calibration.safeTruncatePrompt(
-        currentPrompt, options.systemMessage || "", adapter, request, agent.role
+        promptForGeneration, options.systemMessage || "", adapter, request, agent.role
       );
 
       const startTime = Date.now();
@@ -511,6 +521,12 @@ export class MultiAgentExecutor {
       return { ...options, reasoning: { effort: "low" } };
     }
     return options;
+  }
+
+  private sanitizeObserverPrompt(prompt: string): string {
+    return prompt
+      .replaceAll('Code Reviewer', 'code review')
+      .replaceAll('Flow Diagram', 'flow analysis');
   }
 
   private reportProgress(request: ContextGenerationRequest | undefined, message: string): void {

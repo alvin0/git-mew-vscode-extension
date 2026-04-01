@@ -23,7 +23,8 @@ export function registerReviewMergedBranchCommand(
                 return;
             }
 
-            const mergedBranches = await gitService.getMergedBranches(currentBranch, 50);
+            const mergedBranchLimit = 20;
+            const mergedBranches = await gitService.getMergedBranches(currentBranch, mergedBranchLimit);
             if (mergedBranches.length === 0) {
                 vscode.window.showWarningMessage('Không tìm thấy nhánh đã merge nào trong repository.');
                 return;
@@ -50,11 +51,12 @@ export function registerReviewMergedBranchCommand(
                 currentModel,
                 savedLanguage,
                 customModelSettings,
-                customProviderConfig
+                customProviderConfig,
+                mergedBranchLimit
             );
 
             const service = new ReviewMergedBranchService(gitService, llmService);
-            const messageHandler = new WebviewMessageHandler(panel, service);
+            const messageHandler = new WebviewMessageHandler(panel, service, currentBranch, mergedBranchLimit);
 
             panel.webview.onDidReceiveMessage(
                 async message => {

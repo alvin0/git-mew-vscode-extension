@@ -1,5 +1,5 @@
 import { LLMProvider } from '../../llm-adapter';
-import { REVIEW_AGENT_INSTRUCTIONS, REVIEW_OUTPUT_CONTRACT } from '../../prompts/reviewOutputContract';
+import { buildReviewSystemInstructionBlock } from '../../prompts/systemPromptGenerateReviewMerge';
 import {
     ContextStrategy,
     ContextTaskSpec,
@@ -83,8 +83,10 @@ export class ReviewStagedChangesService extends ReviewWorkflowServiceBase {
                 const customSystemPrompt = await this.gitService.getCustomReviewMergeSystemPrompt();
                 const customAgentInstructions = await this.gitService.getCustomReviewMergeAgentPrompt();
                 const customRules = await this.gitService.getCustomReviewMergeRules();
-                const systemPrompt = this.withCustomAgentInstructions(
-                    this.buildStagedReviewSystemPrompt(language, customSystemPrompt, customRules),
+                const systemPrompt = this.buildStagedReviewSystemPrompt(
+                    language,
+                    customSystemPrompt,
+                    customRules,
                     customAgentInstructions
                 );
                 const basePrompt = this.buildReviewPrompt(preview.diff, taskInfo);
@@ -144,8 +146,12 @@ export class ReviewStagedChangesService extends ReviewWorkflowServiceBase {
                 };
                 const codeReviewerAgent = promptBuilder.buildCodeReviewerPrompt(buildContext, safeBudgets[0]);
                 const flowDiagramAgent = promptBuilder.buildFlowDiagramPrompt(buildContext, safeBudgets[1]);
+                const detailChangeAgent = promptBuilder.buildDetailChangePrompt(
+                    buildContext,
+                    { ...safeBudgets[0], agentRole: 'Detail Change' }
+                );
 
-                const agents: AgentPrompt[] = [codeReviewerAgent, flowDiagramAgent];
+                const agents: AgentPrompt[] = [codeReviewerAgent, flowDiagramAgent, detailChangeAgent];
 
                 // ── Step 7: Execute with phased config ──
                 const review = await this.contextOrchestrator.generateMultiAgentFinalText(
@@ -163,21 +169,21 @@ export class ReviewStagedChangesService extends ReviewWorkflowServiceBase {
                             structuredReports.push({
                                 role: 'Code Reviewer',
                                 structured: crFindings[0].data as CodeReviewerOutput,
-                                raw: reports[0] ?? '',
+                                raw: this.getRawAgentReport(reports, 'Code Reviewer'),
                             });
                         }
                         if (fdFindings.length > 0) {
                             structuredReports.push({
                                 role: 'Flow Diagram',
                                 structured: fdFindings[0].data as FlowDiagramOutput,
-                                raw: reports[1] ?? '',
+                                raw: this.getRawAgentReport(reports, 'Flow Diagram'),
                             });
                         }
                         if (obsFindings.length > 0) {
                             structuredReports.push({
                                 role: 'Observer',
                                 structured: obsFindings[0].data as ObserverOutput,
-                                raw: reports[2] ?? '',
+                                raw: this.getRawAgentReport(reports, 'Observer'),
                             });
                         }
 
@@ -189,6 +195,7 @@ export class ReviewStagedChangesService extends ReviewWorkflowServiceBase {
                         return promptBuilder.buildSynthesizerPrompt(
                             structuredReports,
                             promptBuilder.buildDiffSummary(preview.changes),
+                            this.getRawAgentReport(reports, 'Detail Change'),
                         );
                     },
                     abortController.signal,
@@ -318,19 +325,25 @@ Do not mention that the diff was summarized in multiple stages.`
     /**
      * Build the system prompt for code review
      */
-    private buildStagedReviewSystemPrompt(language: string, customSystemPrompt?: string, customRules?: string): string {
-        const basePrompt = customSystemPrompt || `You are an expert code reviewer. Your task is to review staged changes and provide constructive feedback.
+    private buildStagedReviewSystemPrompt(
+        language: string,
+        customSystemPrompt?: string,
+        customRules?: string,
+        customAgentInstructions?: string
+    ): string {
+        const instructionBlock = buildReviewSystemInstructionBlock(
+            customSystemPrompt,
+            customRules,
+            customAgentInstructions
+        );
 
-${REVIEW_AGENT_INSTRUCTIONS}
+        return `You are an expert code reviewer. Your task is to review staged changes and provide constructive feedback.
 
-${REVIEW_OUTPUT_CONTRACT}
+IMPORTANT: Provide your review in ${language} language.
+
+${instructionBlock}
 
 Be constructive, specific, and actionable in your feedback.`;
-
-        const rulesSection = customRules ? `\n\n## Custom Review Rules:\n${customRules}` : '';
-        const languageInstruction = `\n\nIMPORTANT: Provide your review in ${language} language.`;
-
-        return basePrompt + rulesSection + languageInstruction;
     }
 
     private async getStagedDiffPreview(): Promise<{ changes: Awaited<ReturnType<GitService['getStagedDiffFiles']>>; diff: string; } | undefined> {
@@ -350,14 +363,6 @@ Be constructive, specific, and actionable in your feedback.`;
         }
 
         return `${prompt}\n\n${referenceContext}`;
-    }
-
-    private withCustomAgentInstructions(systemPrompt: string, customAgentInstructions?: string): string {
-        if (!customAgentInstructions) {
-            return systemPrompt;
-        }
-
-        return `${systemPrompt}\n\n## Custom Review Agents\n\n${customAgentInstructions}`;
     }
 
     private logReferenceContextMetadata(

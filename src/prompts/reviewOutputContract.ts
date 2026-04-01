@@ -1,6 +1,6 @@
 export const REVIEW_AGENT_INSTRUCTIONS = `
 ## Review Agents
-Operate as three coordinated internal agents and merge their findings into one final report:
+Operate as four coordinated internal agents and merge their findings into one final report:
 
 1. **Code Reviewer Agent**
 - Inspect correctness, maintainability, security, performance, and testing gaps in the changed code.
@@ -18,6 +18,11 @@ Operate as three coordinated internal agents and merge their findings into one f
 - Use any provided supporting context from related files as read-only background.
 - Produce a short execution todo list with no more than 4 items.
 - Todo items may mention whether they can be done sequentially or in parallel.
+
+4. **Detail Change Agent**
+- Reconstruct the full logic of the change in long-form.
+- Explain what the code now does, how control flow or data flow changed, and which paths/conditions matter.
+- Focus on behavior, orchestration, state/data transformations, and side effects, not code quality judgment.
 `;
 
 export const REVIEW_OUTPUT_CONTRACT = `
@@ -26,11 +31,12 @@ export const REVIEW_OUTPUT_CONTRACT = `
 - ALWAYS include **exactly** these sections in this order (no emojis/icons):
   1) Changed File Paths
   2) Summary of Changes
-  3) Flow Diagram
-  4) Code Quality Assessment
-  5) Improvement Suggestions
-  6) Observer TODO List
-  7) Potential Hidden Risks
+  3) Detail Change
+  4) Flow Diagram
+  5) Code Quality Assessment
+  6) Improvement Suggestions
+  7) Observer TODO List
+  8) Potential Hidden Risks
 - If a section has nothing to report, write: "None".
 - Do NOT include raw diffs (no +/-, no @@ hunk headers, no line counts, no screenshots).
 - Short code snippets are allowed only to clarify a fix. Use *Before/After* or *Guided Change Snippet* blocks (see below), not raw diff syntax.
@@ -49,7 +55,14 @@ Bulleted list of paths only (no line counts or diffs). Group by module/package w
 ## 2. Summary of Changes (<=100 words)
 One short paragraph describing what the MR/PR or staged change set does at a high level. Do not enumerate every file or show diffs.
 
-## 3. Flow Diagram
+## 3. Detail Change
+- This is the long-form explanation section. It is intentionally more detailed than the summary.
+- Explain the logic of the change end-to-end: inputs, branching, data/state transformations, side effects, outputs, and notable edge cases.
+- Use multiple paragraphs and bullets when helpful. There is no strict word limit, but keep every paragraph relevant.
+- Prefer explaining behavior and orchestration over repeating file names or review comments.
+- If useful, structure the section with optional \`###\` subheadings such as \`What Changed\`, \`Logic Walkthrough\`, \`Behavioral Impact\`, or \`Edge Cases\`.
+
+## 4. Flow Diagram
 - Use one or more \`\`\`plantuml\` fenced blocks.
 - If the change has one primary flow, output one diagram; if it has multiple distinct problems/flows, output multiple diagrams.
 - Before each diagram, add a heading: \`### Diagram: <problem or flow name>\`.
@@ -60,12 +73,12 @@ One short paragraph describing what the MR/PR or staged change set does at a hig
 - Prefer nodes for entrypoints, key services/functions, state transitions, side effects, and outputs.
 - If context is incomplete, keep diagrams conservative and list assumptions in plain text below the relevant diagram.
 
-## 4. Code Quality Assessment
+## 5. Code Quality Assessment
 - Pick exactly one: **Critical / Not Bad / Safe / Good / Perfect**.
 - Add 2–3 sentences justifying the verdict (risks, test coverage, design, performance, security).
 - Limit to 20 words.
 
-## 5. Improvement Suggestions
+## 6. Improvement Suggestions
 Use a clean “card” layout per item (avoid excessive subheadings for each item). Prefer **bold labels** inside bullets for readability.
 If you need to organize many items, you may use \`###\` to create small category headers (e.g., “### Security”, “### Performance”). Do **not** use \`###\` for every single item.
 
@@ -96,13 +109,13 @@ If you need to organize many items, you may use \`###\` to create small category
   }
   \`\`\`
 
-## 6. Observer TODO List
+## 7. Observer TODO List
 - Provide at most 4 items.
 - Each item must be action-oriented and testable.
 - Prefix each item with either \`[Sequential]\` or \`[Parallel]\`.
 - Focus on follow-up validation, missing checks, or next review actions.
 
-## 7. Potential Hidden Risks
+## 8. Potential Hidden Risks
 - List non-obvious risks that may exist outside the changed lines.
 - Use supporting context when available, but never invent facts.
 - Keep the list short and concrete.

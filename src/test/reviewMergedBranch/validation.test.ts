@@ -2,7 +2,7 @@
 // **Validates: Requirements 1.4, 2.5, 6.4**
 
 import * as assert from 'assert';
-import { validateMergedBranchReviewInput } from '../../commands/reviewMergedBranch/validation';
+import { validateMergedBranchRepairInput, validateMergedBranchReviewInput } from '../../commands/reviewMergedBranch/validation';
 import { ReviewMergedBranchMessage } from '../../commands/reviewMergedBranch/webviewMessageHandler';
 
 /**
@@ -64,6 +64,39 @@ suite('validateMergedBranchReviewInput', () => {
     test('returns undefined when all fields are present', () => {
         const msg = buildValidMessage();
         assert.strictEqual(validateMergedBranchReviewInput(msg), undefined);
+    });
+});
+
+suite('validateMergedBranchRepairInput', () => {
+
+    test('does not require mergeCommitSha for PlantUML repair payloads', () => {
+        const msg: ReviewMergedBranchMessage = {
+            command: 'repairPlantUml',
+            provider: 'openai',
+            model: 'gpt-4',
+            language: 'English',
+            contextStrategy: 'auto',
+            content: '## Review\n```plantuml\n@startuml\nA -> B\n@enduml\n```',
+            errorMessage: 'Syntax error',
+            target: 'review',
+        };
+
+        assert.strictEqual(validateMergedBranchRepairInput(msg), undefined);
+    });
+
+    test('returns error when repair payload is incomplete', () => {
+        const msg: ReviewMergedBranchMessage = {
+            command: 'repairPlantUml',
+            provider: 'openai',
+            model: 'gpt-4',
+            language: 'English',
+            contextStrategy: 'auto',
+            content: undefined,
+            errorMessage: 'Syntax error',
+            target: 'review',
+        };
+
+        assert.strictEqual(validateMergedBranchRepairInput(msg), 'Please select all fields.');
     });
 });
 

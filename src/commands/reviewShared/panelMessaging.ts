@@ -47,7 +47,7 @@ export async function openDiffDocument(diffContent?: string): Promise<void> {
     try {
         const doc = await vscode.workspace.openTextDocument({
             content: diffContent,
-            language: 'markdown'
+            language: 'diff'
         });
         await vscode.window.showTextDocument(doc, { preview: false });
     } catch (error) {

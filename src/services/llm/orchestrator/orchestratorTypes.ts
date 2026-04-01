@@ -244,6 +244,7 @@ export interface AgentPromptBuildContext {
   referenceContext?: string;
   dependencyGraph?: DependencyGraphData;
   sharedContextStore?: SharedContextStore;
+  additionalTools?: FunctionCall[];
   riskHypotheses?: RiskHypothesis[];
   language: string;
   taskInfo?: string;

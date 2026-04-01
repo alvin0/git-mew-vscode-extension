@@ -23,6 +23,7 @@ import {
   getDiagnosticsTool,
   readFileTool,
   getSymbolDefinitionTool,
+  readCommitMessagesTool,
   searchCodeTool,
 } from '../llm-tools/tools';
 
@@ -155,6 +156,63 @@ suite('AgentPromptBuilder', () => {
     assert.ok(toolIds.includes(getSymbolDefinitionTool.id), 'Should include getSymbolDefinitionTool');
     assert.ok(toolIds.includes(searchCodeTool.id), 'Should include searchCodeTool');
     assert.ok(toolIds.includes('query_context'), 'Should include queryContextTool');
+  });
+
+  test('buildCodeReviewerPrompt: additional review-specific tools can be injected per workflow', () => {
+    const builder = createBuilder();
+    const ctx = createBuildContext({ additionalTools: [readCommitMessagesTool] });
+    const budget = createBudget();
+
+    const result = builder.buildCodeReviewerPrompt(ctx, budget);
+    const toolIds = result.tools!.map(t => t.id);
+
+    assert.ok(toolIds.includes(readCommitMessagesTool.id), 'Should include merged-branch commit history tool when provided');
+  });
+
+  test('buildObserverPrompt: additional review-specific tools can be injected per workflow', () => {
+    const builder = createBuilder();
+    const ctx = createBuildContext({ additionalTools: [readCommitMessagesTool] });
+    const budget = createBudget({ agentRole: 'Observer' });
+
+    const result = builder.buildObserverPrompt(ctx, budget);
+    const toolIds = result.tools!.map(t => t.id);
+
+    assert.ok(toolIds.includes(readCommitMessagesTool.id), 'Observer should receive merged-branch commit history tool when provided');
+  });
+
+  test('buildDetailChangePrompt: uses full diff and supports additional workflow tools', () => {
+    const builder = createBuilder();
+    const ctx = createBuildContext({ additionalTools: [readCommitMessagesTool] });
+    const budget = createBudget({ agentRole: 'Detail Change' });
+
+    const result = builder.buildDetailChangePrompt(ctx, budget);
+    const toolIds = result.tools!.map(t => t.id);
+
+    assert.ok(result.prompt.includes('import { NewDep }'), 'Detail Change prompt should include full diff');
+    assert.ok(result.systemMessage.includes('Detail Change Agent'), 'System message should identify the detail agent');
+    assert.ok(toolIds.includes(readCommitMessagesTool.id), 'Detail Change should receive merged-branch commit history tool when provided');
+  });
+
+  test('all review agent prompts include custom system prompt, custom rules, and custom agent instructions', () => {
+    const builder = createBuilder();
+    const ctx = createBuildContext({
+      customSystemPrompt: 'Repository policy: prioritize auditability.',
+      customRules: 'Never suggest skipping tests.',
+      customAgentInstructions: 'Mention cross-module impact when relevant.',
+    });
+
+    const prompts = [
+      builder.buildCodeReviewerPrompt(ctx, createBudget()),
+      builder.buildFlowDiagramPrompt(ctx, createBudget({ agentRole: 'Flow Diagram' })),
+      builder.buildObserverPrompt(ctx, createBudget({ agentRole: 'Observer' })),
+      builder.buildDetailChangePrompt(ctx, createBudget({ agentRole: 'Detail Change' })),
+    ];
+
+    for (const prompt of prompts) {
+      assert.ok(prompt.systemMessage.includes('Repository policy: prioritize auditability.'), `${prompt.role} should include custom system prompt`);
+      assert.ok(prompt.systemMessage.includes('Never suggest skipping tests.'), `${prompt.role} should include custom rules`);
+      assert.ok(prompt.systemMessage.includes('Mention cross-module impact when relevant.'), `${prompt.role} should include custom agent instructions`);
+    }
   });
 
   test('buildCodeReviewerPrompt: returned AgentPrompt has phase: 1, outputSchema: code-reviewer, selfAudit: true', () => {
@@ -573,6 +631,18 @@ suite('AgentPromptBuilder', () => {
     assert.ok(result.includes('confirmed'), 'Should contain confirmed verdict');
     assert.ok(result.includes('refuted'), 'Should contain refuted verdict');
     assert.ok(result.includes('Found 3 broken callers'), 'Should contain evidence text');
+  });
+
+  test('buildSynthesizerPrompt with detail change raw report: detail section material included', () => {
+    const builder = createBuilder();
+    const result = builder.buildSynthesizerPrompt(
+      [],
+      'diff summary',
+      '### What Changed\nThe service now streams validation before persisting the final state.',
+    );
+
+    assert.ok(result.includes('## Detail Change Material'), 'Should include detail change material section');
+    assert.ok(result.includes('The service now streams validation'), 'Should include raw detail change narrative');
   });
 
   // ── filterStructuralDiff (private, tested via (builder as any)) ──

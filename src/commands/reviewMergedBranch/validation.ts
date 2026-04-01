@@ -9,3 +9,13 @@ export function validateMergedBranchReviewInput(message: ReviewMergedBranchMessa
 
     return undefined;
 }
+
+export function validateMergedBranchRepairInput(message: ReviewMergedBranchMessage): string | undefined {
+    const { provider, model, language, contextStrategy, content, errorMessage, target } = message;
+
+    if (!provider || !model || !language || !contextStrategy || !content || !errorMessage || !target) {
+        return 'Please select all fields.';
+    }
+
+    return undefined;
+}

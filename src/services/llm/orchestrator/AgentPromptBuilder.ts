@@ -40,6 +40,22 @@ function truncateToTokenBudget(text: string, tokenBudget: number): string {
   return text.slice(0, charBudget) + '\n...[truncated]';
 }
 
+function combineTools(baseTools: FunctionCall[], additionalTools?: FunctionCall[]): FunctionCall[] {
+  const merged = [...baseTools, ...(additionalTools ?? [])];
+  const uniqueTools: FunctionCall[] = [];
+  const seen = new Set<string>();
+
+  for (const tool of merged) {
+    if (seen.has(tool.id)) {
+      continue;
+    }
+    seen.add(tool.id);
+    uniqueTools.push(tool);
+  }
+
+  return uniqueTools;
+}
+
 // ── System prompt fragments (role-specific, no REVIEW_OUTPUT_CONTRACT) ──
 
 const CODE_REVIEWER_INSTRUCTIONS = `## Code Reviewer Agent
@@ -103,6 +119,29 @@ Include your verdicts in the "hypothesisVerdicts" array:
   "hypothesisVerdicts": [{ "hypothesisIndex", "verdict", "evidence" }]
 }`;
 
+const DETAIL_CHANGE_INSTRUCTIONS = `## Detail Change Agent
+You are a specialized logic narrator for code changes.
+Your task is to explain the change in depth, focusing on:
+- What behavior changed and what stayed the same.
+- How the main control flow now works.
+- Data/state transformations, side effects, and outputs.
+- Important branches, guards, failure handling, and edge cases.
+
+This is not a code review section. Do not prioritize bugs, verdicts, or suggestions unless they are necessary to explain logic.
+
+Return Markdown only using this structure:
+### What Changed
+One or more paragraphs explaining the overall logic change.
+
+### Logic Walkthrough
+- Bullet points walking through the main execution paths or responsibilities.
+
+### Behavioral Impact
+Explain externally visible behavior, integration effects, or notable side effects.
+
+### Edge Cases and Assumptions
+Explain meaningful edge cases, guards, or assumptions.`;
+
 // ── MR Description Agent Instructions ──
 
 const CHANGE_ANALYZER_INSTRUCTIONS = `## Change Analyzer Agent
@@ -150,6 +189,30 @@ export class AgentPromptBuilder {
     private readonly tokenEstimator: TokenEstimatorService,
   ) {}
 
+  private buildReviewAgentSystemMessage(
+    ctx: AgentPromptBuildContext,
+    roleInstructions: string,
+  ): string {
+    const sections: string[] = [];
+
+    if (ctx.customSystemPrompt?.trim()) {
+      sections.push(`## Custom Review Context\n\n${ctx.customSystemPrompt.trim()}`);
+    }
+
+    if (ctx.customAgentInstructions?.trim()) {
+      sections.push(`## Custom Review Agents\n\n${ctx.customAgentInstructions.trim()}`);
+    }
+
+    if (ctx.customRules?.trim()) {
+      sections.push(
+        `## Custom Review Rules\n\nApply these project-specific rules in addition to the role instructions below:\n\n${ctx.customRules.trim()}`,
+      );
+    }
+
+    sections.push(roleInstructions);
+    return sections.join('\n\n');
+  }
+
   // ────────────────────────────────────────────
   // Public: Code Reviewer prompt (Phase 1)
   // ────────────────────────────────────────────
@@ -157,10 +220,7 @@ export class AgentPromptBuilder {
     ctx: AgentPromptBuildContext,
     budget: AgentBudgetAllocation,
   ): AgentPrompt {
-    // System message: custom prompt + CR-specific instructions only
-    const systemMessage =
-      (ctx.customSystemPrompt ? ctx.customSystemPrompt + '\n\n' : '') +
-      CODE_REVIEWER_INSTRUCTIONS;
+    const systemMessage = this.buildReviewAgentSystemMessage(ctx, CODE_REVIEWER_INSTRUCTIONS);
 
     // Prompt assembly
     const parts: string[] = [];
@@ -199,7 +259,7 @@ export class AgentPromptBuilder {
     const prompt = parts.join('\n\n');
 
     // Tools: all 6 existing + queryContext
-    const tools: FunctionCall[] = [
+    const tools = combineTools([
       findReferencesTool,
       getDiagnosticsTool,
       readFileTool,
@@ -207,7 +267,7 @@ export class AgentPromptBuilder {
       searchCodeTool,
       getRelatedFilesTool,
       queryContextTool,
-    ];
+    ], ctx.additionalTools);
 
     return {
       role: 'Code Reviewer',
@@ -231,7 +291,7 @@ export class AgentPromptBuilder {
     ctx: AgentPromptBuildContext,
     budget: AgentBudgetAllocation,
   ): AgentPrompt {
-    const systemMessage = FLOW_DIAGRAM_INSTRUCTIONS;
+    const systemMessage = this.buildReviewAgentSystemMessage(ctx, FLOW_DIAGRAM_INSTRUCTIONS);
 
     const parts: string[] = [];
 
@@ -261,13 +321,13 @@ export class AgentPromptBuilder {
 
     const prompt = parts.join('\n\n');
 
-    const tools: FunctionCall[] = [
+    const tools = combineTools([
       findReferencesTool,
       getRelatedFilesTool,
       readFileTool,
       getSymbolDefinitionTool,
       queryContextTool,
-    ];
+    ], ctx.additionalTools);
 
     return {
       role: 'Flow Diagram',
@@ -291,13 +351,13 @@ export class AgentPromptBuilder {
     ctx: AgentPromptBuildContext,
     budget: AgentBudgetAllocation,
   ): AgentPrompt {
-    // System message: Observer instructions + hypothesis instructions if present
-    let systemMessage = OBSERVER_INSTRUCTIONS;
+    let roleInstructions = OBSERVER_INSTRUCTIONS;
 
     const hypotheses = ctx.riskHypotheses ?? [];
     if (hypotheses.length > 0) {
-      systemMessage += '\n' + OBSERVER_HYPOTHESIS_INSTRUCTIONS;
+      roleInstructions += '\n' + OBSERVER_HYPOTHESIS_INSTRUCTIONS;
     }
+    const systemMessage = this.buildReviewAgentSystemMessage(ctx, roleInstructions);
 
     const parts: string[] = [];
 
@@ -323,12 +383,12 @@ export class AgentPromptBuilder {
 
     const prompt = parts.join('\n\n');
 
-    const tools: FunctionCall[] = [
+    const tools = combineTools([
       getDiagnosticsTool,
       getRelatedFilesTool,
       readFileTool,
       queryContextTool,
-    ];
+    ], ctx.additionalTools);
 
     return {
       role: 'Observer',
@@ -345,12 +405,70 @@ export class AgentPromptBuilder {
     };
   }
 
+  buildDetailChangePrompt(
+    ctx: AgentPromptBuildContext,
+    budget: AgentBudgetAllocation,
+  ): AgentPrompt {
+    const systemMessage = this.buildReviewAgentSystemMessage(ctx, DETAIL_CHANGE_INSTRUCTIONS);
+
+    const parts: string[] = [];
+    parts.push('## Diff\n' + truncateToTokenBudget(ctx.fullDiff, budget.diffBudget));
+
+    if (ctx.referenceContext) {
+      parts.push(
+        '## Reference Context\n' +
+          truncateToTokenBudget(ctx.referenceContext, budget.referenceBudget),
+      );
+    }
+
+    if (ctx.dependencyGraph) {
+      const graphText = DependencyGraphIndex.serializeForPrompt(ctx.dependencyGraph, 'full');
+      const usedTokens = Math.ceil(parts.join('\n\n').length / 4);
+      const remaining = Math.max(0, budget.totalBudget - usedTokens - budget.sharedContextBudget);
+      parts.push(truncateToTokenBudget(graphText, remaining));
+    }
+
+    if (ctx.sharedContextStore) {
+      const shared = (ctx.sharedContextStore as ISharedContextStore).serializeForAgent(
+        'Detail Change',
+        budget.sharedContextBudget,
+      );
+      if (shared) {
+        parts.push('## Shared Context\n' + shared);
+      }
+    }
+
+    const prompt = parts.join('\n\n');
+
+    const tools = combineTools([
+      readFileTool,
+      searchCodeTool,
+      getRelatedFilesTool,
+      getSymbolDefinitionTool,
+      queryContextTool,
+    ], ctx.additionalTools);
+
+    return {
+      role: 'Detail Change',
+      systemMessage,
+      prompt,
+      tools,
+      phase: 1,
+      selfAudit: false,
+      maxIterations: 2,
+      sharedStore: ctx.sharedContextStore,
+      compareBranch: ctx.compareBranch,
+      gitService: ctx.gitService,
+    };
+  }
+
   // ────────────────────────────────────────────
   // Public: Synthesizer prompt (final merge)
   // ────────────────────────────────────────────
   buildSynthesizerPrompt(
     agentReports: StructuredAgentReport[],
     diffSummary: string,
+    detailChangeRawReport?: string,
   ): string {
     // Step 1: Extract structured data from each report
     let crOutput: CodeReviewerOutput | undefined;
@@ -450,13 +568,22 @@ export class AgentPromptBuilder {
     }
 
     // Step 5: Assemble final prompt
+    const detailChangeSection = detailChangeRawReport
+      ? '## Detail Change Material\n' + detailChangeRawReport
+      : '';
+
+    const rawAgentReports = detailChangeRawReport
+      ? [...rawReports, `### Detail Change Report\n${detailChangeRawReport}`]
+      : rawReports;
+
     const sections = [
       REVIEW_OUTPUT_CONTRACT,
       '## Diff Summary\n' + diffSummary,
+      detailChangeSection,
       deduplicatedIssues,
       diagrams,
       riskMapping,
-      '## Raw Agent Reports\n' + rawReports.join('\n\n'),
+      '## Raw Agent Reports\n' + rawAgentReports.join('\n\n'),
     ].filter(Boolean);
 
     return sections.join('\n\n');

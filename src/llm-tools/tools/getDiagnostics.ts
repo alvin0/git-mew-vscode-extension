@@ -40,7 +40,9 @@ export const getDiagnosticsTool: FunctionCall = {
       const report: string[] = [];
 
       for (const [uri, fileDiagnostics] of filteredDiagnostics) {
-        if (fileDiagnostics.length === 0) continue;
+        if (fileDiagnostics.length === 0) {
+          continue;
+        }
         
         const relativePath = vscode.workspace.asRelativePath(uri);
         report.push(`File: ${relativePath}`);

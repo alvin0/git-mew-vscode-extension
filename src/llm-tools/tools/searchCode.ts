@@ -56,7 +56,9 @@ export const searchCodeTool: FunctionCall = {
       const matches: Array<{ path: string; line: number; text: string }> = [];
 
       for (const fileUri of files) {
-        if (matches.length >= MAX_MATCHING_FILES * MAX_LINES_PER_FILE) break;
+        if (matches.length >= MAX_MATCHING_FILES * MAX_LINES_PER_FILE) {
+          break;
+        }
 
         try {
           const document = await vscode.workspace.openTextDocument(fileUri);
@@ -73,7 +75,9 @@ export const searchCodeTool: FunctionCall = {
                 text: lines[i].trim()
               });
               
-              if (matches.length >= MAX_MATCHING_FILES * MAX_LINES_PER_FILE) break;
+              if (matches.length >= MAX_MATCHING_FILES * MAX_LINES_PER_FILE) {
+                break;
+              }
             }
           }
         } catch {
@@ -94,7 +98,9 @@ export const searchCodeTool: FunctionCall = {
       
       const groupedMatches: Record<string, typeof matches> = {};
       matches.forEach(m => {
-        if (!groupedMatches[m.path]) groupedMatches[m.path] = [];
+        if (!groupedMatches[m.path]) {
+          groupedMatches[m.path] = [];
+        }
         groupedMatches[m.path].push(m);
       });
 

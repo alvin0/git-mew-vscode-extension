@@ -420,7 +420,7 @@ Triển khai tính năng "Review Merged Branch" cho git-mew VS Code extension. T
       {
           "command": "git-mew.review-merged-branch",
           "title": "git-mew: Review Merged Branch",
-          "icon": "$(git-merge)"
+          "icon": "$(history)"
       }
       ```
     - Trong `contributes.menus.scm/title` array, thêm sau entry `git-mew.review-staged-changes`:

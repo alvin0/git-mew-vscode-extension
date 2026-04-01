@@ -326,6 +326,12 @@ export function buildSharedClientActions(actionButtonIds: string[], options?: { 
                 : null;
         }
 
+        function getDiffContentWrapper() {
+            return typeof diffContent !== 'undefined' && diffContent
+                ? diffContent.querySelector('.content-wrapper')
+                : null;
+        }
+
         function handleWebviewErrorMessage(message) {
             setGeneratingState(false);
             const error = message.error || {
@@ -610,7 +616,7 @@ export function buildSingleResultMessageHandler(): string {
     return `
         async function handleWebviewResultMessage(message, markdownRenderer) {
             setGeneratingState(false);
-            setStatusState('success', 'Review ready', 'The staged review is available below. Copy it or open the raw diff in the editor.');
+            setStatusState('success', 'Review ready', 'The review is available below. Copy it or open the raw diff in the editor.');
             appendLogMessage('Generation completed successfully.');
             clearErrorReport();
             currentRawDiff = message.rawDiff;
@@ -627,6 +633,54 @@ export function buildSingleResultMessageHandler(): string {
                 markdownRenderer,
                 'review'
             );
+            setResultVisible(true);
+        }
+    `;
+}
+
+export function buildReviewDiffResultMessageHandler(): string {
+    return `
+        function switchTab(targetTab) {
+            document.querySelectorAll('.tab-button').forEach((button) => {
+                const isActive = button.getAttribute('data-tab') === targetTab;
+                button.classList.toggle('active', isActive);
+                button.setAttribute('aria-selected', String(isActive));
+            });
+            document.querySelectorAll('.tab-pane').forEach((pane) => {
+                pane.classList.toggle('active', pane.id === targetTab + '-tab');
+            });
+        }
+
+        function renderRawDiff(container, diffText) {
+            container.innerHTML = '<pre><code class="language-diff">' + escapeHtml(diffText || 'No diff available.') + '</code></pre>';
+        }
+
+        async function handleWebviewResultMessage(message, markdownRenderer) {
+            setGeneratingState(false);
+            setStatusState('success', 'Review ready', 'The review and merge diff are available below. Copy the review, inspect the diff tab, or open the patch in the editor.');
+            appendLogMessage('Generation completed successfully.');
+            clearErrorReport();
+            currentRawDiff = message.rawDiff || '';
+            plantUmlRepairAttempts.review = 0;
+            currentReview = message.review;
+            const reviewWrapper = getReviewContentWrapper();
+            const diffWrapper = getDiffContentWrapper();
+            if (!reviewWrapper) {
+                appendLogMessage('Review content container is unavailable.');
+                return;
+            }
+            await renderMarkdownWithDiagrams(
+                reviewWrapper,
+                message.review,
+                markdownRenderer,
+                'review'
+            );
+            if (diffWrapper) {
+                renderRawDiff(diffWrapper, currentRawDiff);
+            } else {
+                appendLogMessage('Diff content container is unavailable.');
+            }
+            switchTab('review');
             setResultVisible(true);
         }
     `;

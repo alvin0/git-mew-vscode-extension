@@ -161,4 +161,9 @@ Return the full corrected Markdown document.
 Markdown:
 ${content}`;
     }
+
+    protected getRawAgentReport(reports: string[], role: string): string {
+        const expectedPrefix = `### Agent: ${role}`;
+        return reports.find((report) => report.startsWith(expectedPrefix)) ?? '';
+    }
 }

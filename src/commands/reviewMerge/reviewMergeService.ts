@@ -152,8 +152,12 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                 };
                 const codeReviewerAgent = promptBuilder.buildCodeReviewerPrompt(buildContext, safeBudgets[0]);
                 const flowDiagramAgent = promptBuilder.buildFlowDiagramPrompt(buildContext, safeBudgets[1]);
+                const detailChangeAgent = promptBuilder.buildDetailChangePrompt(
+                    buildContext,
+                    { ...safeBudgets[0], agentRole: 'Detail Change' }
+                );
 
-                const agents: AgentPrompt[] = [codeReviewerAgent, flowDiagramAgent];
+                const agents: AgentPrompt[] = [codeReviewerAgent, flowDiagramAgent, detailChangeAgent];
 
                 // ── Step 7: Execute with phased config ──
                 const review = await this.contextOrchestrator.generateMultiAgentFinalText(
@@ -171,21 +175,21 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                             structuredReports.push({
                                 role: 'Code Reviewer',
                                 structured: crFindings[0].data as CodeReviewerOutput,
-                                raw: reports[0] ?? '',
+                                raw: this.getRawAgentReport(reports, 'Code Reviewer'),
                             });
                         }
                         if (fdFindings.length > 0) {
                             structuredReports.push({
                                 role: 'Flow Diagram',
                                 structured: fdFindings[0].data as FlowDiagramOutput,
-                                raw: reports[1] ?? '',
+                                raw: this.getRawAgentReport(reports, 'Flow Diagram'),
                             });
                         }
                         if (obsFindings.length > 0) {
                             structuredReports.push({
                                 role: 'Observer',
                                 structured: obsFindings[0].data as ObserverOutput,
-                                raw: reports[2] ?? '',
+                                raw: this.getRawAgentReport(reports, 'Observer'),
                             });
                         }
 
@@ -197,6 +201,7 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                         return promptBuilder.buildSynthesizerPrompt(
                             structuredReports,
                             promptBuilder.buildDiffSummary(branchDiff.changes),
+                            this.getRawAgentReport(reports, 'Detail Change'),
                         );
                     },
                     abortController.signal,

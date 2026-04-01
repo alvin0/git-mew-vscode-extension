@@ -3,7 +3,7 @@ import { MergedBranchInfo } from '../../services/utils/gitService';
 import { ReviewCustomModelSettings, ReviewCustomProviderConfig } from '../reviewShared/types';
 import { buildEmptyState, buildPanelSection, buildReviewShell } from '../reviewShared/webview/layout';
 import { buildLanguageOptionsHtml, buildModelOptionsMap, buildProviderOptionsHtml } from '../reviewShared/webview/options';
-import { buildPlantUmlRepairMessageHandler, buildSharedClientActions, buildSharedWebviewScriptState, buildTabbedResultMessageHandler } from '../reviewShared/webview/scriptFragments';
+import { buildPlantUmlRepairMessageHandler, buildReviewDiffResultMessageHandler, buildSharedClientActions, buildSharedWebviewScriptState } from '../reviewShared/webview/scriptFragments';
 import { buildSharedStyles } from '../reviewShared/webview/styles';
 
 export function generateMergedBranchWebviewContent(
@@ -14,8 +14,10 @@ export function generateMergedBranchWebviewContent(
     currentModel?: string,
     savedLanguage?: string,
     customModelSettings?: ReviewCustomModelSettings,
-    customProviderConfig?: ReviewCustomProviderConfig
+    customProviderConfig?: ReviewCustomProviderConfig,
+    visibleBranchLimit: number = 20
 ): string {
+    const visibleBranches = mergedBranches.slice(0, visibleBranchLimit);
     const providerOptions = buildProviderOptionsHtml(providers, currentProvider);
     const modelOptionsMap = buildModelOptionsMap(providers, availableModels, currentProvider, currentModel);
 
@@ -33,10 +35,10 @@ export function generateMergedBranchWebviewContent(
         title: 'Review Merged Branch',
         description: 'Select a previously merged branch to generate an AI-powered code review from its merge commit diff.',
         heroActions: renderHeroActions(),
-        controlPanel: renderControlPanel(mergedBranches, providerOptions, savedLanguage),
+        controlPanel: renderControlPanel(visibleBranches, providerOptions, savedLanguage, visibleBranchLimit),
         outputPanel: renderOutputPanel()
     })}
-    <script>${getClientScript(mergedBranches, modelOptionsMap, customModelSettings || {}, customProviderConfig || { hasApiKey: false })}</script>
+    <script>${getClientScript(visibleBranches, modelOptionsMap, customModelSettings || {}, customProviderConfig || { hasApiKey: false }, visibleBranchLimit)}</script>
 </body>
 </html>`;
 }
@@ -106,13 +108,14 @@ function renderControlPanel(
     mergedBranches: MergedBranchInfo[],
     providerOptions: string,
     savedLanguage?: string,
+    visibleBranchLimit: number = 20,
 ): string {
     return [
         buildPanelSection({
             title: 'Merged branches',
-            description: 'Select a branch that was previously merged into the current branch.',
+            description: `Showing the ${visibleBranchLimit} most recent merged branches. Use search to find older branches without loading the full history.`,
             tone: 'accent',
-            content: renderBranchListSection(mergedBranches)
+            content: renderBranchListSection(mergedBranches, visibleBranchLimit)
         }),
         buildPanelSection({
             title: 'AI setup',
@@ -150,7 +153,7 @@ function escapeHtmlAttr(value: string): string {
         .replace(/'/g, '&#39;');
 }
 
-function renderBranchListSection(mergedBranches: MergedBranchInfo[]): string {
+function renderBranchListSection(mergedBranches: MergedBranchInfo[], visibleBranchLimit: number): string {
     if (mergedBranches.length === 0) {
         return `<div class="branch-empty">No merged branches found in this repository.</div>`;
     }
@@ -168,6 +171,7 @@ function renderBranchListSection(mergedBranches: MergedBranchInfo[]): string {
     return `
         <div class="stack">
             <input type="text" id="branchSearch" placeholder="Search branches..." />
+            <div class="field__hint">Showing the ${visibleBranchLimit} most recent merged branches. Search to find older results.</div>
             <div class="branch-list" id="branchList">
                 ${branchItems}
             </div>
@@ -258,13 +262,14 @@ function renderOutputPanel(): string {
         </section>
         ${buildEmptyState({
             title: 'Review output will appear here',
-            description: 'Pick a merged branch and generate a review to see AI feedback rendered with markdown, diagrams, and quick actions.',
-            note: 'Use the raw diff view to compare the generated review against the exact merge commit patch.'
+            description: 'Pick a merged branch and generate a review to see AI feedback rendered with markdown, diagrams, and the exact merge patch.',
+            note: 'Use the Diff tab to inspect the exact merge commit patch and open it in the editor when needed.'
         })}
         <div id="result-container" class="result-workspace hidden">
             <section id="errorReport" class="error-report hidden"></section>
             <div class="tabs" role="tablist" aria-label="Output tabs">
                 <button class="tab-button active" data-tab="review" id="reviewTab" aria-selected="true">Review</button>
+                <button class="tab-button" data-tab="diff" id="diffTab" aria-selected="false">Diff</button>
             </div>
             <div class="tab-content">
                 <div id="review-tab" class="tab-pane active">
@@ -280,6 +285,19 @@ function renderOutputPanel(): string {
                     </div>
                     <div id="review" class="review-content"><div class="content-wrapper"></div></div>
                 </div>
+                <div id="diff-tab" class="tab-pane">
+                    <div class="sticky-result-header">
+                        <div>
+                            <h2>Merge diff</h2>
+                            <p>The exact merge-commit patch used to generate this review.</p>
+                        </div>
+                        <div class="action-buttons">
+                            <button id="openDiffBtn" class="btn-ghost">Open in editor</button>
+                            <button class="btn-secondary" id="copyDiffBtn">Copy diff</button>
+                        </div>
+                    </div>
+                    <div id="diff" class="review-content"><div class="content-wrapper"></div></div>
+                </div>
             </div>
         </div>
     `;
@@ -289,16 +307,20 @@ function getClientScript(
     mergedBranches: MergedBranchInfo[],
     modelOptionsMap: Record<string, string>,
     customModelSettings: ReviewCustomModelSettings,
-    customProviderConfig: ReviewCustomProviderConfig
+    customProviderConfig: ReviewCustomProviderConfig,
+    visibleBranchLimit: number
 ): string {
     const branchData = mergedBranches.map(b => ({
         sha: b.mergeCommitSha,
         branch: b.branchName,
+        author: b.mergeAuthor,
+        mergeDateLabel: b.mergeDate.toLocaleDateString(),
     }));
 
     return `
         const vscode = acquireVsCodeApi();
-        const branchData = ${JSON.stringify(branchData)};
+        const initialBranches = ${JSON.stringify(branchData)};
+        const visibleBranchLimit = ${JSON.stringify(visibleBranchLimit)};
         const branchSearchInput = document.getElementById('branchSearch');
         const branchList = document.getElementById('branchList');
         const providerSelect = document.getElementById('provider');
@@ -330,15 +352,57 @@ function getClientScript(
         const resultContainer = document.getElementById('result-container');
         const errorReportContainer = document.getElementById('errorReport');
         const reviewContent = document.getElementById('review');
+        const diffContent = document.getElementById('diff');
         const copyReviewBtn = document.getElementById('copyReviewBtn');
+        const copyDiffBtn = document.getElementById('copyDiffBtn');
         const viewDiffBtn = document.getElementById('viewDiffBtn');
+        const openDiffBtn = document.getElementById('openDiffBtn');
         ${buildSharedWebviewScriptState(modelOptionsMap, customModelSettings, customProviderConfig)}
         ${buildSharedClientActions(['reviewBtn'], { idleHook: 'checkBranchSelection();' })}
-        ${buildTabbedResultMessageHandler()}
+        ${buildReviewDiffResultMessageHandler()}
         ${buildPlantUmlRepairMessageHandler()}
 
         let selectedSha = null;
         let selectedBranchName = null;
+        let branchSearchDebounceHandle = null;
+        let latestBranchSearchRequestId = 0;
+
+        function buildBranchItemMarkup(branch) {
+            const name = escapeHtml(branch.branch || '');
+            const sha = escapeHtml(branch.sha || '');
+            const author = escapeHtml(branch.author || '');
+            const mergeDateLabel = escapeHtml(branch.mergeDateLabel || '');
+            const isSelected = selectedSha && selectedSha === branch.sha ? ' selected' : '';
+            return '<div class="branch-item' + isSelected + '" data-sha="' + sha + '" data-branch="' + name + '">' +
+                '<span class="branch-item__name">' + name + '</span>' +
+                '<span class="branch-item__meta"><span>' + mergeDateLabel + '</span><span>' + author + '</span></span>' +
+                '</div>';
+        }
+
+        function renderBranchListItems(branches, emptyMessage) {
+            if (!branchList) {
+                return;
+            }
+
+            branchList.innerHTML = branches.length > 0
+                ? branches.map(buildBranchItemMarkup).join('')
+                : '<div class="branch-empty">' + escapeHtml(emptyMessage) + '</div>';
+
+            const selectedStillVisible = selectedSha && branches.some(function(branch) {
+                return branch.sha === selectedSha;
+            });
+
+            if (!selectedStillVisible) {
+                selectedSha = null;
+                selectedBranchName = null;
+            }
+
+            checkBranchSelection();
+        }
+
+        function restoreInitialBranchList() {
+            renderBranchListItems(initialBranches, 'No merged branches found in this repository.');
+        }
 
         function checkBranchSelection() {
             reviewBtn.disabled = !selectedSha;
@@ -368,12 +432,34 @@ function getClientScript(
 
         if (branchSearchInput) {
             branchSearchInput.addEventListener('input', function() {
-                var query = branchSearchInput.value.toLowerCase();
-                var items = document.querySelectorAll('.branch-item');
-                items.forEach(function(item) {
-                    var name = (item.getAttribute('data-branch') || '').toLowerCase();
-                    item.style.display = name.includes(query) ? '' : 'none';
-                });
+                var query = branchSearchInput.value.trim();
+
+                if (branchSearchDebounceHandle) {
+                    clearTimeout(branchSearchDebounceHandle);
+                    branchSearchDebounceHandle = null;
+                }
+
+                if (!query) {
+                    latestBranchSearchRequestId++;
+                    restoreInitialBranchList();
+                    return;
+                }
+
+                const requestId = ++latestBranchSearchRequestId;
+                branchSearchDebounceHandle = setTimeout(function() {
+                    branchSearchDebounceHandle = null;
+                    selectedSha = null;
+                    selectedBranchName = null;
+                    checkBranchSelection();
+                    if (branchList) {
+                        branchList.innerHTML = '<div class="branch-empty">Searching merged branches...</div>';
+                    }
+                    vscode.postMessage({
+                        command: 'searchMergedBranches',
+                        query: query,
+                        requestId: requestId
+                    });
+                }, 250);
             });
         }
 
@@ -435,7 +521,7 @@ function getClientScript(
         }
 
         updateModelOptions();
-        checkBranchSelection();
+        restoreInitialBranchList();
 
         providerSelect.addEventListener('change', updateModelOptions);
         modelSelect.addEventListener('change', syncModelInput);
@@ -452,7 +538,9 @@ function getClientScript(
             setStatusState('idle', 'Generation cancelled', 'The request was cancelled. Select a branch and generate again when ready.');
         });
         viewDiffBtn.addEventListener('click', handleViewRawDiffAction);
+        openDiffBtn.addEventListener('click', handleViewRawDiffAction);
         copyReviewBtn.addEventListener('click', function() { handleCopyToClipboardAction(copyReviewBtn, currentReview, 'Copy review'); });
+        copyDiffBtn.addEventListener('click', function() { handleCopyToClipboardAction(copyDiffBtn, currentRawDiff, 'Copy diff'); });
 
         window.addEventListener('message', function(event) {
             const message = event.data;
@@ -476,6 +564,15 @@ function getClientScript(
                     break;
                 case 'showError':
                     handleWebviewErrorMessage(message);
+                    break;
+                case 'updateMergedBranchList':
+                    if (message.requestId !== undefined && message.requestId !== latestBranchSearchRequestId) {
+                        break;
+                    }
+                    renderBranchListItems(
+                        message.branches || [],
+                        message.emptyMessage || ('No merged branches found. Search to narrow the history to the most relevant ' + visibleBranchLimit + ' results.')
+                    );
                     break;
                 case 'replacePlantUmlContent':
                     handlePlantUmlRepairResult(message, markdownRenderer);
