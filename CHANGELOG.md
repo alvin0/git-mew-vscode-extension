@@ -1,5 +1,22 @@
 # Change Log
 
+## [0.5.0] - 2026-04-02
+
+Git Mew now lives in the Activity Bar. Stage, commit, review, and push — all from one sidebar.
+
+### Added
+- **Sidebar**: New Activity Bar panel with full source control — stage, unstage, commit, push, discard, and view diffs without switching views.
+- **Commit Graph**: Visual commit history with branch lines, sync status, and merge detection.
+- **Squash Commits**: Select and squash local commits with undo support and AI-generated messages.
+- **Review Panel**: New `git-mew: Show Review Panel` command for quick access to all review workflows.
+- **File Tree**: Staged and unstaged files shown in folder tree with per-folder actions.
+- **Push & Conflict Banners**: See unpushed commits and merge conflicts at a glance.
+
+### Changed
+- Lowered minimum VS Code version to `1.75.1` for broader compatibility.
+- Extension now waits for the Git API before activating, with error notification on failure.
+- Updated extension icon and added sidebar logo variants.
+
 ## [0.4.0] - 2026-04-01
 
 This release focuses on a new review workflow for code that has already been merged. The headline feature is **Review Merged Branch**, along with deeper review output, safer branch browsing on large repositories, and several reliability fixes across the merged-branch experience.

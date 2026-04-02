@@ -2,10 +2,17 @@
 
 ## Current Status
 **Project State:** v0.0.7 - Stable Release
-**Last Updated:** 2026-03-11
-**Active Work:** Refactoring review workflows into smaller shared modules for easier maintenance and regression testing.
+**Last Updated:** 2026-04-02
+**Active Work:** Added sidebar view with Git Mew commands for quick access.
 
 ## Recent Changes
+### 2026-04-02
+- ✅ Added sidebar view container with Git Mew icon (logo-white-no-background.png)
+- ✅ Created GitMewSidebarProvider to display all Git Mew commands in a tree view
+- ✅ Registered sidebar provider in extension.ts for quick access to all features
+- ✅ Sidebar displays 7 main commands: Generate Commit, Review Staged, Review Merge, Review Merged Branch, Setup Model, Manage API Keys, Publish Files
+- ✅ Each command has icon, label, and description for better UX
+
 ### 2026-03-11
 - ✅ Added structured error reporting inside Review Staged Changes and Review Merge webviews, including copyable failure reports with provider/model/branch/timestamp metadata for bug reporting
 - ✅ Added a hide/show control for the left setup panel so AI setup/context can collapse and the right result workspace expands for focused reading
@@ -71,6 +78,7 @@
 - **Binary Detection:** Advanced FileTypeDetector with multiple heuristics
 - **Security:** API keys stored in VS Code Secret Storage
 - **Custom Rules:** Support for project-specific prompts and rules via `.gitmew/` folder
+- **Sidebar View:** Quick access to all Git Mew commands via activity bar icon
 
 ### User Experience ✅
 - **Auto-Configuration:** Detects missing config and guides setup
@@ -83,6 +91,7 @@
 - **Auto-Reload:** Prompts for window reload after extension updates
 - **Webview UI:** Rich interface for branch/model/language selection
 - **Cancellation UX:** Dedicated command/button to stop generation mid-flight
+- **Sidebar Navigation:** Activity bar icon with tree view of all commands
 
 ### Technical Implementation ✅
 - **Adapter Pattern:** Clean abstraction for LLM providers
@@ -93,7 +102,7 @@
 - **Context-Enriched Review:** Review flows can attach read-only summaries from a few related files outside the diff to catch hidden integration risks
 
 ## Current Focus
-**Documentation Maintenance** - Keeping memory bank, README, and CHANGELOG synchronized with v0.0.7 features and pre-commit review flow
+**Sidebar Implementation** - Added activity bar view with Git Mew commands for improved discoverability and quick access
 
 ## Next Steps
 

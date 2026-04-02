@@ -9,6 +9,7 @@ import { registerReviewMergeCommand } from './reviewMergeCommand';
 import { registerReviewMergedBranchCommand } from './reviewMergedBranchCommand';
 import { registerReviewStagedChangesCommand } from './reviewStagedChangesCommand';
 import { registerSetupModelCommand } from './setupModelGenerateCommitCommand';
+import { registerReviewPanelCommand } from './reviewPanelCommand';
 
 /**
  * Register all extension commands
@@ -33,4 +34,7 @@ export function registerAllCommands(
 
 	// Add all commands to subscriptions
 	context.subscriptions.push(...commands);
+
+	// Register review panel command
+	registerReviewPanelCommand(context);
 }

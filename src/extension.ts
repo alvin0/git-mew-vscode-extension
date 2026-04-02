@@ -5,23 +5,47 @@ import { registerAllCommands } from './commands';
 import { LLMService } from './services/llm';
 import { GitService } from './services/utils/gitService';
 import { createStatusBarItem } from './statusBar';
+import { GitMewSidebarProvider } from './commands/sidebar';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is activated
-export function activate(context: vscode.ExtensionContext) {
-	// Initialize services
-	const gitService = new GitService();
-	const llmService = new LLMService(context);
+export async function activate(context: vscode.ExtensionContext) {
+	try {
+		// Wait for Git extension to be available
+		const gitExtension = vscode.extensions.getExtension('vscode.git');
+		if (gitExtension && !gitExtension.isActive) {
+			await gitExtension.activate();
+		}
 
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-	console.log('Git Mew is now active!');
+		// Initialize services
+		const gitService = new GitService();
+		const llmService = new LLMService(context);
 
-	// Register all commands
-	registerAllCommands(context, gitService, llmService);
+		// Use the console to output diagnostic information (console.log) and errors (console.error)
+		// This line of code will only be executed once when your extension is activated
+		console.log('Git Mew is now active!');
 
-	// Create status bar item
-	createStatusBarItem(context);
+		// Register all commands
+		registerAllCommands(context, gitService, llmService);
+
+		// Create status bar item
+		createStatusBarItem(context);
+
+		// Register sidebar provider
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const sidebarProvider = new GitMewSidebarProvider(context, gitService, llmService);
+		context.subscriptions.push(
+			(vscode.window.registerWebviewViewProvider as any)(
+				GitMewSidebarProvider.viewType,
+				sidebarProvider,
+				{ webviewOptions: { retainContextWhenHidden: true } }
+			) as vscode.Disposable
+		);
+	} catch (error) {
+		console.error('Failed to activate Git Mew:', error);
+		vscode.window.showErrorMessage('Failed to activate Git Mew extension. Please check the console for details.');
+		return;
+	}
 
 	// Check for updates and prompt for reload
 	const previousVersion = context.globalState.get<string>('extensionVersion');
@@ -29,10 +53,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	if (!currentVersion) {
 		console.warn('Git Mew extension metadata is unavailable; skipping version change prompt.');
-		return;
-	}
-
-	if (previousVersion && previousVersion !== currentVersion) {
+	} else if (previousVersion && previousVersion !== currentVersion) {
 		vscode.window.showInformationMessage(
 			'Git Mew has been updated. Please reload the window for the changes to take effect.',
 			'Reload'

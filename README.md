@@ -6,9 +6,9 @@
 
 **Transform your Git workflow with AI-powered commit messages, staged reviews, merged-branch reviews, and merge request descriptions**
 
-[![VS Code](https://img.shields.io/badge/VS%20Code-1.110.0+-blue.svg)](https://code.visualstudio.com/)
+[![VS Code](https://img.shields.io/badge/VS%20Code-1.75.1+-blue.svg)](https://code.visualstudio.com/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE.md)
-[![Version](https://img.shields.io/badge/version-0.4.0-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.0-orange.svg)](CHANGELOG.md)
 
 [Features](#features) • [Quick Start](#quick-start) • [Usage](#usage) • [Customization](#customization) • [Providers](#supported-llm-providers)
 
@@ -21,6 +21,17 @@
 Git Mew is your intelligent Git companion that leverages AI to streamline commit creation, code review, and merge history analysis inside VS Code. It helps you move faster without losing visibility into what changed, why it changed, and what still needs attention.
 
 ### Core Capabilities
+
+#### Sidebar Panel
+Git Mew now has its own Activity Bar icon. The sidebar gives you a unified workspace for staging, committing, pushing, reviewing, and browsing commit history — all without switching views.
+
+- Stage/unstage files individually, by folder, or all at once
+- Commit with AI-generated messages (sparkle button)
+- Visual commit graph with branch lines, sync status, and merge detection
+- Squash local commits with undo support and AI-generated squash messages
+- One-click push when you have unpushed commits
+- Merge conflict warnings at a glance
+- Quick access to all code review workflows and settings
 
 #### Smart Commit Messages
 Automatically generate meaningful, conventional commit messages by analyzing your staged changes. No more staring at blank commit boxes.
@@ -56,7 +67,7 @@ Git Mew intelligently inspects related files outside the diff to understand runt
 - **Conventional Commits**: Automatic formatting following best practices
 - **Multi-Language Support**: Get reviews and descriptions in 8+ languages
 - **Custom Rules**: Define project-specific guidelines via `.gitmew/` folder
-- **Quick Access**: Integrated buttons in VS Code's Source Control panel
+- **Quick Access**: Integrated sidebar in VS Code's Activity Bar and Source Control panel buttons
 - **History-Safe Review Picker**: Review Merged Branch shows the 20 most recent merges by default and uses search for older history to avoid UI lag
 - **Status Bar Menu**: Fast access to frequently used commands
 - **Template Publishing**: One-click distribution of customization templates
@@ -77,10 +88,11 @@ Git Mew intelligently inspects related files outside the diff to understand runt
    - **OpenAI/Claude/Gemini**: Enter your API key
    - **Ollama**: Just select your local model (no API key needed)
    - **Custom**: Provide your OpenAI-compatible endpoint URL
-5. Start with one of the review commands from the Source Control panel:
+5. Start using Git Mew from the sidebar (Activity Bar icon) or the Command Palette:
    - `git-mew: Review Staged Changes`
    - `git-mew: Review Merge`
    - `git-mew: Review Merged Branch`
+   - `git-mew: Show Review Panel`
 
 That's it! You're ready to go.
 
@@ -95,7 +107,7 @@ Never struggle with commit messages again. Git Mew analyzes your changes and cre
 **How to use:**
 
 1. Stage your changes in Git
-2. Click the sparkle icon (✨) in the Source Control panel
+2. Click the sparkle icon (✨) in the sidebar or Source Control panel
    - Or run: `git-mew: Generate Commit Message`
 3. Git Mew analyzes your changes and generates a commit message
 4. Review and commit!
@@ -126,7 +138,7 @@ Get AI-powered feedback on your changes before committing. Catch issues early an
 **How to use:**
 
 1. Stage your changes in Git
-2. Click the eye icon (👁️) in the Source Control panel
+2. Click the eye icon (👁️) in the sidebar or Source Control panel
    - Or run: `git-mew: Review Staged Changes`
 3. A dashboard opens with options:
    - Select LLM provider and model
@@ -228,7 +240,7 @@ Create professional merge request descriptions with smart template selection.
 
 ## Requirements
 
-- Visual Studio Code 1.110.0 or higher
+- Visual Studio Code 1.75.1 or higher
 - Git installed and configured
 - API key for your chosen LLM provider (OpenAI, Claude, or Gemini)
   - **Note**: Ollama does not require an API key - just have it running locally
@@ -483,7 +495,7 @@ Your data and credentials are protected:
 
 ## Requirements
 
-- **VS Code**: Version 1.104.0 or higher
+- **VS Code**: Version 1.75.1 or higher
 - **Git**: Installed and configured
 - **API Key**: For your chosen provider (except Ollama)
 - **Internet**: Required for cloud providers (OpenAI, Claude, Gemini)
@@ -505,7 +517,6 @@ Future enhancements we're considering:
 
 - Streaming responses for real-time feedback
 - Multi-repository support
-- Commit history analysis
 - Custom commit message templates
 - Team configuration sharing
 - Automated testing integration

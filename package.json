@@ -2,11 +2,11 @@
   "name": "git-mew",
   "displayName": "Git Mew",
   "description": "Your AI kitty for Git chaos - Generate intelligent commit messages using AI",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "icon": "resources/images/logo.png",
   "publisher": "GitMew",
   "engines": {
-    "vscode": "^1.110.0"
+    "vscode": "^1.75.1"
   },
   "categories": [
     "SCM Providers",
@@ -34,10 +34,44 @@
   },
   "homepage": "https://github.com/alvin0/git-mew-vscode-extension#readme",
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onView:git-mew-commands",
+    "onCommand:git-mew.generate-commit",
+    "onCommand:git-mew.cancel-generate",
+    "onCommand:git-mew.setupModelGenerateCommit",
+    "onCommand:git-mew.manage-api-keys",
+    "onCommand:git-mew.review-merge",
+    "onCommand:git-mew.review-staged-changes",
+    "onCommand:git-mew.review-merged-branch",
+    "onCommand:git-mew.showCommands",
+    "onCommand:git-mew.publish",
+    "onCommand:git-mew.show-review-panel"
+  ],
+  "extensionDependencies": [
+    "vscode.git"
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "git-mew-sidebar",
+          "title": "Git Mew",
+          "icon": "resources/images/logo-white-no-background.png"
+        }
+      ]
+    },
+    "views": {
+      "git-mew-sidebar": [
+        {
+          "id": "git-mew-commands",
+          "name": "Source Control",
+          "type": "webview",
+          "icon": "resources/images/logo-white-no-background.png",
+          "retainContextWhenHidden": true
+        }
+      ]
+    },
     "commands": [
       {
         "command": "git-mew.generate-commit",
@@ -79,6 +113,10 @@
       {
         "command": "git-mew.publish",
         "title": "git-mew: Publish Files"
+      },
+      {
+        "command": "git-mew.show-review-panel",
+        "title": "git-mew: Show Review Panel"
       }
     ],
     "menus": {
@@ -270,7 +308,7 @@
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.19.15",
-    "@types/vscode": "^1.110.0",
+    "@types/vscode": "^1.64.0",
     "@typescript-eslint/eslint-plugin": "^8.58.0",
     "@typescript-eslint/parser": "^8.58.0",
     "@vscode/test-cli": "^0.0.11",
