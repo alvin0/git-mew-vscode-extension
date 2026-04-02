@@ -5,6 +5,7 @@ import { LLMService } from '../../services/llm';
 import { GitOperations } from './gitOperations';
 import { getGitApi } from './gitHelpers';
 import { getWebviewHtml } from './webviewContent';
+import { resolveFileIconTheme } from './fileIconResolver';
 
 export class GitMewSidebarProvider implements vscode.WebviewViewProvider {
 	public static readonly viewType = 'git-mew-commands';
@@ -29,7 +30,10 @@ export class GitMewSidebarProvider implements vscode.WebviewViewProvider {
 		this._view = webviewView;
 		webviewView.webview.options = {
 			enableScripts: true,
-			localResourceRoots: [vscode.Uri.file(path.join(this._context.extensionPath, 'resources'))]
+			localResourceRoots: [
+				vscode.Uri.file(path.join(this._context.extensionPath, 'resources')),
+				...vscode.extensions.all.map(e => vscode.Uri.file(e.extensionPath))
+			]
 		};
 		webviewView.webview.html = getWebviewHtml();
 
@@ -48,6 +52,7 @@ export class GitMewSidebarProvider implements vscode.WebviewViewProvider {
 				this._subscribeToGitState();
 				this._ops.pushState();
 				this._ops.pushGraph();
+				this._pushIconTheme();
 				break;
 			case 'generate-commit':
 				await vscode.commands.executeCommand('git-mew.generate-commit');
@@ -70,7 +75,13 @@ export class GitMewSidebarProvider implements vscode.WebviewViewProvider {
 			case 'discard-file': await this._ops.discardFile(msg.filePath); break;
 			case 'refresh': this._ops.pushState(); this._ops.pushGraph(); break;
 			case 'git-push': await vscode.commands.executeCommand('git.push'); break;
+			case 'git-sync': await vscode.commands.executeCommand('git.sync'); break;
 			case 'undo-commit': await this._ops.undoCommit(msg.sha); break;
+			case 'edit-commit': await this._ops.editCommitMessage(msg.sha, msg.isPushed, msg.message); break;
+			case 'get-commit-message': await this._ops.pushCommitMessage(msg.sha); break;
+			case 'generate-edit-msg': await this._handleGenerateEditMsg(msg.sha); break;
+			case 'undo-edit-msg': await this._ops.undoEditMessage(msg.backup); break;
+			case 'dismiss-edit-backup': await this._ops.dismissEditBackup(msg.backup); break;
 			case 'squash-commits': await this._ops.squashCommits(msg.count, msg.message); break;
 			case 'undo-squash': await this._ops.undoSquash(msg.backup); break;
 			case 'dismiss-squash-backup': await this._ops.dismissSquashBackup(msg.backup); break;
@@ -94,13 +105,37 @@ export class GitMewSidebarProvider implements vscode.WebviewViewProvider {
 		}
 	}
 
+	private async _handleGenerateEditMsg(sha: string): Promise<void> {
+		if (!this._view) return;
+		try {
+			const msg = await this._ops.generateCommitMessageFromSha(sha);
+			this._view.webview.postMessage({ command: 'edit-msg-generated', text: msg || '' });
+		} catch {
+			this._view.webview.postMessage({ command: 'edit-msg-generated', text: '' });
+		}
+	}
+
+	private async _pushIconTheme(): Promise<void> {
+		if (!this._view) return;
+		try {
+			const theme = await resolveFileIconTheme(this._view.webview);
+			if (theme) {
+				this._view.webview.postMessage({ command: 'icon-theme', theme });
+			}
+		} catch { /* ignore */ }
+	}
+
 	private _subscribeToGitState(): void {
 		this._stateDisposable?.dispose();
 		try {
 			const git = getGitApi();
 			if (!git) return;
 			const disposables: vscode.Disposable[] = [];
-			const refresh = () => { this._ops.pushState(); this._ops.pushGraph(); };
+			const refresh = () => { 
+				this._ops.pushState(); 
+				this._ops.pushGraph();
+				this._updateBadge();
+			};
 			for (const repo of git.repositories) {
 				disposables.push(repo.state.onDidChange(refresh));
 				disposables.push(repo.inputBox.onDidChange(() => this._ops.pushState()));
@@ -113,5 +148,18 @@ export class GitMewSidebarProvider implements vscode.WebviewViewProvider {
 				refresh();
 			});
 		} catch { /* Git not available */ }
+	}
+
+	private _updateBadge(): void {
+		if (!this._view) return;
+		try {
+			const git = getGitApi();
+			if (!git) return;
+			let totalChanges = 0;
+			for (const repo of git.repositories) {
+				totalChanges += repo.state.indexChanges.length + repo.state.workingTreeChanges.length;
+			}
+			this._view.badge = totalChanges > 0 ? { value: totalChanges, tooltip: `${totalChanges} file(s) changed` } : undefined;
+		} catch { /* ignore */ }
 	}
 }

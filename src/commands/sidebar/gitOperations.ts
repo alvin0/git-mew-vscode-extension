@@ -310,6 +310,141 @@ export class GitOperations {
 		}
 	}
 
+	async editCommitMessage(sha: string, isPushed = false, newMessage?: string): Promise<void> {
+		try {
+			const git = getGitApi();
+			if (!git || git.repositories.length === 0) {
+				vscode.window.showErrorMessage('No git repository found.');
+				return;
+			}
+			let repo = null;
+			for (const r of git.repositories) {
+				try {
+					const headSha = (await execGitInRepo(r, ['rev-parse', 'HEAD'])).trim();
+					if (headSha === sha.trim() || headSha.startsWith(sha.trim()) || sha.trim().startsWith(headSha.slice(0, 7))) {
+						repo = r;
+						break;
+					}
+				} catch { /* skip */ }
+			}
+			if (!repo) {
+				vscode.window.showErrorMessage('Can only edit the most recent commit.');
+				return;
+			}
+			if (!newMessage?.trim()) return;
+			// Block if there are staged changes — amend would include them unintentionally
+			const stagedCount = repo.state.indexChanges.length;
+			if (stagedCount > 0) {
+				vscode.window.showWarningMessage(
+					`Cannot edit commit message: you have ${stagedCount} staged file(s). Unstage them first.`
+				);
+				return;
+			}
+			// Create backup branch before amending
+			const backupBranch = `git-mew-edit-backup-${Date.now()}`;
+			await execGitInRepo(repo, ['branch', backupBranch]);
+			await execGitInRepo(repo, ['commit', '--amend', '-m', newMessage.trim()]);
+			try { await repo.status(); } catch { /* ignore */ }
+			await new Promise(r => setTimeout(r, 500));
+			this.pushState();
+			this.pushGraph();
+			const note = isPushed ? ' You will need to force push to update remote.' : '';
+			vscode.window.showInformationMessage(`✓ Commit message updated.${note}`);
+			this._getView()?.postMessage({ command: 'edit-msg-done', backup: backupBranch });
+		} catch (error) {
+			vscode.window.showErrorMessage(`Failed to edit commit message: ${error}`);
+		}
+	}
+
+	async pushCommitMessage(sha: string): Promise<void> {
+		const view = this._getView();
+		if (!view) return;
+		try {
+			const git = getGitApi();
+			if (!git || git.repositories.length === 0) return;
+			const repo = git.repositories[0];
+			const text = (await execGitInRepo(repo, ['log', '-1', '--format=%B', 'HEAD'])).trim();
+			view.postMessage({ command: 'commit-message', text });
+		} catch {
+			view.postMessage({ command: 'commit-message', text: '' });
+		}
+	}
+
+	async undoEditMessage(backupBranch: string): Promise<void> {
+		try {
+			const git = getGitApi();
+			if (!git || git.repositories.length === 0) return;
+			const repo = git.repositories[0];
+			const answer = await vscode.window.showWarningMessage(
+				'Undo commit message edit and restore original?',
+				{ modal: true }, 'Undo'
+			);
+			if (answer !== 'Undo') return;
+			await execGitInRepo(repo, ['reset', '--hard', backupBranch]);
+			try { await execGitInRepo(repo, ['branch', '-D', backupBranch]); } catch { /* */ }
+			try { await repo.status(); } catch { /* ignore */ }
+			await new Promise(r => setTimeout(r, 500));
+			this.pushState();
+			this.pushGraph();
+			this._getView()?.postMessage({ command: 'edit-msg-undone' });
+			vscode.window.showInformationMessage('✓ Commit message restored.');
+		} catch (error) {
+			vscode.window.showErrorMessage(`Failed to undo: ${error}`);
+		}
+	}
+
+	async dismissEditBackup(backupBranch: string): Promise<void> {
+		try {
+			const git = getGitApi();
+			if (!git || git.repositories.length === 0) return;
+			const repo = git.repositories[0];
+			try { await execGitInRepo(repo, ['branch', '-D', backupBranch]); } catch { /* */ }
+			this._getView()?.postMessage({ command: 'edit-msg-undone' });
+		} catch { /* ignore */ }
+	}
+
+	async generateCommitMessageFromSha(sha: string): Promise<string | null> {
+		try {
+			const git = getGitApi();
+			if (!git || git.repositories.length === 0) return null;
+			const repo = git.repositories[0];
+			const root = repo.rootUri.fsPath;
+			const branch = repo.state.HEAD?.name || 'HEAD';
+
+			// Get diff of this specific commit
+			const diffOutput = await execGitInRepo(repo, ['show', '--format=', sha]);
+
+			// Get changed files
+			const nameStatusOutput = await execGitInRepo(repo, [
+				'diff-tree', '--no-commit-id', '-r', '--name-status', sha
+			]);
+
+			const files: UnifiedDiffFile[] = nameStatusOutput.trim().split('\n')
+				.filter(Boolean)
+				.map(line => {
+					const parts = line.split('\t');
+					const statusChar = parts[0].charAt(0);
+					const filePath = parts[parts.length - 1];
+					const statusMap: Record<string, number> = { A: 2, M: 0, D: 3, R: 4, C: 5 };
+					const statusLabelMap: Record<string, string> = { A: 'Added', M: 'Modified', D: 'Deleted', R: 'Renamed', C: 'Copied' };
+					return {
+						filePath: path.join(root, filePath),
+						relativePath: filePath,
+						diff: '',
+						status: statusMap[statusChar] ?? 0,
+						statusLabel: statusLabelMap[statusChar] ?? 'Modified',
+						isDeleted: statusChar === 'D',
+						isBinary: false
+					};
+				});
+
+			return await this._llmService.generateCommitMessage(files, diffOutput, branch);
+		} catch (error) {
+			vscode.window.showErrorMessage(`Failed to generate commit message: ${error}`);
+			return null;
+		}
+	}
+
 	/** Get combined commit messages for N commits from HEAD */
 	async getSquashMessages(count: number): Promise<string> {
 		try {
@@ -420,6 +555,15 @@ export class GitOperations {
 
 			const ahead = head?.ahead ?? 0;
 			const includesPushed = count > ahead;
+
+			// Block if there are staged changes — reset --soft + commit would include them
+			const stagedCount = repo.state.indexChanges.length;
+			if (stagedCount > 0) {
+				vscode.window.showWarningMessage(
+					`Cannot squash: you have ${stagedCount} staged file(s). Unstage them first.`
+				);
+				return;
+			}
 			const warnText = includesPushed
 				? `Squash ${count} commits into one? (includes pushed commits — you will need to force-push manually)`
 				: `Squash ${count} commits into one?`;

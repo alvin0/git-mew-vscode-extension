@@ -1,5 +1,24 @@
 # Change Log
 
+## [0.5.1] - 2026-04-02
+
+### Added
+- **Sync Changes Button**: A prominent sync button appears in the commit area when the branch is behind remote, blocking commit until synced.
+- **File Icons**: File list now shows icons from the active VS Code file icon theme (SVG/PNG-based themes like Material Icon Theme).
+- **Edit Commit Message**: Select a single commit in the graph to edit its message inline with AI generation support and undo.
+- **Sidebar Badge**: Activity Bar icon now shows the total number of changed files (staged + unstaged).
+
+### Changed
+- **Commit Input**: Textarea starts as a single row and expands as you type.
+- **Folder Chevron**: Updated to `›` arrow style with rotation animation, consistent across all sections.
+- **File List Spacing**: Increased padding on file and folder rows for better readability.
+- **Graph Toolbar**: Selecting 1 commit shows "Edit Message" only; selecting 2+ shows "Squash" only.
+- **Squash & Edit Safety**: Both operations now block if staged changes are present to prevent unintentional file inclusion.
+
+### Fixed
+- **Graph Re-render**: Graph no longer re-renders while checkboxes are selected or a dialog is open, preventing state loss on first interaction.
+- **Undo Edit Message**: Fixed undo restoring to a new commit instead of the original.
+
 ## [0.5.0] - 2026-04-02
 
 Git Mew now lives in the Activity Bar. Stage, commit, review, and push — all from one sidebar.

@@ -65,7 +65,7 @@ function getSourceControlHtml(): string {
 
 	return `
 <div class="section-header" onclick="toggleSection('sc-body', this)">
-	<span class="hdr-left"><span class="chevron">▾</span>GITMEW SOURCE CONTROL</span>
+	<span class="hdr-left"><span class="chevron">›</span>GITMEW SOURCE CONTROL</span>
 	<div class="hdr-right" onclick="event.stopPropagation()">
 		<button class="icon-btn" title="Review Merge" onclick="sendCommand('review-merge')">${svgMerge}</button>
 		<button class="icon-btn" title="Review Merged Branch" onclick="sendCommand('review-merged-branch')">${svgHistory}</button>
@@ -90,9 +90,13 @@ function getSourceControlHtml(): string {
 			<span id="push-banner-text">1 commit to push</span>
 			<button class="push-btn" onclick="sendCommand('git-push')" title="Push to remote">Push</button>
 		</div>
+		<div id="sync-banner" style="display:none" class="sync-banner" onclick="sendCommand('git-sync')">
+			<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834zM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5z"/></svg>
+			<span id="sync-banner-text">Sync Changes</span>
+		</div>
 	</div>
 	<div class="section-header" style="padding-left:8px" onclick="toggleSection('staged-body', this)">
-		<span class="hdr-left"><span class="chevron">▾</span> Staged Changes</span>
+		<span class="hdr-left"><span class="chevron">›</span> Staged Changes</span>
 		<div class="hdr-right" onclick="event.stopPropagation()">
 			<button class="icon-btn" title="Unstage All Changes" onclick="sendCommand('unstage-all')">−</button>
 			<span class="count" id="staged-count">0</span>
@@ -102,7 +106,7 @@ function getSourceControlHtml(): string {
 		<div class="file-list" id="staged-list"><div class="empty-state">No staged changes</div></div>
 	</div>
 	<div class="section-header" style="padding-left:8px" onclick="toggleSection('unstaged-body', this)">
-		<span class="hdr-left"><span class="chevron">▾</span> Changes</span>
+		<span class="hdr-left"><span class="chevron">›</span> Changes</span>
 		<div class="hdr-right" onclick="event.stopPropagation()">
 			<button class="icon-btn" title="Discard All Changes" onclick="sendCommand('discard-all')">↩</button>
 			<button class="icon-btn" title="Stage All Changes" onclick="sendCommand('stage-all')">+</button>
@@ -120,7 +124,7 @@ function getGraphHtml(): string {
 	const svgWarn = `<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8.22 1.754a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368L8.22 1.754zm-1.763-.707c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575L6.457 1.047zM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm-.25-5.25a.75.75 0 0 0-1.5 0v2.5a.75.75 0 0 0 1.5 0v-2.5z"/></svg>`;
 	return `
 <div class="section-header collapsed" onclick="toggleSection('graph-body', this)">
-	<span class="hdr-left"><span class="chevron">▾</span> GRAPH</span>
+	<span class="hdr-left"><span class="chevron">›</span> GRAPH</span>
 	<div class="hdr-right" onclick="event.stopPropagation()">
 		<span id="graph-branch-badge" class="branch-badge" style="display:none"></span>
 		<button class="icon-btn" title="Refresh graph" onclick="sendCommand('refresh')">${svgRefresh}</button>
@@ -130,12 +134,18 @@ function getGraphHtml(): string {
 	<div id="squash-toolbar" style="display:none" class="squash-toolbar">
 		<span class="squash-count" id="squash-count-text">0 selected</span>
 		<button class="squash-cancel-btn" onclick="cancelSquash()">Cancel</button>
+		<button class="squash-btn" id="edit-msg-btn" style="display:none" onclick="doEditCommitMsg()">Edit Message</button>
 		<button class="squash-btn" id="squash-btn" onclick="doSquash()" disabled>Squash</button>
 	</div>
 	<div id="undo-squash-banner" style="display:none" class="undo-squash-banner">
 		<span>Squash completed</span>
 		<button class="squash-cancel-btn" onclick="undoLastSquash()">Undo Squash</button>
 		<button class="squash-dismiss-btn" onclick="dismissSquashBackup()">✕</button>
+	</div>
+	<div id="undo-edit-banner" style="display:none" class="undo-squash-banner">
+		<span>Message updated</span>
+		<button class="squash-cancel-btn" onclick="undoEditMsg()">Undo</button>
+		<button class="squash-dismiss-btn" onclick="dismissEditUndo()">✕</button>
 	</div>
 	<div id="conflict-banner" style="display:none" class="conflict-banner">${svgWarn}<span id="conflict-text"></span></div>
 	<div id="sync-info" style="display:none" class="sync-info"></div>
@@ -157,6 +167,22 @@ function getGraphHtml(): string {
 			<button class="squash-btn" id="squash-confirm-btn" onclick="confirmSquash()">Squash</button>
 		</div>
 	</div>
+</div>
+
+<!-- Edit commit message dialog -->
+<div id="edit-msg-dialog" class="squash-dialog" style="display:none">
+	<div class="squash-dialog-header">Edit Commit Message</div>
+	<div class="squash-dialog-body">
+		<textarea id="edit-msg-input" class="squash-msg-input" placeholder="Enter commit message..."></textarea>
+		<div class="squash-dialog-actions">
+			<button class="squash-cancel-btn" onclick="closeEditMsgDialog()">Cancel</button>
+			<button class="input-icon-btn" title="Generate message with AI" onclick="generateEditMsg()" id="edit-generate-btn" style="font-size:12px;padding:2px 6px;opacity:0.8">
+				<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M7.5 1l1.5 3.5L13 6l-3.5 1.5L8 11l-1.5-3.5L3 6l3.5-1.5L7.5 1zm0 2.18L6.72 5.1 4.5 6l2.22.9.78 1.92.78-1.92L10.5 6l-2.22-.9L7.5 3.18zM2 12l.67 1.33L4 14l-1.33.67L2 16l-.67-1.33L0 14l1.33-.67L2 12zm11 0l.67 1.33L15 14l-1.33.67L13 16l-.67-1.33L11 14l1.33-.67L13 12z"/></svg>
+				Generate
+			</button>
+			<button class="squash-btn" onclick="confirmEditMsg()">Save</button>
+		</div>
+	</div>
 </div>`;
 }
 
@@ -166,7 +192,7 @@ function getCodeReviewHtml(): string {
 	const svgHistory = `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1.643 3.143L.427 1.927A.25.25 0 0 0 0 2.104V5.75c0 .138.112.25.25.25h3.646a.25.25 0 0 0 .177-.427L2.715 4.215a6.5 6.5 0 1 1-1.18 4.458.75.75 0 1 0-1.493.154 8.001 8.001 0 1 0 1.6-5.684zM8 5.5a.75.75 0 0 1 .75.75v2.69l1.28 1.28a.75.75 0 0 1-1.06 1.06l-1.5-1.5A.75.75 0 0 1 7.25 9V6.25A.75.75 0 0 1 8 5.5z"/></svg>`;
 	return `
 <div class="section-header collapsed" onclick="toggleSection('review-body', this)">
-	<span class="hdr-left"><span class="chevron">▾</span> CODE REVIEW</span>
+	<span class="hdr-left"><span class="chevron">›</span> CODE REVIEW</span>
 </div>
 <div id="review-body" class="section-body hidden">
 	<div class="action-item" onclick="sendCommand('review-staged')"><span class="ai-icon">${svgEye}</span><div><div class="ai-label">Review Staged Changes</div><div class="ai-desc">AI review of staged files</div></div></div>
@@ -180,7 +206,7 @@ function getSettingsHtml(): string {
 	const svgKey = `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M10.5 0a5.5 5.5 0 0 1 .5 10.975V13.5a.5.5 0 0 1-.146.354l-2 2a.5.5 0 0 1-.707 0l-2-2A.5.5 0 0 1 6 13.5v-.525A5.5 5.5 0 0 1 10.5 0zm0 1a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9zM7 13.707l1.5 1.5 1.5-1.5V11.5H7v2.207zM10.5 3a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zm0 1a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg>`;
 	return `
 <div class="section-header collapsed" onclick="toggleSection('settings-body', this)">
-	<span class="hdr-left"><span class="chevron">▾</span> SETTINGS</span>
+	<span class="hdr-left"><span class="chevron">›</span> SETTINGS</span>
 </div>
 <div id="settings-body" class="section-body hidden">
 	<div class="action-item" onclick="sendCommand('setup-model')"><span class="ai-icon">${svgGear}</span><span class="ai-label">Setup AI Model</span></div>
@@ -193,7 +219,7 @@ function getScript(): string {
 .commit-area { padding: 8px 8px 6px; }
 .commit-input-wrap { margin-bottom: 6px; background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; display: flex; align-items: flex-start; }
 .commit-input-wrap:focus-within { border-color: var(--vscode-focusBorder); outline: 1px solid var(--vscode-focusBorder); }
-textarea { flex: 1; min-height: 52px; max-height: 200px; resize: none; background: transparent; color: var(--vscode-input-foreground); border: none; padding: 6px 4px 6px 8px; font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); outline: none; line-height: 1.4; overflow-y: scroll; scrollbar-width: none; }
+textarea { flex: 1; min-height: 28px; max-height: 200px; resize: none; background: transparent; color: var(--vscode-input-foreground); border: none; padding: 6px 4px 6px 8px; font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); outline: none; line-height: 1.4; overflow-y: scroll; scrollbar-width: none; }
 textarea::-webkit-scrollbar { display: none; }
 textarea::placeholder { color: var(--vscode-input-placeholderForeground); }
 .input-actions { display: flex; flex-direction: column; align-items: center; padding: 4px 2px; flex-shrink: 0; }
@@ -208,6 +234,10 @@ textarea::placeholder { color: var(--vscode-input-placeholderForeground); }
 .push-banner svg { flex-shrink: 0; opacity: 0.8; } .push-banner span { flex: 1; }
 .push-btn { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 2px; padding: 2px 10px; cursor: pointer; font-size: 11px; font-weight: 500; white-space: nowrap; }
 .push-btn:hover { background: var(--vscode-button-hoverBackground); }
+.sync-banner { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 5px; padding: 6px 8px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-radius: 2px; font-size: 12px; font-weight: 500; cursor: pointer; }
+.sync-banner:hover { background: var(--vscode-button-hoverBackground); }
+.commit-area.sync-required .btn-row,
+.commit-area.sync-required .push-banner { display: none !important; }
 .file-list { list-style: none; }
 .tree-folder { position: relative; }
 .tree-folder-children { position: relative; }
@@ -216,19 +246,19 @@ textarea::placeholder { color: var(--vscode-input-placeholderForeground); }
 	left: var(--guide-left, 16px); width: 1px;
 	background: var(--vscode-tree-indentGuidesStroke, rgba(255,255,255,0.15));
 }
-.tree-folder-header { display: flex; align-items: center; padding: 1px 4px 1px 0; cursor: pointer; font-size: 15px; gap: 2px; user-select: none; }
+.tree-folder-header { display: flex; align-items: center; padding: 5px 4px 5px 0; cursor: pointer; font-size: 15px; gap: 2px; user-select: none; }
 .tree-folder-header:hover { background: var(--vscode-list-hoverBackground); }
-.tree-folder-header .tree-chevron { font-size: 15px; width: 16px; text-align: center; flex-shrink: 0; transition: transform 0.1s; display: inline-block; }
-.tree-folder-header.collapsed .tree-chevron { transform: rotate(-90deg); }
+.tree-folder-header .tree-chevron { font-size: 20px; width: 16px; text-align: center; flex-shrink: 0; transition: transform 0.1s; display: inline-block; transform: rotate(90deg); }
+.tree-folder-header.collapsed .tree-chevron { transform: rotate(0deg); }
 .tree-folder-header .tree-folder-icon { flex-shrink: 0; opacity: 0.7; margin-right: 2px; }
 .tree-folder-header .tree-folder-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .folder-actions { display: none; gap: 1px; flex-shrink: 0; }
 .tree-folder-header:hover .folder-actions { display: flex; }
 .tree-folder-children { }
 .tree-folder-children.hidden { display: none; }
-.file-item { display: flex; align-items: center; padding: 1px 4px 1px 0; cursor: pointer; font-size: 15px; gap: 2px; position: relative; }
+.file-item { display: flex; align-items: center; padding: 5px 4px 5px 0; cursor: pointer; font-size: 15px; gap: 2px; position: relative; }
 .file-item:hover { background: var(--vscode-list-hoverBackground); }
-.file-item .file-icon { flex-shrink: 0; opacity: 0.7; margin-right: 2px; }
+.file-icon-img { display: inline-block; flex-shrink: 0; vertical-align: middle; }
 .file-item .file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status-badge { font-size: 11px; font-weight: 600; width: 14px; text-align: center; flex-shrink: 0; }
 .status-M { color: #e2c08d; } .status-A { color: #73c991; } .status-D { color: #f14c4c; } .status-R { color: #73c991; } .status-U { color: #e2c08d; } .status-C { color: #73c991; }
@@ -239,8 +269,8 @@ textarea::placeholder { color: var(--vscode-input-placeholderForeground); }
 .action-item { display: flex; align-items: center; padding: 6px 8px 6px 12px; cursor: pointer; gap: 8px; font-size: 12px; }
 .action-item:hover { background: var(--vscode-list-hoverBackground); }
 .action-item .ai-icon { font-size: 14px; flex-shrink: 0; } .action-item .ai-label { flex: 1; } .action-item .ai-desc { font-size: 11px; color: var(--vscode-descriptionForeground); }
-.chevron { font-size: 15px; transition: transform 0.15s; display: inline-block; }
-.collapsed .chevron { transform: rotate(-90deg); } .section-body.hidden { display: none; }
+.chevron { font-size: 15px; transition: transform 0.15s; display: inline-block; transform: rotate(90deg); }
+.collapsed .chevron { transform: rotate(0deg); } .section-body.hidden { display: none; }
 .branch-badge { font-size: 10px; padding: 1px 6px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); border-radius: 10px; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sync-info { padding: 4px 12px; font-size: 11px; color: var(--vscode-descriptionForeground); display: flex; gap: 8px; align-items: center; }
 .sync-ahead { color: var(--vscode-gitDecoration-addedResourceForeground, #73c991); }
@@ -267,6 +297,8 @@ textarea::placeholder { color: var(--vscode-input-placeholderForeground); }
 .commit-actions { display: none; flex-shrink: 0; } .commit-item.is-local:hover .commit-actions { display: flex; }
 .undo-commit-btn { background: none; border: 1px solid var(--vscode-foreground); color: var(--vscode-foreground); border-radius: 2px; padding: 1px 6px; font-size: 10px; cursor: pointer; opacity: 0.7; white-space: nowrap; }
 .undo-commit-btn:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground); }
+.edit-commit-btn { background: none; border: 1px solid var(--vscode-foreground); color: var(--vscode-foreground); border-radius: 2px; padding: 1px 6px; font-size: 10px; cursor: pointer; opacity: 0.7; white-space: nowrap; }
+.edit-commit-btn:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground); }
 .squash-toolbar {
 	display: flex; align-items: center; gap: 6px; padding: 4px 8px;
 	background: var(--vscode-sideBarSectionHeader-background);
@@ -339,11 +371,23 @@ function sendCommand(cmd, extra) { vscode.postMessage({ command: cmd, ...extra }
 function doCommit() { const msg = document.getElementById('commit-msg').value; vscode.postMessage({ command: 'commit', message: msg }); }
 document.getElementById('commit-msg').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.ctrlKey) doCommit(); });
 const commitMsg = document.getElementById('commit-msg');
-function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 200) + 'px'; }
+function autoResize(el) { el.style.height = 'auto'; el.style.height = (el.value ? Math.min(el.scrollHeight, 200) : 28) + 'px'; }
 commitMsg.addEventListener('input', (e) => { autoResize(e.target); vscode.postMessage({ command: 'commit-msg-change', message: e.target.value }); });
 function toggleSection(bodyId, headerEl) { document.getElementById(bodyId).classList.toggle('hidden'); headerEl.classList.toggle('collapsed'); }
 const STATUS_MAP = { 0:'M', 1:'A', 2:'D', 3:'R', 4:'C', 5:'M', 6:'D', 7:'U', 9:'A' };
 function statusLetter(s) { return STATUS_MAP[s] || 'M'; }
+
+let _iconTheme = null;
+
+function getFileIcon(fileName) {
+	const ext = (fileName.split('.').pop() || '').toLowerCase();
+	const nameLower = fileName.toLowerCase();
+	if (_iconTheme) {
+		const uri = _iconTheme.fileMap?.[nameLower] || _iconTheme.extMap?.[ext] || _iconTheme.defaultFile;
+		if (uri) return '<img class="file-icon-img" src="'+uri+'" width="14" height="14"/>';
+	}
+	return '<svg class="file-icon-img" width="13" height="13" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3.5 1h6.793L13.5 4.207V14.5a.5.5 0 0 1-.5.5H3.5a.5.5 0 0 1-.5-.5v-13a.5.5 0 0 1 .5-.5z" stroke="currentColor" stroke-opacity="0.5"/><path d="M10 1v3.5h3.5" stroke="currentColor" stroke-opacity="0.5"/></svg>';
+}
 
 function renderStagedList(files) {
 	var el = document.getElementById('staged-list');
@@ -396,7 +440,7 @@ function renderTreeNode(node, type, depth) {
 		}
 		html += '<div class="tree-folder">';
 		html += '<div class="tree-folder-header" style="padding-left:'+pad+'px">';
-		html += '<span class="tree-chevron">▾</span>';
+		html += '<span class="tree-chevron">›</span>';
 		html += '<span class="tree-folder-name">'+name+'</span>';
 		html += '<div class="folder-actions">'+folderActions+'</div>';
 		html += '</div>';
@@ -412,6 +456,7 @@ function renderTreeNode(node, type, depth) {
 				? '<button class="file-action-btn" data-action="unstage" data-idx="'+f._idx+'" title="Unstage">−</button>'
 				: '<button class="file-action-btn" data-action="discard" data-idx="'+f._idx+'" title="Discard Changes">↩</button><button class="file-action-btn" data-action="stage" data-idx="'+f._idx+'" title="Stage">+</button>';
 			html += '<div class="file-item" data-idx="'+f._idx+'" data-type="'+type+'" title="'+f.filePath+'" style="padding-left:'+filePad+'px">';
+			html += '<span class="file-icon">'+getFileIcon(f.fileName)+'</span>';
 			html += '<span class="file-name">'+f.fileName+'</span>';
 			html += '<div class="file-actions">'+actionBtns+'</div>';
 			html += '<span class="status-badge status-'+sl+'">'+sl+'</span>';
@@ -481,6 +526,17 @@ function renderGraph(data) {
 	const pushText = document.getElementById('push-banner-text');
 	if (data.ahead > 0) { pushText.textContent = data.ahead + ' commit' + (data.ahead > 1 ? 's' : '') + ' to push'; pushBanner.style.display = 'flex'; }
 	else { pushBanner.style.display = 'none'; }
+	const syncBanner = document.getElementById('sync-banner');
+	const syncText = document.getElementById('sync-banner-text');
+	const commitArea = document.querySelector('.commit-area');
+	if (data.behind > 0) {
+		syncText.textContent = 'Sync Changes ' + data.behind + '↓';
+		syncBanner.style.display = 'flex';
+		if (commitArea) { commitArea.classList.add('sync-required'); }
+	} else {
+		syncBanner.style.display = 'none';
+		if (commitArea) { commitArea.classList.remove('sync-required'); }
+	}
 	const syncEl = document.getElementById('sync-info');
 	if (data.upstream && (data.ahead > 0 || data.behind > 0)) {
 		let parts = [];
@@ -573,16 +629,56 @@ function updateSquashSelection(changedIdx) {
 	const toolbar = document.getElementById('squash-toolbar');
 	const countText = document.getElementById('squash-count-text');
 	const btn = document.getElementById('squash-btn');
+	const editBtn = document.getElementById('edit-msg-btn');
 	const count = checks.length;
 	if (count > 0) {
 		toolbar.style.display = 'flex';
 		const hasPushed = checks.some(cb => cb.dataset.pushed === '1');
 		const warn = hasPushed ? ' (includes pushed ⚠)' : '';
 		countText.textContent = count + ' commit' + (count > 1 ? 's' : '') + ' selected' + warn;
-		btn.disabled = count < 2;
+		// 1 commit → Edit Message only, 2+ → Squash only
+		editBtn.style.display = count === 1 ? 'inline-block' : 'none';
+		btn.style.display = count >= 2 ? 'inline-block' : 'none';
+		btn.disabled = false;
 	} else {
 		toolbar.style.display = 'none';
 	}
+}
+
+let _editCommitSha = null;
+let _editCommitIsPushed = false;
+function doEditCommitMsg() {
+	const checks = Array.from(document.querySelectorAll('.commit-checkbox:checked'));
+	if (checks.length !== 1) return;
+	const li = checks[0].closest('.commit-item[data-sha]');
+	if (!li) return;
+	_editCommitSha = li.dataset.sha;
+	_editCommitIsPushed = checks[0].dataset.pushed === '1';
+	lockCheckboxes();
+	// Request current message from extension
+	sendCommand('get-commit-message', { sha: _editCommitSha });
+}
+function openEditMsgDialog(currentMsg) {
+	document.getElementById('edit-msg-input').value = currentMsg || '';
+	document.getElementById('edit-msg-dialog').style.display = 'block';
+	document.getElementById('edit-msg-input').focus();
+}
+function closeEditMsgDialog() {
+	document.getElementById('edit-msg-dialog').style.display = 'none';
+	unlockCheckboxes();
+	cancelSquash();
+	_editCommitSha = null;
+}
+function confirmEditMsg() {
+	const msg = document.getElementById('edit-msg-input').value;
+	if (!msg || !msg.trim()) return;
+	sendCommand('edit-commit', { sha: _editCommitSha, isPushed: _editCommitIsPushed, message: msg.trim() });
+	closeEditMsgDialog();
+}
+function generateEditMsg() {
+	const btn = document.getElementById('edit-generate-btn');
+	btn.disabled = true; btn.style.opacity = '0.4';
+	sendCommand('generate-edit-msg', { sha: _editCommitSha });
 }
 function cancelSquash() {
 	document.querySelectorAll('.commit-checkbox').forEach(cb => { cb.checked = false; cb.disabled = false; });
@@ -639,8 +735,23 @@ function dismissSquashBackup() {
 	document.getElementById('undo-squash-banner').style.display = 'none';
 }
 
+let _editMsgBackup = null;
+function undoEditMsg() {
+	if (_editMsgBackup) sendCommand('undo-edit-msg', { backup: _editMsgBackup });
+}
+function dismissEditUndo() {
+	if (_editMsgBackup) sendCommand('dismiss-edit-backup', { backup: _editMsgBackup });
+	_editMsgBackup = null;
+	document.getElementById('undo-edit-banner').style.display = 'none';
+}
+
 window.addEventListener('message', (event) => {
 	const msg = event.data;
+	if (msg.command === 'icon-theme') {
+		_iconTheme = msg.theme;
+		renderStagedList(_staged);
+		renderUnstagedList(_unstaged);
+	}
 	if (msg.command === 'update-state') {
 		_staged = msg.staged || []; _unstaged = msg.unstaged || [];
 		renderStagedList(_staged); renderUnstagedList(_unstaged);
@@ -649,7 +760,13 @@ window.addEventListener('message', (event) => {
 		if (document.activeElement !== ta) { ta.value = msg.commitMsg || ''; autoResize(ta); }
 	}
 	if (msg.command === 'clear-commit-msg') { const ta = document.getElementById('commit-msg'); ta.value = ''; autoResize(ta); }
-	if (msg.command === 'update-graph') { renderGraph(msg); }
+	if (msg.command === 'update-graph') {
+		// Don't re-render graph if user has commits selected or dialog is open
+		const hasChecked = document.querySelectorAll('.commit-checkbox:checked').length > 0;
+		const squashOpen = document.getElementById('squash-dialog').style.display !== 'none';
+		const editOpen = document.getElementById('edit-msg-dialog').style.display !== 'none';
+		if (!hasChecked && !squashOpen && !editOpen) { renderGraph(msg); }
+	}
 	if (msg.command === 'squash-messages') {
 		const ta = document.getElementById('squash-msg');
 		if (ta) ta.value = msg.text || '';
@@ -663,6 +780,23 @@ window.addEventListener('message', (event) => {
 	if (msg.command === 'squash-done') {
 		_squashBackup = msg.backup;
 		document.getElementById('undo-squash-banner').style.display = 'flex';
+	}
+	if (msg.command === 'edit-msg-done') {
+		_editMsgBackup = msg.backup;
+		document.getElementById('undo-edit-banner').style.display = 'flex';
+	}
+	if (msg.command === 'edit-msg-undone') {
+		_editMsgBackup = null;
+		document.getElementById('undo-edit-banner').style.display = 'none';
+	}
+	if (msg.command === 'commit-message') {
+		openEditMsgDialog(msg.text);
+	}
+	if (msg.command === 'edit-msg-generated') {
+		const ta = document.getElementById('edit-msg-input');
+		if (ta) ta.value = msg.text || '';
+		const btn = document.getElementById('edit-generate-btn');
+		if (btn) { btn.disabled = false; btn.style.opacity = '0.8'; }
 	}
 	if (msg.command === 'squash-undone') {
 		_squashBackup = null;
