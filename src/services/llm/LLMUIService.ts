@@ -160,13 +160,33 @@ export class LLMUIService {
         if (!value || value.trim().length === 0) {
           return "API key cannot be empty";
         }
+        const sanitized = LLMUIService.sanitizeApiKey(value);
+        if (sanitized.length === 0) {
+          return "API key contains only invalid characters";
+        }
+        if (sanitized !== value) {
+          return "API key contains invisible or non-ASCII characters — they will be stripped automatically";
+        }
         return null;
       },
       title: `Configure ${provider.toUpperCase()} API Key`,
       ignoreFocusOut: true,
     });
 
-    return apiKey;
+    return apiKey ? LLMUIService.sanitizeApiKey(apiKey) : undefined;
+  }
+
+  /**
+   * Strip characters that break HTTP header encoding.
+   * Fetch requires header values to be valid ByteStrings (each char ≤ 0xFF).
+   * Removes C0 control chars (0x00-0x1F), DEL (0x7F), and chars > 0xFF
+   * that cause TypeError at runtime (e.g. • U+2022 = 8226).
+   * Preserves printable ASCII (0x20-0x7E) and Latin-1 Supplement (0x80-0xFF)
+   * to support API keys with accented or extended characters.
+   */
+  static sanitizeApiKey(raw: string): string {
+    // eslint-disable-next-line no-control-regex
+    return raw.replace(/[\x00-\x1F\x7F\u0100-\uFFFF]/g, '').trim();
   }
 
   async promptBaseURL(

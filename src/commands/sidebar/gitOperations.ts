@@ -12,11 +12,33 @@ export interface SidebarView {
 }
 
 export class GitOperations {
+	private _getGraphView: (() => SidebarView | undefined) | undefined;
+	private _opQueue: Promise<void> = Promise.resolve();
+
 	constructor(
 		private _gitService: GitService,
 		private _llmService: LLMService,
 		private _getView: () => SidebarView | undefined
 	) {}
+
+	/**
+	 * Serialize state-mutating git operations to prevent concurrent conflicts.
+	 * Read-only operations (pushState, pushGraph, etc.) bypass the queue.
+	 */
+	private _enqueue<T>(fn: () => Promise<T>): Promise<T> {
+		const result = this._opQueue.then(() => fn());
+		// Keep the queue chain going regardless of success/failure
+		this._opQueue = result.then(() => {}, () => {});
+		return result;
+	}
+
+	setGraphView(getGraphView: () => SidebarView | undefined): void {
+		this._getGraphView = getGraphView;
+	}
+
+	private _graphView(): SidebarView | undefined {
+		return this._getGraphView?.() ?? this._getView();
+	}
 
 	// --- State ---
 
@@ -61,6 +83,7 @@ export class GitOperations {
 	}
 
 	async doCommit(message: string): Promise<void> {
+		return this._enqueue(async () => {
 		if (!message?.trim()) {
 			vscode.window.showWarningMessage('Please enter a commit message.');
 			return;
@@ -73,29 +96,35 @@ export class GitOperations {
 		} catch (error) {
 			vscode.window.showErrorMessage(`Commit failed: ${error}`);
 		}
+		});
 	}
 
 	// --- Stage / Unstage / Discard ---
 
 	async stageFile(filePath: string): Promise<void> {
+		return this._enqueue(async () => {
 		try {
 			const repo = getRepoForFile(filePath);
 			if (repo) await repo.add([filePath]);
 		} catch (error) {
 			vscode.window.showErrorMessage(`Failed to stage file: ${error}`);
 		}
+		});
 	}
 
 	async unstageFile(filePath: string): Promise<void> {
+		return this._enqueue(async () => {
 		try {
 			const repo = getRepoForFile(filePath);
 			if (repo) await repo.revert([filePath]);
 		} catch (error) {
 			vscode.window.showErrorMessage(`Failed to unstage file: ${error}`);
 		}
+		});
 	}
 
 	async stageFiles(filePaths: string[]): Promise<void> {
+		return this._enqueue(async () => {
 		if (!filePaths.length) return;
 		try {
 			const repo = getRepoForFile(filePaths[0]);
@@ -103,9 +132,11 @@ export class GitOperations {
 		} catch (error) {
 			vscode.window.showErrorMessage(`Failed to stage files: ${error}`);
 		}
+		});
 	}
 
 	async unstageFiles(filePaths: string[]): Promise<void> {
+		return this._enqueue(async () => {
 		if (!filePaths.length) return;
 		try {
 			const repo = getRepoForFile(filePaths[0]);
@@ -113,9 +144,11 @@ export class GitOperations {
 		} catch (error) {
 			vscode.window.showErrorMessage(`Failed to unstage files: ${error}`);
 		}
+		});
 	}
 
 	async discardFiles(filePaths: string[]): Promise<void> {
+		return this._enqueue(async () => {
 		if (!filePaths.length) return;
 		const answer = await vscode.window.showWarningMessage(
 			`Discard changes in ${filePaths.length} file(s)?`,
@@ -128,9 +161,11 @@ export class GitOperations {
 		} catch (error) {
 			vscode.window.showErrorMessage(`Failed to discard files: ${error}`);
 		}
+		});
 	}
 
 	async discardFile(filePath: string): Promise<void> {
+		return this._enqueue(async () => {
 		const answer = await vscode.window.showWarningMessage(
 			`Discard changes in ${path.basename(filePath)}?`,
 			{ modal: true }, 'Discard'
@@ -142,9 +177,11 @@ export class GitOperations {
 		} catch (error) {
 			vscode.window.showErrorMessage(`Failed to discard: ${error}`);
 		}
+		});
 	}
 
 	async unstageAll(): Promise<void> {
+		return this._enqueue(async () => {
 		try {
 			const git = getGitApi();
 			if (!git || git.repositories.length === 0) return;
@@ -155,9 +192,11 @@ export class GitOperations {
 		} catch (error) {
 			vscode.window.showErrorMessage(`Failed to unstage all: ${error}`);
 		}
+		});
 	}
 
 	async discardAll(): Promise<void> {
+		return this._enqueue(async () => {
 		try {
 			const git = getGitApi();
 			if (!git || git.repositories.length === 0) return;
@@ -177,6 +216,7 @@ export class GitOperations {
 		} catch (error) {
 			vscode.window.showErrorMessage(`Failed to discard all: ${error}`);
 		}
+		});
 	}
 
 	// --- Diff ---
@@ -218,8 +258,7 @@ export class GitOperations {
 	// --- Graph ---
 
 	async pushGraph(): Promise<void> {
-		const view = this._getView();
-		if (!view) return;
+		const graphView = this._graphView();
 		try {
 			const git = getGitApi();
 			if (!git || git.repositories.length === 0) return;
@@ -239,16 +278,24 @@ export class GitOperations {
 
 			const commits = await this._getRecentCommits(repo, branch, upstream, 30);
 
-			view.postMessage({
+			const graphData = {
 				command: 'update-graph', branch,
 				upstream: upstream ? `${upstream.remote}/${upstream.name}` : null,
 				ahead, behind, conflicts, commits
-			});
+			};
+
+			graphView?.postMessage(graphData);
+
+			// Also send graph data to main view for push/sync banners
+			const mainView = this._getView();
+			if (mainView && mainView !== graphView) {
+				mainView.postMessage(graphData);
+			}
 		} catch { /* ignore */ }
 	}
 
 	async pushCommitFiles(sha: string): Promise<void> {
-		const view = this._getView();
+		const view = this._graphView();
 		if (!view) return;
 		try {
 			const git = getGitApi();
@@ -273,6 +320,7 @@ export class GitOperations {
 	}
 
 	async undoCommit(sha: string): Promise<void> {
+		return this._enqueue(async () => {
 		try {
 			const git = getGitApi();
 			if (!git || git.repositories.length === 0) {
@@ -308,9 +356,11 @@ export class GitOperations {
 		} catch (error) {
 			vscode.window.showErrorMessage(`Failed to undo commit: ${error}`);
 		}
+		});
 	}
 
 	async editCommitMessage(sha: string, isPushed = false, newMessage?: string): Promise<void> {
+		return this._enqueue(async () => {
 		try {
 			const git = getGitApi();
 			if (!git || git.repositories.length === 0) {
@@ -350,14 +400,15 @@ export class GitOperations {
 			this.pushGraph();
 			const note = isPushed ? ' You will need to force push to update remote.' : '';
 			vscode.window.showInformationMessage(`✓ Commit message updated.${note}`);
-			this._getView()?.postMessage({ command: 'edit-msg-done', backup: backupBranch });
+			this._graphView()?.postMessage({ command: 'edit-msg-done', backup: backupBranch });
 		} catch (error) {
 			vscode.window.showErrorMessage(`Failed to edit commit message: ${error}`);
 		}
+		});
 	}
 
 	async pushCommitMessage(sha: string): Promise<void> {
-		const view = this._getView();
+		const view = this._graphView();
 		if (!view) return;
 		try {
 			const git = getGitApi();
@@ -371,6 +422,7 @@ export class GitOperations {
 	}
 
 	async undoEditMessage(backupBranch: string): Promise<void> {
+		return this._enqueue(async () => {
 		try {
 			const git = getGitApi();
 			if (!git || git.repositories.length === 0) return;
@@ -386,11 +438,12 @@ export class GitOperations {
 			await new Promise(r => setTimeout(r, 500));
 			this.pushState();
 			this.pushGraph();
-			this._getView()?.postMessage({ command: 'edit-msg-undone' });
+			this._graphView()?.postMessage({ command: 'edit-msg-undone' });
 			vscode.window.showInformationMessage('✓ Commit message restored.');
 		} catch (error) {
 			vscode.window.showErrorMessage(`Failed to undo: ${error}`);
 		}
+		});
 	}
 
 	async dismissEditBackup(backupBranch: string): Promise<void> {
@@ -399,7 +452,7 @@ export class GitOperations {
 			if (!git || git.repositories.length === 0) return;
 			const repo = git.repositories[0];
 			try { await execGitInRepo(repo, ['branch', '-D', backupBranch]); } catch { /* */ }
-			this._getView()?.postMessage({ command: 'edit-msg-undone' });
+			this._graphView()?.postMessage({ command: 'edit-msg-undone' });
 		} catch { /* ignore */ }
 	}
 
@@ -460,7 +513,7 @@ export class GitOperations {
 
 	/** Push combined commit messages to webview for squash dialog pre-fill */
 	async pushSquashMessages(count: number): Promise<void> {
-		const view = this._getView();
+		const view = this._graphView();
 		if (!view) return;
 		const text = await this.getSquashMessages(count);
 		view.postMessage({ command: 'squash-messages', text });
@@ -532,6 +585,7 @@ export class GitOperations {
 	 * 6. On success → delete backup branch
 	 */
 	async squashCommits(count: number, message: string): Promise<void> {
+		return this._enqueue(async () => {
 		if (count < 2) {
 			vscode.window.showWarningMessage('Select at least 2 commits to squash.');
 			return;
@@ -591,7 +645,7 @@ export class GitOperations {
 				vscode.window.showInformationMessage(`✓ Squashed ${count} commits into one.${note}`);
 
 				// Notify webview to show undo-squash banner
-				this._getView()?.postMessage({ command: 'squash-done', backup: backupBranch });
+				this._graphView()?.postMessage({ command: 'squash-done', backup: backupBranch });
 			} catch (error) {
 				try {
 					await execGitInRepo(repo, ['reset', '--hard', backupBranch]);
@@ -607,10 +661,12 @@ export class GitOperations {
 		} catch (error) {
 			vscode.window.showErrorMessage(`Failed to squash commits: ${error}`);
 		}
+		});
 	}
 
 	/** Undo the last squash by restoring from backup branch */
 	async undoSquash(backupBranch: string): Promise<void> {
+		return this._enqueue(async () => {
 		try {
 			const git = getGitApi();
 			if (!git || git.repositories.length === 0) return;
@@ -631,11 +687,12 @@ export class GitOperations {
 			this.pushState();
 			this.pushGraph();
 
-			this._getView()?.postMessage({ command: 'squash-undone' });
+			this._graphView()?.postMessage({ command: 'squash-undone' });
 			vscode.window.showInformationMessage('✓ Squash undone. Original commits restored.');
 		} catch (error) {
 			vscode.window.showErrorMessage(`Failed to undo squash: ${error}`);
 		}
+		});
 	}
 
 	/** Dismiss the undo-squash option and clean up backup branch */
@@ -646,7 +703,7 @@ export class GitOperations {
 			const repo = git.repositories[0];
 			try { await execGitInRepo(repo, ['branch', '-D', backupBranch]); } catch { /* */ }
 			this._lastSquashBackup = null;
-			this._getView()?.postMessage({ command: 'squash-undone' });
+			this._graphView()?.postMessage({ command: 'squash-undone' });
 		} catch { /* ignore */ }
 	}
 

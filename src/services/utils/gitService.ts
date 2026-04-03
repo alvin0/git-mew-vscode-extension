@@ -1,5 +1,6 @@
 import { execFile } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { UnifiedDiffFile } from '../llm/contextTypes';
@@ -764,23 +765,36 @@ export class GitService {
     }
 
     /**
-     * Get custom code review rules from .gitmew/code-rule.review-merge.md
-     * @returns Custom rules content or undefined if file doesn't exist
+     * Read the first existing file from a list of candidate paths.
+     * Priority: project > global (~/.gitmew) > legacy project flat names.
+     */
+    private readFirstExisting(candidates: string[]): string | undefined {
+        for (const filePath of candidates) {
+            if (fs.existsSync(filePath)) {
+                return fs.readFileSync(filePath, 'utf-8').trim();
+            }
+        }
+        return undefined;
+    }
+
+    private getGlobalGitmewDir(): string {
+        return path.join(os.homedir(), '.gitmew');
+    }
+
+    /**
+     * Get custom code review rules.
+     * Priority: project .gitmew/review/code-rules.md > global ~/.gitmew/review/code-rules.md > legacy project code-rule.review-merge.md
      */
     public async getCustomReviewMergeRules(): Promise<string | undefined> {
         try {
-            const repository = this.getRepository();
-            const workspaceRoot = repository.rootUri.fsPath;
-            const rulesPath = path.join(workspaceRoot, '.gitmew', 'code-rule.review-merge.md');
-            
-            // Check if file exists
-            if (!fs.existsSync(rulesPath)) {
-                return undefined;
-            }
-            
-            // Read file content
-            const content = fs.readFileSync(rulesPath, 'utf-8');
-            return content.trim();
+            const workspaceRoot = this.getRepository().rootUri.fsPath;
+            const projectDir = path.join(workspaceRoot, '.gitmew');
+            const globalDir = this.getGlobalGitmewDir();
+            return this.readFirstExisting([
+                path.join(projectDir, 'review', 'code-rules.md'),
+                path.join(globalDir, 'review', 'code-rules.md'),
+                path.join(projectDir, 'code-rule.review-merge.md'),
+            ]);
         } catch (error) {
             console.error('Error reading custom review rules:', error);
             return undefined;
@@ -788,23 +802,19 @@ export class GitService {
     }
 
     /**
-     * Get custom system prompt from .gitmew/system-prompt.review-merge.md
-     * @returns Custom system prompt content or undefined if file doesn't exist
+     * Get custom review system prompt.
+     * Priority: project .gitmew/review/system-prompt.md > global ~/.gitmew/review/system-prompt.md > legacy project system-prompt.review-merge.md
      */
     public async getCustomReviewMergeSystemPrompt(): Promise<string | undefined> {
         try {
-            const repository = this.getRepository();
-            const workspaceRoot = repository.rootUri.fsPath;
-            const promptPath = path.join(workspaceRoot, '.gitmew', 'system-prompt.review-merge.md');
-            
-            // Check if file exists
-            if (!fs.existsSync(promptPath)) {
-                return undefined;
-            }
-            
-            // Read file content
-            const content = fs.readFileSync(promptPath, 'utf-8');
-            return content.trim();
+            const workspaceRoot = this.getRepository().rootUri.fsPath;
+            const projectDir = path.join(workspaceRoot, '.gitmew');
+            const globalDir = this.getGlobalGitmewDir();
+            return this.readFirstExisting([
+                path.join(projectDir, 'review', 'system-prompt.md'),
+                path.join(globalDir, 'review', 'system-prompt.md'),
+                path.join(projectDir, 'system-prompt.review-merge.md'),
+            ]);
         } catch (error) {
             console.error('Error reading custom system prompt:', error);
             return undefined;
@@ -812,21 +822,19 @@ export class GitService {
     }
 
     /**
-     * Get custom review agent instructions from .gitmew/agent-rule.review-merge.md
-     * @returns Custom agent instructions or undefined if file doesn't exist
+     * Get custom review agent instructions.
+     * Priority: project .gitmew/review/agent-rules.md > global ~/.gitmew/review/agent-rules.md > legacy project agent-rule.review-merge.md
      */
     public async getCustomReviewMergeAgentPrompt(): Promise<string | undefined> {
         try {
-            const repository = this.getRepository();
-            const workspaceRoot = repository.rootUri.fsPath;
-            const promptPath = path.join(workspaceRoot, '.gitmew', 'agent-rule.review-merge.md');
-
-            if (!fs.existsSync(promptPath)) {
-                return undefined;
-            }
-
-            const content = fs.readFileSync(promptPath, 'utf-8');
-            return content.trim();
+            const workspaceRoot = this.getRepository().rootUri.fsPath;
+            const projectDir = path.join(workspaceRoot, '.gitmew');
+            const globalDir = this.getGlobalGitmewDir();
+            return this.readFirstExisting([
+                path.join(projectDir, 'review', 'agent-rules.md'),
+                path.join(globalDir, 'review', 'agent-rules.md'),
+                path.join(projectDir, 'agent-rule.review-merge.md'),
+            ]);
         } catch (error) {
             console.error('Error reading custom review agent instructions:', error);
             return undefined;
@@ -834,23 +842,19 @@ export class GitService {
     }
 
     /**
-     * Get custom system prompt from .gitmew/system-prompt.review-merge.md
-     * @returns Custom system prompt content or undefined if file doesn't exist
+     * Get custom description system prompt.
+     * Priority: project .gitmew/description/system-prompt.md > global ~/.gitmew/description/system-prompt.md > legacy project system-prompt.description-merge.md
      */
     public async getCustomDescriptionMergeSystemPrompt(): Promise<string | undefined> {
         try {
-            const repository = this.getRepository();
-            const workspaceRoot = repository.rootUri.fsPath;
-            const promptPath = path.join(workspaceRoot, '.gitmew', 'system-prompt.description-merge.md');
-
-            // Check if file exists
-            if (!fs.existsSync(promptPath)) {
-                return undefined;
-            }
-            
-            // Read file content
-            const content = fs.readFileSync(promptPath, 'utf-8');
-            return content.trim();
+            const workspaceRoot = this.getRepository().rootUri.fsPath;
+            const projectDir = path.join(workspaceRoot, '.gitmew');
+            const globalDir = this.getGlobalGitmewDir();
+            return this.readFirstExisting([
+                path.join(projectDir, 'description', 'system-prompt.md'),
+                path.join(globalDir, 'description', 'system-prompt.md'),
+                path.join(projectDir, 'system-prompt.description-merge.md'),
+            ]);
         } catch (error) {
             console.error('Error reading custom system prompt:', error);
             return undefined;

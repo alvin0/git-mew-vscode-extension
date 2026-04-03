@@ -59,11 +59,12 @@ export class CustomAdapter implements ILLMAdapter {
     const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
 
     try {
+      const sanitizedApiKey = this.config.apiKey.replace(/[^\x20-\x7E]/g, '').trim();
       const response = await fetch(`${this.config.baseURL}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.config.apiKey}`,
+          'Authorization': `Bearer ${sanitizedApiKey}`,
         },
         body: JSON.stringify(requestBody),
         signal: controller.signal,

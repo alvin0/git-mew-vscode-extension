@@ -2,7 +2,7 @@
   "name": "git-mew",
   "displayName": "Git Mew",
   "description": "Your AI kitty for Git chaos - Generate intelligent commit messages using AI",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "icon": "resources/images/logo.png",
   "publisher": "GitMew",
   "engines": {
@@ -45,6 +45,7 @@
     "onCommand:git-mew.review-merged-branch",
     "onCommand:git-mew.showCommands",
     "onCommand:git-mew.publish",
+    "onCommand:git-mew.manage-global-config",
     "onCommand:git-mew.show-review-panel"
   ],
   "extensionDependencies": [
@@ -69,6 +70,28 @@
           "type": "webview",
           "icon": "resources/images/logo-white-no-background.png",
           "retainContextWhenHidden": true
+        },
+        {
+          "id": "gitmew-graph",
+          "name": "Graph",
+          "type": "webview",
+          "retainContextWhenHidden": true,
+          "icon": "$(git-commit)"
+        },
+        {
+          "id": "gitmew-code-review",
+          "name": "Code Review",
+          "icon": "$(eye)"
+        },
+        {
+          "id": "gitmew-settings",
+          "name": "Settings",
+          "icon": "$(gear)"
+        },
+        {
+          "id": "gitmew-global-config",
+          "name": "Global Config (~/.gitmew)",
+          "icon": "$(folder)"
         }
       ]
     },
@@ -115,11 +138,49 @@
         "title": "git-mew: Publish Files"
       },
       {
+        "command": "git-mew.manage-global-config",
+        "title": "git-mew: Manage Global Config (~/.gitmew)"
+      },
+      {
+        "command": "git-mew.global-config.create",
+        "title": "Create",
+        "icon": "$(add)"
+      },
+      {
+        "command": "git-mew.global-config.delete",
+        "title": "Delete",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "git-mew.global-config.refresh",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "git-mew.show-review-panel",
         "title": "git-mew: Show Review Panel"
       }
     ],
     "menus": {
+      "view/title": [
+        {
+          "command": "git-mew.global-config.refresh",
+          "when": "view == gitmew-global-config",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "git-mew.global-config.create",
+          "when": "view == gitmew-global-config && viewItem == gitmew-file-missing",
+          "group": "inline"
+        },
+        {
+          "command": "git-mew.global-config.delete",
+          "when": "view == gitmew-global-config && viewItem == gitmew-file-exists",
+          "group": "inline"
+        }
+      ],
       "scm/title": [
         {
           "command": "git-mew.generate-commit",

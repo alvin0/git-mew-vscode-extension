@@ -85,7 +85,8 @@ export class GeminiAdapter implements ILLMAdapter {
     const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
 
     try {
-      const url = `${this.config.baseURL}/models/${this.config.model}:generateContent?key=${this.config.apiKey}`;
+      const sanitizedApiKey = this.config.apiKey.replace(/[^\x20-\x7E]/g, '').trim();
+      const url = `${this.config.baseURL}/models/${this.config.model}:generateContent?key=${sanitizedApiKey}`;
       
       const response = await fetch(url, {
         method: 'POST',

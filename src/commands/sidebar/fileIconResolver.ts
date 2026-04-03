@@ -7,12 +7,20 @@ interface IconThemeDocument {
 	fileExtensions?: Record<string, string>;
 	fileNames?: Record<string, string>;
 	file?: string;
+	folderNames?: Record<string, string>;
+	folderNamesExpanded?: Record<string, string>;
+	folder?: string;
+	folderExpanded?: string;
 }
 
 export interface ResolvedIconTheme {
 	extMap: Record<string, string>;
 	fileMap: Record<string, string>;
 	defaultFile: string | null;
+	folderMap: Record<string, string>;
+	folderExpandedMap: Record<string, string>;
+	defaultFolder: string | null;
+	defaultFolderExpanded: string | null;
 }
 
 /**
@@ -39,7 +47,12 @@ export async function resolveFileIconTheme(webview: vscode.Webview): Promise<Res
 		if (!fs.existsSync(themePath)) return null;
 
 		const themeDoc: IconThemeDocument = JSON.parse(fs.readFileSync(themePath, 'utf8'));
-		const { iconDefinitions = {}, fileExtensions = {}, fileNames = {}, file: defaultFileKey } = themeDoc;
+		const {
+			iconDefinitions = {}, fileExtensions = {}, fileNames = {},
+			file: defaultFileKey,
+			folderNames = {}, folderNamesExpanded = {},
+			folder: defaultFolderKey, folderExpanded: defaultFolderExpandedKey
+		} = themeDoc;
 
 		// Only support image-based themes
 		const hasIconPath = Object.values(iconDefinitions).some(d => !!d.iconPath);
@@ -63,7 +76,25 @@ export async function resolveFileIconTheme(webview: vscode.Webview): Promise<Res
 			const uri = resolveUri(defKey);
 			if (uri) fileMap[name.toLowerCase()] = uri;
 		}
-		return { extMap, fileMap, defaultFile: defaultFileKey ? resolveUri(defaultFileKey) : null };
+
+		const folderMap: Record<string, string> = {};
+		const folderExpandedMap: Record<string, string> = {};
+		for (const [name, defKey] of Object.entries(folderNames)) {
+			const uri = resolveUri(defKey);
+			if (uri) folderMap[name.toLowerCase()] = uri;
+		}
+		for (const [name, defKey] of Object.entries(folderNamesExpanded)) {
+			const uri = resolveUri(defKey);
+			if (uri) folderExpandedMap[name.toLowerCase()] = uri;
+		}
+
+		return {
+			extMap, fileMap,
+			defaultFile: defaultFileKey ? resolveUri(defaultFileKey) : null,
+			folderMap, folderExpandedMap,
+			defaultFolder: defaultFolderKey ? resolveUri(defaultFolderKey) : null,
+			defaultFolderExpanded: defaultFolderExpandedKey ? resolveUri(defaultFolderExpandedKey) : null,
+		};
 	} catch {
 		return null;
 	}

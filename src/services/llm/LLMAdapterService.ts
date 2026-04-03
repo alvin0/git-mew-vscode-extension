@@ -42,6 +42,10 @@ export class LLMAdapterService {
       apiKey = 'not-required';
     } else {
       apiKey = await this.configManager.getApiKey(provider);
+      if (apiKey) {
+        // Sanitize stored key — may contain invisible/non-ASCII chars from earlier paste
+        apiKey = apiKey.replace(/[^\x20-\x7E]/g, '').trim();
+      }
       if (!apiKey) {
         apiKey = await this.uiService.promptApiKey(provider);
         if (!apiKey) {

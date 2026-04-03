@@ -65,11 +65,12 @@ export class ClaudeAdapter implements ILLMAdapter {
     const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
 
     try {
+      const sanitizedApiKey = this.config.apiKey.replace(/[^\x20-\x7E]/g, '').trim();
       const response = await fetch(`${this.config.baseURL}/messages`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': this.config.apiKey,
+          'x-api-key': sanitizedApiKey,
           'anthropic-version': this.apiVersion,
         },
         body: JSON.stringify(requestBody),

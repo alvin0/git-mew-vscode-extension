@@ -12,6 +12,10 @@ export async function resolveProviderApiKey(
     }
 
     let key = await llmService.getApiKey(provider);
+    if (key) {
+        // Sanitize stored key — may contain invisible/non-ASCII chars from earlier paste
+        key = key.replace(/[^\x20-\x7E]/g, '').trim() || undefined;
+    }
     if (!key) {
         const newKey = await vscode.window.showInputBox({
             prompt: `Enter API Key for ${provider.toUpperCase()}`,
@@ -20,8 +24,9 @@ export async function resolveProviderApiKey(
         });
 
         if (newKey) {
-            await llmService.setApiKey(provider, newKey);
-            key = newKey;
+            const sanitized = newKey.replace(/[^\x20-\x7E]/g, '').trim();
+            await llmService.setApiKey(provider, sanitized);
+            key = sanitized;
         } else {
             vscode.window.showWarningMessage(
                 `No API key provided for ${provider.toUpperCase()}. Please configure it first to proceed.`

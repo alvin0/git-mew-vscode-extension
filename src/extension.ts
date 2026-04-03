@@ -2,10 +2,11 @@
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
 import { registerAllCommands } from './commands';
+import { GitmewGlobalConfigProvider, registerManageGlobalConfigCommand } from './commands/manageGlobalConfigCommand';
 import { LLMService } from './services/llm';
 import { GitService } from './services/utils/gitService';
 import { createStatusBarItem } from './statusBar';
-import { GitMewSidebarProvider } from './commands/sidebar';
+import { GitMewSidebarProvider, GitMewGraphProvider, CodeReviewProvider, SettingsProvider } from './commands/sidebar';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is activated
@@ -41,6 +42,42 @@ export async function activate(context: vscode.ExtensionContext) {
 				{ webviewOptions: { retainContextWhenHidden: true } }
 			) as vscode.Disposable
 		);
+
+		// Register graph webview provider
+		const graphProvider = new GitMewGraphProvider(context, sidebarProvider.ops);
+		sidebarProvider.setGraphProvider(graphProvider);
+		context.subscriptions.push(
+			(vscode.window.registerWebviewViewProvider as any)(
+				GitMewGraphProvider.viewType,
+				graphProvider,
+				{ webviewOptions: { retainContextWhenHidden: true } }
+			) as vscode.Disposable
+		);
+
+		// Register code review tree view
+		const codeReviewProvider = new CodeReviewProvider();
+		context.subscriptions.push(
+			vscode.window.createTreeView('gitmew-code-review', {
+				treeDataProvider: codeReviewProvider,
+			})
+		);
+
+		// Register settings tree view
+		const settingsProvider = new SettingsProvider();
+		context.subscriptions.push(
+			vscode.window.createTreeView('gitmew-settings', {
+				treeDataProvider: settingsProvider,
+			})
+		);
+
+		// Register global config tree view
+		const globalConfigProvider = new GitmewGlobalConfigProvider();
+		const globalConfigTree = vscode.window.createTreeView('gitmew-global-config', {
+			treeDataProvider: globalConfigProvider,
+			showCollapseAll: true,
+		});
+		context.subscriptions.push(globalConfigTree);
+		context.subscriptions.push(...registerManageGlobalConfigCommand(globalConfigProvider));
 	} catch (error) {
 		console.error('Failed to activate Git Mew:', error);
 		vscode.window.showErrorMessage('Failed to activate Git Mew extension. Please check the console for details.');

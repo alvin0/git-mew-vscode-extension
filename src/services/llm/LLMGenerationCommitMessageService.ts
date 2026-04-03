@@ -1,4 +1,5 @@
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import { GenerateOptions } from "../../llm-adapter";
@@ -33,37 +34,36 @@ export class LLMGenerationService {
   }
 
   /**
-   * Load custom commit rules from .gitmew/commit-rule.generate-commit.md
+   * Load custom commit rules.
+   * Priority: project .gitmew/commit/rules.md > global ~/.gitmew/commit/rules.md > legacy project commit-rule.generate-commit.md
    * @returns Custom prompt content or null if file doesn't exist
    */
   private async loadCustomCommitRules(): Promise<string | null> {
     try {
-      // Get workspace root
       const workspaceFolders = vscode.workspace.workspaceFolders;
       if (!workspaceFolders || workspaceFolders.length === 0) {
         return null;
       }
 
       const workspaceRoot = workspaceFolders[0].uri.fsPath;
-      const customRulePath = path.join(
-        workspaceRoot,
-        ".gitmew",
-        "commit-rule.generate-commit.md"
-      );
+      const projectDir = path.join(workspaceRoot, ".gitmew");
+      const globalDir = path.join(os.homedir(), ".gitmew");
+      const candidates = [
+        path.join(projectDir, "commit", "rules.md"),
+        path.join(globalDir, "commit", "rules.md"),
+        path.join(projectDir, "commit-rule.generate-commit.md"),
+      ];
 
-      // Check if custom rule file exists
-      if (!fs.existsSync(customRulePath)) {
-        return null;
+      for (const candidatePath of candidates) {
+        if (fs.existsSync(candidatePath)) {
+          const customPrompt = fs.readFileSync(candidatePath, "utf-8");
+          this.customPromptCache = customPrompt;
+          this.customPromptPath = candidatePath;
+          return customPrompt;
+        }
       }
 
-      // Read custom rule file
-      const customPrompt = fs.readFileSync(customRulePath, "utf-8");
-
-      // Cache the custom prompt and path
-      this.customPromptCache = customPrompt;
-      this.customPromptPath = customRulePath;
-
-      return customPrompt;
+      return null;
     } catch (error) {
       console.error("Error loading custom commit rules:", error);
       return null;
@@ -81,7 +81,7 @@ export class LLMGenerationService {
 
     if (customPrompt) {
       console.log(
-        "Using custom commit rules from .gitmew/commit-rule.generate-commit.md"
+        "Using custom commit rules from .gitmew/commit/rules.md"
       );
     } else {
       console.log("Using default system prompt");

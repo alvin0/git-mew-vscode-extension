@@ -10,7 +10,8 @@ export function registerMarkdownViewerCommand(context: vscode.ExtensionContext):
             'Markdown Viewer',
             vscode.ViewColumn.One,
             {
-                enableScripts: true
+                enableScripts: true,
+                retainContextWhenHidden: true
             }
         );
 

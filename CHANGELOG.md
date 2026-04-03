@@ -1,5 +1,20 @@
 # Change Log
 
+## [0.5.2] - 2026-04-03
+
+### Added
+- **Global Config Management**: New command to manage Git Mew configuration at the user level (~/.gitmew)
+- **Configuration File Organization**: Restructured configuration files into organized subdirectories (commit, review, description) for better management
+- **Enhanced Sidebar**: Added new sidebar views for Graph, Code Review, Settings, and Global Config
+
+### Changed
+- **Template File Structure**: Configuration template files are now organized into subdirectories by function
+- **Custom Provider Support**: Improved support for OpenAI-compatible providers
+
+### Improved
+- **User Experience**: Sidebar interface enhanced with additional views for better workflow integration
+- **Configuration Management**: Easier management of both global and project-level configurations
+
 ## [0.5.1] - 2026-04-02
 
 ### Added

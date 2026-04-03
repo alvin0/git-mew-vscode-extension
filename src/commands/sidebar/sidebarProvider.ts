@@ -6,6 +6,7 @@ import { GitOperations } from './gitOperations';
 import { getGitApi } from './gitHelpers';
 import { getWebviewHtml } from './webviewContent';
 import { resolveFileIconTheme } from './fileIconResolver';
+import { GitMewGraphProvider } from './graphProvider';
 
 export class GitMewSidebarProvider implements vscode.WebviewViewProvider {
 	public static readonly viewType = 'git-mew-commands';
@@ -14,11 +15,23 @@ export class GitMewSidebarProvider implements vscode.WebviewViewProvider {
 	private _context: vscode.ExtensionContext;
 	private _ops: GitOperations;
 	private _stateDisposable?: vscode.Disposable;
+	private _graphProvider?: GitMewGraphProvider;
 
 	constructor(context: vscode.ExtensionContext, gitService: GitService, llmService: LLMService) {
 		this._context = context;
 		this._ops = new GitOperations(gitService, llmService, () =>
 			this._view ? { postMessage: (msg: any) => this._view!.webview.postMessage(msg) } : undefined
+		);
+	}
+
+	get ops(): GitOperations {
+		return this._ops;
+	}
+
+	setGraphProvider(graphProvider: GitMewGraphProvider): void {
+		this._graphProvider = graphProvider;
+		this._ops.setGraphView(() =>
+			this._graphProvider?.view ? { postMessage: (msg: any) => this._graphProvider!.view!.webview.postMessage(msg) } : undefined
 		);
 	}
 
@@ -70,48 +83,16 @@ export class GitMewSidebarProvider implements vscode.WebviewViewProvider {
 			case 'unstage-files': await this._ops.unstageFiles(msg.filePaths); break;
 			case 'discard-files': await this._ops.discardFiles(msg.filePaths); break;
 			case 'open-diff': await this._ops.openDiff(msg.filePath, msg.isStaged); break;
-			case 'open-commit-diff': await this._ops.openCommitFileDiff(msg.sha, msg.filePath); break;
-			case 'get-commit-files': await this._ops.pushCommitFiles(msg.sha); break;
 			case 'discard-file': await this._ops.discardFile(msg.filePath); break;
 			case 'refresh': this._ops.pushState(); this._ops.pushGraph(); break;
 			case 'git-push': await vscode.commands.executeCommand('git.push'); break;
 			case 'git-sync': await vscode.commands.executeCommand('git.sync'); break;
-			case 'undo-commit': await this._ops.undoCommit(msg.sha); break;
-			case 'edit-commit': await this._ops.editCommitMessage(msg.sha, msg.isPushed, msg.message); break;
-			case 'get-commit-message': await this._ops.pushCommitMessage(msg.sha); break;
-			case 'generate-edit-msg': await this._handleGenerateEditMsg(msg.sha); break;
-			case 'undo-edit-msg': await this._ops.undoEditMessage(msg.backup); break;
-			case 'dismiss-edit-backup': await this._ops.dismissEditBackup(msg.backup); break;
-			case 'squash-commits': await this._ops.squashCommits(msg.count, msg.message); break;
-			case 'undo-squash': await this._ops.undoSquash(msg.backup); break;
-			case 'dismiss-squash-backup': await this._ops.dismissSquashBackup(msg.backup); break;
-			case 'get-squash-messages': await this._ops.pushSquashMessages(msg.count); break;
-			case 'generate-squash-msg': await this._handleGenerateSquashMsg(msg.count); break;
 			case 'review-staged': await vscode.commands.executeCommand('git-mew.review-staged-changes'); break;
 			case 'review-merge': await vscode.commands.executeCommand('git-mew.review-merge'); break;
 			case 'review-merged-branch': await vscode.commands.executeCommand('git-mew.review-merged-branch'); break;
 			case 'manage-api-keys': await vscode.commands.executeCommand('git-mew.manage-api-keys'); break;
 			case 'setup-model': await vscode.commands.executeCommand('git-mew.setupModelGenerateCommit'); break;
-		}
-	}
-
-	private async _handleGenerateSquashMsg(count: number): Promise<void> {
-		if (!this._view) return;
-		try {
-			const msg = await this._ops.generateSquashMessage(count);
-			this._view.webview.postMessage({ command: 'squash-msg-generated', text: msg || '' });
-		} catch {
-			this._view.webview.postMessage({ command: 'squash-msg-generated', text: '' });
-		}
-	}
-
-	private async _handleGenerateEditMsg(sha: string): Promise<void> {
-		if (!this._view) return;
-		try {
-			const msg = await this._ops.generateCommitMessageFromSha(sha);
-			this._view.webview.postMessage({ command: 'edit-msg-generated', text: msg || '' });
-		} catch {
-			this._view.webview.postMessage({ command: 'edit-msg-generated', text: '' });
+			case 'publish': await vscode.commands.executeCommand('git-mew.publish'); break;
 		}
 	}
 

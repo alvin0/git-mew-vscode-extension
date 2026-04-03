@@ -8,7 +8,7 @@
 
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.75.1+-blue.svg)](https://code.visualstudio.com/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE.md)
-[![Version](https://img.shields.io/badge/version-0.5.0-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.2-orange.svg)](CHANGELOG.md)
 
 [Features](#features) • [Quick Start](#quick-start) • [Usage](#usage) • [Customization](#customization) • [Providers](#supported-llm-providers)
 
