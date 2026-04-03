@@ -261,12 +261,28 @@ export class GitOperations {
 		const graphView = this._graphView();
 		try {
 			const git = getGitApi();
-			if (!git || git.repositories.length === 0) return;
+			if (!git || git.repositories.length === 0) {
+				graphView?.postMessage({
+					command: 'update-graph', branch: '', upstream: null,
+					ahead: 0, behind: 0, conflicts: [], commits: [],
+					emptyReason: !git ? 'no-git' : 'no-repo'
+				});
+				return;
+			}
 			const repo = git.repositories[0];
 			const root = repo.rootUri.fsPath;
 
 			const head = repo.state.HEAD;
-			const branch = head?.name || 'HEAD';
+			if (!head) {
+				// Repository exists but HEAD is not yet available (e.g. freshly initialized, no commits yet)
+				graphView?.postMessage({
+					command: 'update-graph', branch: '', upstream: null,
+					ahead: 0, behind: 0, conflicts: [], commits: [],
+					emptyReason: 'no-head'
+				});
+				return;
+			}
+			const branch = head.name || 'HEAD';
 			const upstream = head?.upstream;
 			const ahead = head?.ahead ?? 0;
 			const behind = head?.behind ?? 0;
@@ -291,7 +307,13 @@ export class GitOperations {
 			if (mainView && mainView !== graphView) {
 				mainView.postMessage(graphData);
 			}
-		} catch { /* ignore */ }
+		} catch {
+			graphView?.postMessage({
+				command: 'update-graph', branch: '', upstream: null,
+				ahead: 0, behind: 0, conflicts: [], commits: [],
+				emptyReason: 'error'
+			});
+		}
 	}
 
 	async pushCommitFiles(sha: string): Promise<void> {

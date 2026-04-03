@@ -1,4 +1,5 @@
 import { LLMProvider } from '../../llm-adapter';
+import { captureError, ErrorSeverity } from '../../services/sentry';
 import { ReviewErrorPayload } from './types';
 
 export interface ReviewErrorContext {
@@ -12,6 +13,44 @@ export interface ReviewErrorContext {
     hint?: string;
 }
 
+/** Validation / user-input messages — không cần gửi Sentry */
+const VALIDATION_PATTERNS = [
+    'Please select all fields',
+    'must be different',
+];
+
+/** Lỗi cosmetic — chỉ log breadcrumb, không tạo Sentry event */
+const COSMETIC_OPERATIONS = [
+    'repair PlantUML',
+];
+
+function classifyErrorSeverity(error: unknown, context: ReviewErrorContext): ErrorSeverity | 'skip' {
+    const errorStr = error instanceof Error ? error.message : String(error);
+
+    // Validation errors: user chưa nhập đủ → không gửi
+    if (VALIDATION_PATTERNS.some(p => errorStr.includes(p))) {
+        return 'skip';
+    }
+
+    // Cancelled bởi user → không gửi
+    if (errorStr.includes('cancelled') || errorStr.includes('canceled')) {
+        return 'skip';
+    }
+
+    // PlantUML repair fail → cosmetic, chỉ breadcrumb
+    if (COSMETIC_OPERATIONS.includes(context.operation)) {
+        return 'cosmetic';
+    }
+
+    // Error là instance Error có stack → crash thật
+    if (error instanceof Error) {
+        return 'crash';
+    }
+
+    // Còn lại (API error string, unknown) → operational
+    return 'operational';
+}
+
 export function createReviewErrorPayload(
     error: unknown,
     context: ReviewErrorContext,
@@ -19,7 +58,7 @@ export function createReviewErrorPayload(
 ): ReviewErrorPayload {
     const normalizedError = normalizeUnknownError(error);
 
-    return {
+    const payload: ReviewErrorPayload = {
         title: overrides?.title || 'Review workflow failed',
         summary: overrides?.summary || normalizedError.summary,
         rawError: normalizedError.rawError,
@@ -33,6 +72,20 @@ export function createReviewErrorPayload(
         target: context.target,
         hint: overrides?.hint || context.hint,
     };
+
+    const severity = classifyErrorSeverity(error, context);
+    if (severity !== 'skip') {
+        captureError(error, {
+            operation: payload.operation,
+            provider: payload.provider,
+            model: payload.model,
+            command: payload.command,
+            title: payload.title,
+            summary: payload.summary,
+        }, severity);
+    }
+
+    return payload;
 }
 
 function normalizeUnknownError(error: unknown): { summary: string; rawError: string; } {

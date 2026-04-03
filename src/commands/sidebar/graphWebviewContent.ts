@@ -87,7 +87,7 @@ export function getGraphHtml(): string {
 </div>
 <div id="conflict-banner" style="display:none" class="conflict-banner">${svgWarn}<span id="conflict-text"></span></div>
 <div id="sync-info" style="display:none" class="sync-info"></div>
-<ul class="commit-list" id="commit-list"><li class="empty-state">No commits</li></ul>
+<ul class="commit-list" id="commit-list"><li class="empty-state" id="graph-empty-state">Loading...</li></ul>
 
 <!-- Squash message dialog -->
 <div id="squash-dialog" class="squash-dialog" style="display:none">
@@ -171,7 +171,15 @@ function renderGraph(data) {
 	else { conflictEl.style.display = 'none'; }
 
 	const ul = document.getElementById('commit-list');
-	if (!data.commits || data.commits.length === 0) { ul.innerHTML = '<li class="empty-state">No commits</li>'; return; }
+	if (!data.commits || data.commits.length === 0) {
+		let msg = 'No commits';
+		if (data.emptyReason === 'no-git') msg = 'Git not available';
+		else if (data.emptyReason === 'no-repo') msg = 'No repository found';
+		else if (data.emptyReason === 'no-head') msg = 'No commits yet';
+		else if (data.emptyReason === 'error') msg = 'Could not load commits';
+		ul.innerHTML = '<li class="empty-state">' + escapeHtml(msg) + '</li>';
+		return;
+	}
 	const commits = data.commits; const H = 22; const CX = 10; const R = 4; const LANE_W = 12;
 	const lanes = []; const commitLanes = [];
 	for (let i = 0; i < commits.length; i++) {
@@ -281,6 +289,11 @@ function closeEditMsgDialog() {
 	document.body.classList.remove('dialog-open');
 	unlockCheckboxes(); cancelSquash(); _editCommitSha = null;
 }
+function closeEditMsgDialogSilent() {
+	document.getElementById('edit-msg-dialog').style.display = 'none';
+	document.body.classList.remove('dialog-open');
+	_editCommitSha = null;
+}
 function confirmEditMsg() {
 	const msg = document.getElementById('edit-msg-input').value;
 	if (!msg || !msg.trim()) return;
@@ -318,6 +331,11 @@ function closeSquashDialog() {
 	document.body.classList.remove('dialog-open');
 	unlockCheckboxes(); _squashCount = 0;
 }
+function closeSquashDialogSilent() {
+	document.getElementById('squash-dialog').style.display = 'none';
+	document.body.classList.remove('dialog-open');
+	_squashCount = 0;
+}
 function confirmSquash() {
 	const msg = document.getElementById('squash-msg').value;
 	if (!msg || !msg.trim()) return;
@@ -344,13 +362,28 @@ function dismissEditUndo() {
 	_editMsgBackup = null; document.getElementById('undo-edit-banner').style.display = 'none';
 }
 
+let _graphInitialized = false;
+
 window.addEventListener('message', (event) => {
 	const msg = event.data;
 	if (msg.command === 'update-graph') {
-		const hasChecked = document.querySelectorAll('.commit-checkbox:checked').length > 0;
-		const squashOpen = document.getElementById('squash-dialog').style.display !== 'none';
-		const editOpen = document.getElementById('edit-msg-dialog').style.display !== 'none';
-		if (!hasChecked && !squashOpen && !editOpen) { renderGraph(msg); }
+		if (!_graphInitialized) {
+			// First load: always render and reset any stale UI state
+			_graphInitialized = true;
+			cancelSquash();
+			closeEditMsgDialogSilent();
+			closeSquashDialogSilent();
+			document.getElementById('undo-squash-banner').style.display = 'none';
+			document.getElementById('undo-edit-banner').style.display = 'none';
+			_squashBackup = null;
+			_editMsgBackup = null;
+			renderGraph(msg);
+		} else {
+			const hasChecked = document.querySelectorAll('.commit-checkbox:checked').length > 0;
+			const squashOpen = document.getElementById('squash-dialog').style.display !== 'none';
+			const editOpen = document.getElementById('edit-msg-dialog').style.display !== 'none';
+			if (!hasChecked && !squashOpen && !editOpen) { renderGraph(msg); }
+		}
 	}
 	if (msg.command === 'squash-messages') {
 		const ta = document.getElementById('squash-msg');

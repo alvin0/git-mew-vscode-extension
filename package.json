@@ -2,7 +2,7 @@
   "name": "git-mew",
   "displayName": "Git Mew",
   "description": "Your AI kitty for Git chaos - Generate intelligent commit messages using AI",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "icon": "resources/images/logo.png",
   "publisher": "GitMew",
   "engines": {
@@ -76,6 +76,7 @@
           "name": "Graph",
           "type": "webview",
           "retainContextWhenHidden": true,
+          "visibility": "collapsed",
           "icon": "$(git-commit)"
         },
         {
@@ -159,6 +160,11 @@
       {
         "command": "git-mew.show-review-panel",
         "title": "git-mew: Show Review Panel"
+      },
+      {
+        "command": "git-mew.send-feedback",
+        "title": "git-mew: Send Feedback",
+        "icon": "$(feedback)"
       }
     ],
     "menus": {
@@ -380,6 +386,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@sentry/node": "^10.47.0",
     "@types/markdown-it": "^14.1.2",
     "gpt-tokenizer": "^3.4.0",
     "highlight.js": "^11.11.1",

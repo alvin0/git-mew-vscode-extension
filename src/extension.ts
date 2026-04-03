@@ -7,10 +7,15 @@ import { LLMService } from './services/llm';
 import { GitService } from './services/utils/gitService';
 import { createStatusBarItem } from './statusBar';
 import { GitMewSidebarProvider, GitMewGraphProvider, CodeReviewProvider, SettingsProvider } from './commands/sidebar';
+import { initSentry, captureError, flushSentry } from './services/sentry';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is activated
 export async function activate(context: vscode.ExtensionContext) {
+	// Initialize Sentry error tracking
+	const extensionVersion = vscode.extensions.getExtension('GitMew.git-mew')?.packageJSON?.version ?? 'unknown';
+	initSentry(extensionVersion);
+
 	try {
 		// Wait for Git extension to be available
 		const gitExtension = vscode.extensions.getExtension('vscode.git');
@@ -79,6 +84,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		context.subscriptions.push(globalConfigTree);
 		context.subscriptions.push(...registerManageGlobalConfigCommand(globalConfigProvider));
 	} catch (error) {
+		captureError(error, { phase: 'activation' }, 'crash');
 		console.error('Failed to activate Git Mew:', error);
 		vscode.window.showErrorMessage('Failed to activate Git Mew extension. Please check the console for details.');
 		return;
@@ -105,4 +111,6 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 // This method is called when your extension is deactivated
-export function deactivate() {}
+export function deactivate() {
+	flushSentry();
+}

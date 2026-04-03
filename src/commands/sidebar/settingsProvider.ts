@@ -25,6 +25,7 @@ export class SettingsProvider implements vscode.TreeDataProvider<SettingsItem> {
 			new SettingsItem('Publish Rules to .gitmew', 'git-mew.publish', 'add'),
 			new SettingsItem('Setup AI Model', 'git-mew.setupModelGenerateCommit', 'gear'),
 			new SettingsItem('Manage API Keys', 'git-mew.manage-api-keys', 'key'),
+			new SettingsItem('Send Feedback', 'git-mew.send-feedback', 'feedback'),
 		];
 	}
 }

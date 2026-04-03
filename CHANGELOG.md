@@ -1,5 +1,22 @@
 # Change Log
 
+## [0.5.3] - 2026-04-03
+
+### Added
+- **Sentry Error Tracking**: Integrated `@sentry/node` for automatic error reporting with severity classification (crash / operational / cosmetic) and sensitive-data scrubbing via `beforeSend`.
+- **Send Feedback Command**: New `git-mew: Send Feedback` command with a dedicated webview form (category chips, message, optional name/email) that sends user feedback directly to Sentry.
+- **Settings Sidebar Entry**: "Send Feedback" item added to the Settings sidebar view for quick access.
+
+### Changed
+- **Graph View Default Visibility**: Graph sidebar tab now defaults to `collapsed` to reduce initial visual clutter.
+- **Graph Empty-State Messages**: Commit graph shows contextual messages for different states — "Git not available", "No repository found", "No commits yet", "Could not load commits" — instead of a generic "No commits".
+- **Graph First-Load Reset**: First `update-graph` message now resets stale dialog/banner state (squash, edit-message, undo banners) before rendering, preventing leftover UI from previous sessions.
+- **Graph Error Resilience**: `refreshGraph` now sends an explicit empty-state payload on exceptions instead of silently swallowing errors.
+- **Review Error Reporting**: `createReviewErrorPayload` now classifies errors by severity and automatically reports non-validation, non-cancelled errors to Sentry.
+
+### Fixed
+- **Null HEAD Guard**: `refreshGraph` no longer crashes when `repo.state.HEAD` is `null` (e.g. freshly initialized repo with no commits).
+
 ## [0.5.2] - 2026-04-03
 
 ### Added

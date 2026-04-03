@@ -10,6 +10,7 @@ import { registerReviewMergedBranchCommand } from './reviewMergedBranchCommand';
 import { registerReviewStagedChangesCommand } from './reviewStagedChangesCommand';
 import { registerSetupModelCommand } from './setupModelGenerateCommitCommand';
 import { registerReviewPanelCommand } from './reviewPanelCommand';
+import { registerSendFeedbackCommand } from './sendFeedbackCommand';
 
 /**
  * Register all extension commands
@@ -29,7 +30,8 @@ export function registerAllCommands(
 		registerReviewStagedChangesCommand(context, gitService, llmService),
 		registerReviewMergedBranchCommand(context, gitService, llmService),
 		createPublishCommand(context),
-		registerMarkdownViewerCommand(context)
+		registerMarkdownViewerCommand(context),
+		registerSendFeedbackCommand(context)
 	];
 
 	// Add all commands to subscriptions
