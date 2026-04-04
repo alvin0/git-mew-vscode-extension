@@ -6,9 +6,11 @@ import {
   CodeReviewerOutput,
   FlowDiagramOutput,
   ObserverOutput,
+  SecurityAnalystOutput,
   DescriptionAgentReport,
   ChangeAnalyzerOutput,
   ContextInvestigatorOutput,
+  SynthesisAgentContext,
 } from './orchestratorTypes';
 import { UnifiedDiffFile } from '../contextTypes';
 import { ContextBudgetManager } from './ContextBudgetManager';
@@ -17,6 +19,7 @@ import { DependencyGraphIndex } from './DependencyGraphIndex';
 import { ISharedContextStore } from './SharedContextStore';
 import { REVIEW_OUTPUT_CONTRACT } from '../../../prompts/reviewOutputContract';
 import { FunctionCall } from '../../../llm-tools/toolInterface';
+import { SuppressedFinding } from '../reviewMemoryTypes';
 import {
   findReferencesTool,
   getDiagnosticsTool,
@@ -68,7 +71,7 @@ You are a specialized Code Reviewer. Inspect the changed code for:
 
 Output your findings as JSON matching the CodeReviewerOutput schema:
 {
-  "issues": [{ "file", "location", "severity", "category", "description", "suggestion" }],
+  "issues": [{ "file", "location", "severity", "category", "description", "suggestion", "confidence" }],
   "affectedSymbols": [],
   "qualityVerdict": "Critical | Not Bad | Safe | Good | Perfect"
 }
@@ -94,14 +97,23 @@ You look beyond the changed diff to infer:
 - **Missing edge-case coverage** that could cause production issues.
 - **Integration regressions** where changes in one module break consumers.
 
-Produce a short execution todo list with **no more than 4 items**.
+Produce a comprehensive execution todo list. There is NO limit on the number of items — be thorough.
 Each todo item must be action-oriented and testable.
 Prefix each with [Sequential] or [Parallel].
 
+### Tool Usage Priority
+1. Use \`find_references\` to verify integration concerns before reporting them.
+2. Use \`get_symbol_definition\` to understand implementation details of affected symbols.
+3. Only report integration risks that you have verified via tool calls.
+
+### Output Completeness
+- Each TODO item should include: action, rationale, expected outcome, priority.
+- Each risk should include: description, affected areas, likelihood, impact, mitigation.
+
 Output your findings as JSON matching the ObserverOutput schema:
 {
-  "risks": [{ "description", "severity", "affectedArea" }],
-  "todoItems": [{ "action", "parallelizable" }],
+  "risks": [{ "description", "severity", "affectedArea", "confidence", "likelihood", "impact", "mitigation" }],
+  "todoItems": [{ "action", "parallelizable", "rationale", "expectedOutcome", "priority" }],
   "integrationConcerns": []
 }
 Return ONLY valid JSON. Do not wrap in markdown fences.`;
@@ -141,6 +153,40 @@ Explain externally visible behavior, integration effects, or notable side effect
 
 ### Edge Cases and Assumptions
 Explain meaningful edge cases, guards, or assumptions.`;
+
+const SECURITY_AGENT_INSTRUCTIONS = `## Security Analyst Agent
+You are a specialized Security Analyst using Detection-Triage methodology.
+
+### Detection Phase
+Analyze the diff for security vulnerabilities following OWASP Top 10:
+- **Injection** (CWE-79 XSS, CWE-89 SQLi, CWE-78 OS Command, CWE-918 SSRF)
+- **Auth bypass** (CWE-287, CWE-862, CWE-863)
+- **Secrets exposure** (CWE-798 hardcoded credentials, CWE-532 log leakage)
+- **Unsafe deserialization** (CWE-502)
+- **Path traversal** (CWE-22)
+- **Input validation gaps** (CWE-20)
+
+### Taint Analysis
+Trace data flow from untrusted sources to sensitive sinks:
+- Sources: request params, user input, external APIs, environment variables, file reads
+- Sinks: DB queries, file operations, command execution, response rendering, logging
+
+### Confidence Scoring
+Assign confidence (0.0-1.0) per finding:
+- Base: 0.5 when only a risky pattern is visible
+- +0.2 if complete taint flow is traced from source to sink
+- +0.1 if CWE classification strongly matches the code path
+- +0.1 if verified through read_file or get_symbol_definition
+- -0.2 if the finding is only a pattern match without contextual verification
+
+Output JSON matching the SecurityAnalystOutput schema:
+{
+  "vulnerabilities": [{ "file", "location", "cweId", "type", "severity", "confidence", "description", "taintSource", "taintSink", "remediation" }],
+  "authFlowConcerns": [{ "description", "affectedEndpoints", "severity" }],
+  "inputValidationGaps": [{ "file", "location", "inputSource", "missingValidation", "severity" }],
+  "dataExposureRisks": [{ "file", "location", "dataType", "exposureVector", "severity" }]
+}
+Return ONLY valid JSON. Do not wrap in markdown fences.`;
 
 // ── MR Description Agent Instructions ──
 
@@ -213,6 +259,79 @@ export class AgentPromptBuilder {
     return sections.join('\n\n');
   }
 
+  private appendReviewMemoryContext(
+    parts: string[],
+    ctx: AgentPromptBuildContext,
+    options: { historyLimit: number; patternLimit: number; role: string },
+  ): void {
+    if (ctx.relevantPatterns?.length) {
+      const patternText = ctx.relevantPatterns
+        .slice(0, options.patternLimit)
+        .map((pattern) =>
+          `- [${pattern.category}] ${pattern.description} ` +
+          `(seen ${pattern.frequencyCount} times, last: ${new Date(pattern.lastSeen).toLocaleDateString()})`,
+        )
+        .join('\n');
+      parts.push('## Project Patterns from Previous Reviews\n' + patternText);
+    }
+
+    if (ctx.relevantHistory?.length) {
+      const historyText = ctx.relevantHistory
+        .slice(0, options.historyLimit)
+        .map((history) =>
+          `- Review ${new Date(history.timestamp).toLocaleDateString()}: ${history.qualityVerdict}. ` +
+          `${Object.entries(history.issueCounts)
+            .map(([severity, count]) => `${count} ${severity}`)
+            .join(', ') || 'No tracked issues'}`,
+        )
+        .join('\n');
+      parts.push(`## Recent Review History for ${options.role}\n${historyText}`);
+    }
+
+    if (ctx.resolutionStats) {
+      parts.push(
+        '## Resolution Signals\n' +
+        `Overall resolution rate: ${(ctx.resolutionStats.overallRate * 100).toFixed(0)}%\n` +
+        `Agent rates: ${Object.entries(ctx.resolutionStats.byAgent)
+          .map(([agent, rate]) => `${agent}=${(rate * 100).toFixed(0)}%`)
+          .join(', ') || 'N/A'}`,
+      );
+    }
+  }
+
+  private summarizeAllFindings(
+    reports: Array<{ label: string; lines: string[] }>,
+  ): string {
+    return reports
+      .filter((report) => report.lines.length > 0)
+      .map((report) => `## ${report.label}\n${report.lines.join('\n')}`)
+      .join('\n\n');
+  }
+
+  private formatSuppressedFindings(suppressed: SuppressedFinding[]): string {
+    if (suppressed.length === 0) {
+      return 'None';
+    }
+
+    return suppressed
+      .slice(0, 20)
+      .map((finding) =>
+        `- ${finding.issueCategory} in ${finding.filePattern} ` +
+        `(dismissed ${new Date(finding.dismissedAt).toLocaleDateString()})`,
+      )
+      .join('\n');
+  }
+
+  private isCrossValidated(
+    issue: CodeReviewerOutput['issues'][number],
+    securityFindings?: SecurityAnalystOutput,
+  ): boolean {
+    return (securityFindings?.vulnerabilities ?? []).some((vulnerability) =>
+      vulnerability.file === issue.file &&
+      this.wordOverlapRatio(issue.description, vulnerability.description) > 0.4,
+    );
+  }
+
   // ────────────────────────────────────────────
   // Public: Code Reviewer prompt (Phase 1)
   // ────────────────────────────────────────────
@@ -256,6 +375,12 @@ export class AgentPromptBuilder {
       }
     }
 
+    this.appendReviewMemoryContext(parts, ctx, {
+      historyLimit: 2,
+      patternLimit: 10,
+      role: 'Code Reviewer',
+    });
+
     const prompt = parts.join('\n\n');
 
     // Tools: all 6 existing + queryContext
@@ -276,6 +401,70 @@ export class AgentPromptBuilder {
       tools,
       phase: 1,
       outputSchema: 'code-reviewer',
+      selfAudit: true,
+      maxIterations: 3,
+      sharedStore: ctx.sharedContextStore,
+      compareBranch: ctx.compareBranch,
+      gitService: ctx.gitService,
+    };
+  }
+
+  buildSecurityAgentPrompt(
+    ctx: AgentPromptBuildContext,
+    budget: AgentBudgetAllocation,
+  ): AgentPrompt {
+    const systemMessage = this.buildReviewAgentSystemMessage(ctx, SECURITY_AGENT_INSTRUCTIONS);
+    const parts: string[] = [];
+
+    parts.push('## Diff\n' + truncateToTokenBudget(ctx.fullDiff, budget.diffBudget));
+
+    if (ctx.referenceContext) {
+      parts.push(
+        '## Reference Context\n' +
+          truncateToTokenBudget(ctx.referenceContext, budget.referenceBudget),
+      );
+    }
+
+    if (ctx.dependencyGraph) {
+      const graphText = DependencyGraphIndex.serializeForPrompt(ctx.dependencyGraph, 'full');
+      const usedTokens = Math.ceil(parts.join('\n\n').length / 4);
+      const remaining = Math.max(0, budget.totalBudget - usedTokens - budget.sharedContextBudget);
+      parts.push(truncateToTokenBudget(graphText, remaining));
+    }
+
+    if (ctx.sharedContextStore) {
+      const shared = (ctx.sharedContextStore as ISharedContextStore).serializeForAgent(
+        'Security Analyst',
+        budget.sharedContextBudget,
+      );
+      if (shared) {
+        parts.push('## Shared Context\n' + shared);
+      }
+    }
+
+    this.appendReviewMemoryContext(parts, ctx, {
+      historyLimit: 2,
+      patternLimit: 10,
+      role: 'Security Analyst',
+    });
+
+    const prompt = parts.join('\n\n');
+    const tools = combineTools([
+      searchCodeTool,
+      findReferencesTool,
+      readFileTool,
+      getSymbolDefinitionTool,
+      getDiagnosticsTool,
+      queryContextTool,
+    ], ctx.additionalTools);
+
+    return {
+      role: 'Security Analyst',
+      systemMessage,
+      prompt,
+      tools,
+      phase: 1,
+      outputSchema: 'security-analyst',
       selfAudit: true,
       maxIterations: 3,
       sharedStore: ctx.sharedContextStore,
@@ -381,9 +570,17 @@ export class AgentPromptBuilder {
       parts.push(graphText);
     }
 
+    this.appendReviewMemoryContext(parts, ctx, {
+      historyLimit: 3,
+      patternLimit: 10,
+      role: 'Observer',
+    });
+
     const prompt = parts.join('\n\n');
 
     const tools = combineTools([
+      findReferencesTool,
+      getSymbolDefinitionTool,
       getDiagnosticsTool,
       getRelatedFilesTool,
       readFileTool,
@@ -459,6 +656,221 @@ export class AgentPromptBuilder {
       sharedStore: ctx.sharedContextStore,
       compareBranch: ctx.compareBranch,
       gitService: ctx.gitService,
+    };
+  }
+
+  buildSummaryDetailAgentPrompt(
+    ctx: SynthesisAgentContext,
+    budget: AgentBudgetAllocation,
+  ): AgentPrompt {
+    const systemMessage = `You write only sections "## 2. Summary of Changes" and "## 3. Detail Change".
+Return Markdown only.
+- Summary must stay within 100 words.
+- Detail Change should explain behavior and flow, not repeat every finding.
+- Preserve concrete facts from the provided reports.`;
+
+    const prompt = [
+      '## Output Contract',
+      ctx.outputContract,
+      '## Diff Summary',
+      truncateToTokenBudget(ctx.diffSummary, budget.sharedContextBudget),
+      '## Detail Change Agent Report',
+      ctx.detailChangeReport ?? 'None',
+      this.summarizeAllFindings([
+        {
+          label: 'Code Reviewer Findings',
+          lines: (ctx.codeReviewerFindings?.issues ?? []).map(
+            (issue) => `- [${issue.severity}] ${issue.file}:${issue.location} — ${issue.description}`,
+          ),
+        },
+        {
+          label: 'Security Findings',
+          lines: (ctx.securityFindings?.vulnerabilities ?? []).map(
+            (vulnerability) =>
+              `- [${vulnerability.severity}] ${vulnerability.file}:${vulnerability.location} — ${vulnerability.description}`,
+          ),
+        },
+        {
+          label: 'Observer Risks',
+          lines: (ctx.observerFindings?.risks ?? []).map(
+            (risk) => `- [${risk.severity}] ${risk.affectedArea} — ${risk.description}`,
+          ),
+        },
+      ]),
+      'Write both sections now.',
+    ].filter(Boolean).join('\n\n');
+
+    return {
+      role: 'Summary & Detail',
+      systemMessage,
+      prompt,
+      phase: 3,
+      selfAudit: false,
+      maxIterations: 2,
+    };
+  }
+
+  buildImprovementSuggestionsAgentPrompt(
+    ctx: SynthesisAgentContext,
+    _budget: AgentBudgetAllocation,
+  ): AgentPrompt {
+    const systemMessage = `You write only section "## 6. Improvement Suggestions".
+Return Markdown only.
+- Do not limit the number of suggestions.
+- Group findings under category headers such as ### Correctness or ### Security.
+- For each finding, preserve provenance tags like [CR], [SA], and [XV].
+- Keep confidence scores exactly as provided.
+- Add Before/After or Guided Change Snippet blocks when a fix is clear.`;
+
+    const issueLines = (ctx.codeReviewerFindings?.issues ?? []).map((issue) => {
+      const tags = this.isCrossValidated(issue, ctx.securityFindings) ? '[XV][CR]' : '[CR]';
+      return `${tags} [${issue.category}] ${issue.file}:${issue.location} — ${issue.description} ` +
+        `| Fix: ${issue.suggestion} | Confidence: ${Math.round((issue.confidence ?? 0.6) * 100)}%`;
+    });
+
+    const securityLines = (ctx.securityFindings?.vulnerabilities ?? [])
+      .filter((vulnerability) => vulnerability.confidence >= 0.5)
+      .map((vulnerability) =>
+        `[SA] ${vulnerability.file}:${vulnerability.location} — ${vulnerability.cweId} ${vulnerability.description} ` +
+        `| Remediation: ${vulnerability.remediation} | Confidence: ${Math.round(vulnerability.confidence * 100)}%`,
+      );
+
+    const prompt = [
+      '## Output Contract',
+      ctx.outputContract,
+      this.summarizeAllFindings([
+        { label: 'Code Reviewer Findings', lines: issueLines },
+        { label: 'Security Findings', lines: securityLines },
+      ]),
+      '## Suppressed Findings',
+      this.formatSuppressedFindings(ctx.suppressedFindings),
+      '## Resolution Stats',
+      `Overall resolution rate: ${(ctx.resolutionStats.overallRate * 100).toFixed(0)}%`,
+      'Write the improvement suggestions section now.',
+    ].join('\n\n');
+
+    return {
+      role: 'Improvement Suggestions',
+      systemMessage,
+      prompt,
+      tools: [
+        readFileTool,
+        searchCodeTool,
+        getSymbolDefinitionTool,
+        queryContextTool,
+      ],
+      phase: 3,
+      selfAudit: false,
+      maxIterations: 2,
+    };
+  }
+
+  buildRiskTodoAgentPrompt(
+    ctx: SynthesisAgentContext,
+    _budget: AgentBudgetAllocation,
+  ): AgentPrompt {
+    const systemMessage = `You write only sections "## 7. Observer TODO List" and "## 8. Potential Hidden Risks".
+Return Markdown only.
+- Do not limit the number of TODO items or risks.
+- Prefix every TODO with [Sequential] or [Parallel].
+- Include rationale, expected outcome, and priority for each TODO.
+- Include likelihood, impact, and mitigation for each risk when available.
+- Preserve [OB], [SA], and [XV] provenance tags.`;
+
+    const todoLines = (ctx.observerFindings?.todoItems ?? []).map((item) =>
+      `${item.parallelizable ? '[Parallel]' : '[Sequential]'} ${item.action} ` +
+      `| rationale: ${item.rationale ?? 'Investigate impacted paths'} ` +
+      `| expected outcome: ${item.expectedOutcome ?? 'Validated behavior'} ` +
+      `| priority: ${item.priority ?? 'medium'}`,
+    );
+
+    const riskLines = [
+      ...(ctx.observerFindings?.risks ?? []).map((risk) =>
+        `[OB] ${risk.affectedArea} — ${risk.description} ` +
+        `| confidence: ${Math.round((risk.confidence ?? 0.6) * 100)}% ` +
+        `| likelihood: ${risk.likelihood ?? 'medium'} ` +
+        `| impact: ${risk.impact ?? 'Needs verification'} ` +
+        `| mitigation: ${risk.mitigation ?? 'Add targeted validation'}`,
+      ),
+      ...(ctx.securityFindings?.vulnerabilities ?? [])
+        .filter((vulnerability) => vulnerability.confidence >= 0.5)
+        .map((vulnerability) =>
+          `[SA] ${vulnerability.file}:${vulnerability.location} — ${vulnerability.description} ` +
+          `| likelihood: high | impact: ${vulnerability.cweId} vulnerability may affect consumers ` +
+          `| mitigation: ${vulnerability.remediation}`,
+        ),
+    ];
+
+    const verdictLines = (ctx.hypothesisVerdicts ?? []).map(
+      (verdict) =>
+        `- Hypothesis #${verdict.hypothesisIndex}: ${verdict.verdict} — ${verdict.evidence}`,
+    );
+
+    const prompt = [
+      '## Output Contract',
+      ctx.outputContract,
+      this.summarizeAllFindings([
+        { label: 'Observer TODO Items', lines: todoLines },
+        { label: 'Observer Risks', lines: riskLines },
+        { label: 'Hypothesis Verdicts', lines: verdictLines },
+      ]),
+      '## Dependency Graph Summary',
+      ctx.dependencyGraphSummary ?? 'None',
+      'Write the TODO and hidden risks sections now.',
+    ].join('\n\n');
+
+    return {
+      role: 'Risk & TODO',
+      systemMessage,
+      prompt,
+      tools: [
+        findReferencesTool,
+        getRelatedFilesTool,
+        readFileTool,
+        queryContextTool,
+      ],
+      phase: 3,
+      selfAudit: false,
+      maxIterations: 2,
+    };
+  }
+
+  buildDiagramAssessmentAgentPrompt(
+    ctx: SynthesisAgentContext,
+    _budget: AgentBudgetAllocation,
+  ): AgentPrompt {
+    const systemMessage = `You write only sections "## 4. Flow Diagram" and "## 5. Code Quality Assessment".
+Return Markdown only.
+- Keep PlantUML blocks intact.
+- Add one short description per diagram.
+- Use the provided quality verdict and justify it in 2-3 sentences.`;
+
+    const diagrams = (ctx.flowDiagramFindings?.diagrams ?? []).map((diagram) =>
+      `### Diagram: ${diagram.name}\n${diagram.description}\n\`\`\`plantuml\n${diagram.plantumlCode}\n\`\`\``,
+    );
+    const issuesBySeverity = (ctx.codeReviewerFindings?.issues ?? []).map((issue) =>
+      `- [${issue.severity}] ${issue.file}:${issue.location} — ${issue.description}`,
+    );
+
+    const prompt = [
+      '## Output Contract',
+      ctx.outputContract,
+      '## Flow Diagrams',
+      diagrams.length > 0 ? diagrams.join('\n\n') : 'None',
+      '## Code Quality Verdict',
+      ctx.codeReviewerFindings?.qualityVerdict ?? 'Safe',
+      '## Supporting Findings',
+      issuesBySeverity.length > 0 ? issuesBySeverity.join('\n') : 'None',
+      'Write the flow diagram and code quality assessment sections now.',
+    ].join('\n\n');
+
+    return {
+      role: 'Diagram & Assessment',
+      systemMessage,
+      prompt,
+      phase: 3,
+      selfAudit: false,
+      maxIterations: 2,
     };
   }
 

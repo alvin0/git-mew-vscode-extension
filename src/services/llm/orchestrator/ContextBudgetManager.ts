@@ -7,11 +7,19 @@ export const DEFAULT_BUDGET_CONFIG: BudgetManagerConfig = {
   maxSymbolsFormula: (cw: number) => Math.min(Math.floor(cw / 2500), 120),
   maxFilesFormula: (cw: number) => Math.min(Math.floor(cw / 5000), 40),
   agentBudgetRatios: {
-    'Code Reviewer': 0.40,
-    'Flow Diagram': 0.35,
-    'Observer': 0.25,
+    'Code Reviewer': 0.30,
+    'Flow Diagram': 0.20,
+    'Observer': 0.20,
+    'Security Analyst': 0.30,
   },
   safetyThreshold: 0.85,
+};
+
+export const SYNTHESIS_BUDGET_RATIOS: Record<string, number> = {
+  'Summary & Detail': 0.15,
+  'Improvement Suggestions': 0.40,
+  'Risk & TODO': 0.30,
+  'Diagram & Assessment': 0.15,
 };
 
 /** Diff budget ratios per agent role (fraction of total diffTokens) */
@@ -19,6 +27,7 @@ const DIFF_BUDGET_RATIOS: Record<string, number> = {
   'Code Reviewer': 1.00,
   'Flow Diagram': 0.35,
   'Observer': 0.15,
+  'Security Analyst': 1.00,
   'Change Analyzer': 1.00,
   'Context Investigator': 0.25,
 };
@@ -28,6 +37,7 @@ const REFERENCE_BUDGET_RATIOS: Record<string, number> = {
   'Code Reviewer': 0.50,
   'Flow Diagram': 0.30,
   'Observer': 0.20,
+  'Security Analyst': 0.50,
   'Change Analyzer': 0.35,
   'Context Investigator': 0.65,
 };
@@ -121,6 +131,31 @@ export class ContextBudgetManager {
     }
 
     return allocations;
+  }
+
+  allocateSynthesisBudgets(
+    contextWindow: number,
+    maxOutputTokens: number,
+    systemMessageTokens: number,
+  ): AgentBudgetAllocation[] {
+    const safetyMargin = contextWindow > 128_000
+      ? 8192
+      : contextWindow > 32_000
+        ? 4096
+        : 2048;
+
+    const totalInputBudget = Math.max(0, contextWindow - safetyMargin - systemMessageTokens);
+    return Object.entries(SYNTHESIS_BUDGET_RATIOS).map(([agentRole, ratio]) => {
+      const totalBudget = Math.floor(totalInputBudget * ratio);
+      return {
+        agentRole,
+        totalBudget,
+        diffBudget: 0,
+        referenceBudget: 0,
+        sharedContextBudget: Math.floor(totalBudget * 0.8),
+        reservedForOutput: maxOutputTokens,
+      };
+    });
   }
 
   /** Kiểm tra và giảm proportionally nếu vượt safety threshold */

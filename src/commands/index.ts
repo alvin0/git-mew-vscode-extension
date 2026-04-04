@@ -8,6 +8,7 @@ import { createPublishCommand } from './publishCommand';
 import { registerReviewMergeCommand } from './reviewMergeCommand';
 import { registerReviewMergedBranchCommand } from './reviewMergedBranchCommand';
 import { registerReviewStagedChangesCommand } from './reviewStagedChangesCommand';
+import { registerReviewSelectedCommitsCommand } from './reviewSelectedCommitsCommand';
 import { registerSetupModelCommand } from './setupModelGenerateCommitCommand';
 import { registerReviewPanelCommand } from './reviewPanelCommand';
 import { registerSendFeedbackCommand } from './sendFeedbackCommand';
@@ -29,6 +30,7 @@ export function registerAllCommands(
 		registerReviewMergeCommand(context, gitService, llmService),
 		registerReviewStagedChangesCommand(context, gitService, llmService),
 		registerReviewMergedBranchCommand(context, gitService, llmService),
+		registerReviewSelectedCommitsCommand(context, gitService, llmService),
 		createPublishCommand(context),
 		registerMarkdownViewerCommand(context),
 		registerSendFeedbackCommand(context)

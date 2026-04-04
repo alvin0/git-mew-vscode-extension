@@ -80,17 +80,17 @@ export const PROVIDER_UI_METADATA = {
   openai: {
     displayName: 'OpenAI',
     icon: '$(cloud)',
-    description: 'GPT-5, GPT-4.1 models',
+    description: 'GPT-5.4, GPT-5.4 Mini, GPT-5.4 Nano',
   },
   claude: {
     displayName: 'Claude',
     icon: '$(robot)',
-    description: 'Claude Sonnet 4.5',
+    description: 'Claude Sonnet 4.6, Haiku 4.5',
   },
   gemini: {
     displayName: 'Gemini',
     icon: '$(sparkle)',
-    description: 'Gemini 2.5 Pro, Flash',
+    description: 'Gemini 3.1 Pro, 3 Flash',
   },
   ollama: {
     displayName: 'Ollama',

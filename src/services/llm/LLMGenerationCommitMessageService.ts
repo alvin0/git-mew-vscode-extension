@@ -16,6 +16,7 @@ import {
 } from "./contextTypes";
 import { LLMAdapterService } from "./LLMAdapterService";
 import { LLMUIService } from "./LLMUIService";
+import { interpolate } from "../../services/utils/templateInterpolator";
 
 /**
  * Handles LLM-based text generation tasks
@@ -73,22 +74,21 @@ export class LLMGenerationService {
   /**
    * Get the system prompt for commit message generation
    * Checks for custom rules first, falls back to default
-   * @returns System prompt string
    */
-  private async getSystemPrompt(): Promise<string> {
-    // Try to load custom rules
-    const customPrompt = await this.loadCustomCommitRules();
+  private async getSystemPrompt(currentBranch: string): Promise<string> {
+    const customRaw = await this.loadCustomCommitRules();
 
-    if (customPrompt) {
-      console.log(
-        "Using custom commit rules from .gitmew/commit/rules.md"
-      );
+    let customPrompt: string | undefined;
+    if (customRaw) {
+      const workspaceFolders = vscode.workspace.workspaceFolders;
+      const repoName = workspaceFolders?.[0]?.uri.fsPath.split('/').pop() ?? '';
+      customPrompt = interpolate(customRaw, { branch: currentBranch, repoName });
+      console.log("Using custom commit rules from .gitmew/commit/rules.md");
     } else {
       console.log("Using default system prompt");
     }
 
-    // Return the prompt, with or without custom rules
-    return getSystemPrompt(customPrompt ?? undefined);
+    return getSystemPrompt(customPrompt);
   }
 
   private getCommitContextStrategy(): ContextStrategy {
@@ -137,7 +137,7 @@ export class LLMGenerationService {
     }
 
     try {
-      const systemPrompt = await this.getSystemPrompt();
+      const systemPrompt = await this.getSystemPrompt(currentBranch);
       const taskSpec = this.buildCommitTaskSpec(
         currentBranch,
         renderedDiff,

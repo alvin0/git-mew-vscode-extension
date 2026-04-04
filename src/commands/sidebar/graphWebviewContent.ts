@@ -74,6 +74,7 @@ export function getGraphHtml(): string {
 	<button class="squash-cancel-btn" onclick="cancelSquash()">Cancel</button>
 	<button class="squash-btn" id="edit-msg-btn" style="display:none" onclick="doEditCommitMsg()">Edit Message</button>
 	<button class="squash-btn" id="squash-btn" onclick="doSquash()" disabled>Squash</button>
+	<button class="squash-btn" id="review-btn" style="display:none" onclick="doReviewSelected()">Review</button>
 </div>
 <div id="undo-squash-banner" style="display:none" class="undo-squash-banner">
 	<span>Squash completed</span>
@@ -254,6 +255,7 @@ function updateSquashSelection(changedIdx) {
 	const countText = document.getElementById('squash-count-text');
 	const btn = document.getElementById('squash-btn');
 	const editBtn = document.getElementById('edit-msg-btn');
+	const reviewBtn = document.getElementById('review-btn');
 	const count = checks.length;
 	if (count > 0) {
 		toolbar.style.display = 'flex';
@@ -263,6 +265,7 @@ function updateSquashSelection(changedIdx) {
 		editBtn.style.display = count === 1 ? 'inline-block' : 'none';
 		btn.style.display = count >= 2 ? 'inline-block' : 'none';
 		btn.disabled = false;
+		reviewBtn.style.display = 'inline-block';
 	} else { toolbar.style.display = 'none'; }
 }
 
@@ -347,6 +350,41 @@ function generateSquashMsg() {
 	const btn = document.getElementById('squash-generate-btn');
 	btn.disabled = true; btn.style.opacity = '0.4';
 	sendCommand('generate-squash-msg', { count: _squashCount });
+}
+function doReviewSelected() {
+	const checks = Array.from(document.querySelectorAll('.commit-checkbox:checked'));
+	if (checks.length < 1) return;
+	const commits = [];
+	checks.forEach(function(cb) {
+		const li = cb.closest('.commit-item[data-sha]');
+		if (!li) return;
+		const subject = li.querySelector('.commit-subject') ? li.querySelector('.commit-subject').textContent : '';
+		const meta = li.querySelector('.commit-meta');
+		var author = '';
+		var date = '';
+		if (meta) {
+			var text = meta.textContent || '';
+			var parts = text.split(' · ');
+			if (parts.length >= 2) {
+				// For merge commits, meta is "merge · date" — author is not shown
+				// For normal commits, meta is "author · date"
+				var first = parts[0].trim();
+				author = (first === 'merge') ? '' : first;
+				date = parts[parts.length - 1].trim();
+			} else if (parts.length === 1) {
+				date = parts[0].trim();
+			}
+		}
+		commits.push({
+			sha: li.dataset.sha,
+			subject: subject,
+			author: author,
+			date: date
+		});
+	});
+	if (commits.length === 0) return;
+	sendCommand('review-selected-commits', { commits: commits });
+	cancelSquash();
 }
 
 let _squashBackup = null;

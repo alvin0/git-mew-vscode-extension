@@ -138,7 +138,7 @@ export class WebviewMessageHandler {
                 review: result.review,
                 description,
                 rawDiff: result.diff
-            });
+            }, `merge-${compareBranch}-into-${baseBranch}`, model);
         } catch (error) {
             const errorMessage = `Failed to generate review: ${error}`;
             vscode.window.showErrorMessage(errorMessage);

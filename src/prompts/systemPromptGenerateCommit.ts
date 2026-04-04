@@ -1,4 +1,6 @@
 const FORMAT_RULE_DEFAULT = `
+**IMPORTANT: You MUST respond in English language. All commit message content must be written in English.**
+
 ## Formatting Rules
 * Separate subject and body with one blank line  
 * Limit subject to **50 characters** and use **imperative mood**  

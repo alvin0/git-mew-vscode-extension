@@ -76,11 +76,11 @@ suite('ContextBudgetManager', () => {
 
   // ── allocateAgentBudgets ──
 
-  test('allocateAgentBudgets(200000, 128000, 3000, 15000): agent totalBudget ratios are 40%/35%/25%', () => {
+  test('allocateAgentBudgets(200000, 128000, 3000, 15000): agent totalBudget ratios are 30%/20%/20%/30%', () => {
     const mgr = createManager();
     const allocs = mgr.allocateAgentBudgets(200_000, 128_000, 3_000, 15_000);
 
-    assert.strictEqual(allocs.length, 3);
+    assert.strictEqual(allocs.length, 4);
 
     // contextWindow 200k > 128k → safetyMargin = 8192
     const totalInputBudget = 200_000 - 8192;
@@ -91,10 +91,12 @@ suite('ContextBudgetManager', () => {
     const cr = allocs.find(a => a.agentRole === 'Code Reviewer')!;
     const fd = allocs.find(a => a.agentRole === 'Flow Diagram')!;
     const ob = allocs.find(a => a.agentRole === 'Observer')!;
+    const sa = allocs.find(a => a.agentRole === 'Security Analyst')!;
 
-    assert.strictEqual(cr.totalBudget, Math.floor(remainingAfterReference * 0.40));
-    assert.strictEqual(fd.totalBudget, Math.floor(remainingAfterReference * 0.35));
-    assert.strictEqual(ob.totalBudget, Math.floor(remainingAfterReference * 0.25));
+    assert.strictEqual(cr.totalBudget, Math.floor(remainingAfterReference * 0.30));
+    assert.strictEqual(fd.totalBudget, Math.floor(remainingAfterReference * 0.20));
+    assert.strictEqual(ob.totalBudget, Math.floor(remainingAfterReference * 0.20));
+    assert.strictEqual(sa.totalBudget, Math.floor(remainingAfterReference * 0.30));
   });
 
   test('allocateAgentBudgets: diffBudget ratios — CR=100%, FD=35%, Observer=15% of diffTokens', () => {

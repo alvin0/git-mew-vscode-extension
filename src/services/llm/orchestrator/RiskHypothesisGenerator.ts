@@ -3,11 +3,12 @@ import {
   CodeReviewerOutput,
   FlowDiagramOutput,
   DependencyGraphData,
+  SecurityAnalystOutput,
 } from "./orchestratorTypes";
 import { TokenEstimatorService } from "../TokenEstimatorService";
 import { ILLMAdapter } from "../../../llm-adapter/adapterInterface";
 
-const MAX_HYPOTHESES = 8;
+const MAX_HYPOTHESES = 10;
 const MAX_LLM_HYPOTHESES = 4;
 
 const CONFIG_PATTERNS = [
@@ -33,18 +34,20 @@ export class RiskHypothesisGenerator {
     dependencyGraph: DependencyGraphData,
     adapter: ILLMAdapter,
     signal?: AbortSignal,
+    securityOutput?: SecurityAnalystOutput,
   ): Promise<RiskHypothesis[]> {
     const heuristics = this.generateHeuristicHypotheses(
       codeReviewerOutput,
       flowDiagramOutput,
       dependencyGraph,
+      securityOutput,
     );
 
     let combined = [...heuristics];
 
     if (heuristics.length < MAX_HYPOTHESES) {
       try {
-        const summaries = this.buildSummaries(codeReviewerOutput, flowDiagramOutput);
+        const summaries = this.buildSummaries(codeReviewerOutput, flowDiagramOutput, securityOutput);
         const llmHypotheses = await this.generateLLMHypotheses(
           heuristics,
           summaries,
@@ -64,6 +67,7 @@ export class RiskHypothesisGenerator {
     crOutput: CodeReviewerOutput,
     fdOutput: FlowDiagramOutput,
     graph: DependencyGraphData,
+    securityOutput?: SecurityAnalystOutput,
   ): RiskHypothesis[] {
     const hypotheses: RiskHypothesis[] = [];
     const crIssues = crOutput?.issues ?? [];
@@ -78,6 +82,7 @@ export class RiskHypothesisGenerator {
           evidenceNeeded: "Check each consumer file for compatibility with the changed symbol.",
           severityEstimate: "high",
           source: "heuristic",
+          category: "integration",
         });
       }
     }
@@ -91,6 +96,7 @@ export class RiskHypothesisGenerator {
           evidenceNeeded: "Trace data flow through the chain to verify consistency.",
           severityEstimate: "high",
           source: "heuristic",
+          category: "integration",
         });
       }
     }
@@ -108,6 +114,7 @@ export class RiskHypothesisGenerator {
           evidenceNeeded: "Verify consumers are not broken by the critical change.",
           severityEstimate: "high",
           source: "heuristic",
+          category: "correctness",
         });
         break; // One hypothesis per rule to avoid flooding
       }
@@ -127,6 +134,7 @@ export class RiskHypothesisGenerator {
         evidenceNeeded: "Check import graph for cycles involving the new dependencies.",
         severityEstimate: "medium",
         source: "heuristic",
+        category: "correctness",
       });
     }
 
@@ -142,6 +150,7 @@ export class RiskHypothesisGenerator {
         evidenceNeeded: "Review callers of affected functions for error handling adequacy.",
         severityEstimate: "high",
         source: "heuristic",
+        category: "correctness",
       });
     }
 
@@ -157,6 +166,7 @@ export class RiskHypothesisGenerator {
         evidenceNeeded: "Verify environment-specific configurations are consistent.",
         severityEstimate: "medium",
         source: "heuristic",
+        category: "integration",
       });
     }
 
@@ -172,6 +182,7 @@ export class RiskHypothesisGenerator {
         evidenceNeeded: "Check if corresponding test files cover the changed functionality.",
         severityEstimate: "medium",
         source: "heuristic",
+        category: "correctness",
       });
     }
 
@@ -199,7 +210,48 @@ export class RiskHypothesisGenerator {
         evidenceNeeded: "Verify database queries and data transfer objects match the new schema.",
         severityEstimate: "high",
         source: "heuristic",
+        category: "correctness",
       });
+    }
+
+    if (securityOutput?.vulnerabilities?.length) {
+      for (const vulnerability of securityOutput.vulnerabilities) {
+        if (vulnerability.taintSource) {
+          hypotheses.push({
+            question: `Tainted data from "${vulnerability.taintSource}" flows to "${vulnerability.taintSink ?? 'unknown sink'}" in ${vulnerability.file}. Are there other sinks not covered by the diff?`,
+            affectedFiles: [vulnerability.file, ...this.getConsumersForFile(vulnerability.file, graph)],
+            evidenceNeeded: "Check other files that import from this module for similar sink patterns.",
+            severityEstimate: "high",
+            source: "heuristic",
+            category: "security",
+          });
+        }
+
+        const consumers = this.getConsumersForFile(vulnerability.file, graph);
+        if (consumers.length >= 3) {
+          hypotheses.push({
+            question: `Security vulnerability in ${vulnerability.file} (${vulnerability.cweId}). ${consumers.length} consumers may be affected.`,
+            affectedFiles: [vulnerability.file, ...consumers],
+            evidenceNeeded: "Verify consumers handle tainted data safely.",
+            severityEstimate: "high",
+            source: "heuristic",
+            category: "security",
+          });
+        }
+      }
+    }
+
+    if (securityOutput?.authFlowConcerns?.length) {
+      for (const concern of securityOutput.authFlowConcerns) {
+        hypotheses.push({
+          question: `Auth flow concern: "${concern.description}". Are there bypass paths through other endpoints?`,
+          affectedFiles: concern.affectedEndpoints,
+          evidenceNeeded: "Check auth middleware usage across all endpoints.",
+          severityEstimate: "high",
+          source: "heuristic",
+          category: "security",
+        });
+      }
     }
 
     return hypotheses;
@@ -281,6 +333,7 @@ Max ${MAX_LLM_HYPOTHESES} additional hypotheses. Return ONLY the JSON array, no 
           evidenceNeeded: h.evidenceNeeded,
           severityEstimate: h.severityEstimate as "high" | "medium" | "low",
           source: "llm" as const,
+          category: "integration" as const,
         }));
     } catch {
       return [];
@@ -290,6 +343,7 @@ Max ${MAX_LLM_HYPOTHESES} additional hypotheses. Return ONLY the JSON array, no 
   private buildSummaries(
     crOutput: CodeReviewerOutput,
     fdOutput: FlowDiagramOutput,
+    securityOutput?: SecurityAnalystOutput,
   ): string {
     const parts: string[] = [];
     const crIssues = crOutput?.issues ?? [];
@@ -317,6 +371,15 @@ Max ${MAX_LLM_HYPOTHESES} additional hypotheses. Return ONLY the JSON array, no 
       parts.push("\nDiagrams:");
       for (const d of fdDiagrams) {
         parts.push(`- ${d.name} (${d.type}): ${d.description}`);
+      }
+    }
+
+    if (securityOutput?.vulnerabilities?.length) {
+      parts.push("\nSecurity Findings:");
+      for (const vulnerability of securityOutput.vulnerabilities.slice(0, 10)) {
+        parts.push(
+          `- [${vulnerability.severity}] ${vulnerability.file}:${vulnerability.location} — ${vulnerability.cweId}: ${vulnerability.description}`,
+        );
       }
     }
 

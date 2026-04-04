@@ -1,5 +1,11 @@
 import { FunctionCall, ToolExecuteResponse } from "../../../llm-tools/toolInterface";
 import { UnifiedDiffFile } from "../contextTypes";
+import {
+  PatternEntry,
+  ResolutionStats,
+  ReviewSummary,
+  SuppressedFinding,
+} from "../reviewMemoryTypes";
 
 export type BudgetProfile = {
   contextWindow: number;
@@ -28,7 +34,7 @@ export type AgentPrompt = {
   selfAudit?: boolean;
   // Phased execution optional fields
   phase?: number;
-  outputSchema?: 'code-reviewer' | 'flow-diagram' | 'observer';
+  outputSchema?: 'code-reviewer' | 'flow-diagram' | 'observer' | 'security-analyst';
   sharedStore?: SharedContextStore;
   /** Git ref for branch-aware file reading */
   compareBranch?: string;
@@ -157,6 +163,7 @@ export interface CodeReviewerOutput {
     category: 'correctness' | 'security' | 'performance' | 'maintainability' | 'testing';
     description: string;
     suggestion: string;
+    confidence?: number;
   }>;
   affectedSymbols: string[];
   qualityVerdict: 'Critical' | 'Not Bad' | 'Safe' | 'Good' | 'Perfect';
@@ -177,10 +184,17 @@ export interface ObserverOutput {
     description: string;
     severity: 'high' | 'medium' | 'low';
     affectedArea: string;
+    confidence?: number;
+    likelihood?: string;
+    impact?: string;
+    mitigation?: string;
   }>;
   todoItems: Array<{
     action: string;
     parallelizable: boolean;
+    rationale?: string;
+    expectedOutcome?: string;
+    priority?: 'high' | 'medium' | 'low';
   }>;
   integrationConcerns: string[];
   hypothesisVerdicts?: Array<{
@@ -190,10 +204,88 @@ export interface ObserverOutput {
   }>;
 }
 
+export interface SecurityAnalystOutput {
+  vulnerabilities: Array<{
+    file: string;
+    location: string;
+    cweId: string;
+    type:
+      | 'injection'
+      | 'auth_bypass'
+      | 'secrets_exposure'
+      | 'unsafe_deserialization'
+      | 'path_traversal'
+      | 'xss'
+      | 'ssrf'
+      | 'other';
+    severity: 'critical' | 'high' | 'medium' | 'low';
+    confidence: number;
+    description: string;
+    taintSource?: string;
+    taintSink?: string;
+    remediation: string;
+  }>;
+  authFlowConcerns: Array<{
+    description: string;
+    affectedEndpoints: string[];
+    severity: 'critical' | 'high' | 'medium' | 'low';
+  }>;
+  inputValidationGaps: Array<{
+    file: string;
+    location: string;
+    inputSource: string;
+    missingValidation: string;
+    severity: 'critical' | 'high' | 'medium' | 'low';
+  }>;
+  dataExposureRisks: Array<{
+    file: string;
+    location: string;
+    dataType: string;
+    exposureVector: string;
+    severity: 'critical' | 'high' | 'medium' | 'low';
+  }>;
+}
+
+export interface StructuredAuditResult {
+  verdict: 'PASS' | 'NEEDS_REVISION';
+  issues: Array<{
+    severity: 'critical' | 'major' | 'minor';
+    location: string;
+    description: string;
+  }>;
+  additions: unknown[];
+  removals: Array<{
+    findingIndex: number;
+    reason: string;
+  }>;
+  verificationResults?: Array<{
+    findingIndex: number;
+    questions: string[];
+    answers: string[];
+    passed: boolean;
+  }>;
+}
+
+export interface SynthesisAgentContext {
+  diffSummary: string;
+  changedFiles: UnifiedDiffFile[];
+  outputContract: string;
+  suppressedFindings: SuppressedFinding[];
+  resolutionStats: ResolutionStats;
+  codeReviewerFindings?: CodeReviewerOutput;
+  securityFindings?: SecurityAnalystOutput;
+  observerFindings?: ObserverOutput;
+  flowDiagramFindings?: FlowDiagramOutput;
+  detailChangeReport?: string;
+  hypothesisVerdicts?: Array<{ hypothesisIndex: number; verdict: string; evidence: string }>;
+  dependencyGraphSummary?: string;
+}
+
 export type StructuredAgentReport =
   | { role: 'Code Reviewer'; structured: CodeReviewerOutput; raw: string }
   | { role: 'Flow Diagram'; structured: FlowDiagramOutput; raw: string }
-  | { role: 'Observer'; structured: ObserverOutput; raw: string };
+  | { role: 'Observer'; structured: ObserverOutput; raw: string }
+  | { role: 'Security Analyst'; structured: SecurityAnalystOutput; raw: string };
 
 // ─── Risk Hypothesis ───
 
@@ -203,6 +295,7 @@ export interface RiskHypothesis {
   evidenceNeeded: string;
   severityEstimate: 'high' | 'medium' | 'low';
   source: 'heuristic' | 'llm';
+  category?: 'integration' | 'security' | 'correctness' | 'performance';
 }
 
 // ─── Phased Execution Config ───
@@ -251,6 +344,10 @@ export interface AgentPromptBuildContext {
   customSystemPrompt?: string;
   customRules?: string;
   customAgentInstructions?: string;
+  relevantPatterns?: PatternEntry[];
+  relevantHistory?: ReviewSummary[];
+  resolutionStats?: ResolutionStats;
+  suppressedFindings?: SuppressedFinding[];
   /** The branch being reviewed — tools will read file content from this ref */
   compareBranch?: string;
   /** GitService instance for branch-aware file reading */
@@ -293,7 +390,7 @@ export interface ToolResultCacheEntry {
 
 export interface AgentFinding {
   agentRole: string;
-  type: 'issue' | 'flow' | 'risk' | 'todo';
+  type: 'issue' | 'flow' | 'risk' | 'todo' | 'security';
   data: unknown;
   timestamp: number;
 }

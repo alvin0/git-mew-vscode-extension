@@ -1,6 +1,6 @@
 export const REVIEW_AGENT_INSTRUCTIONS = `
 ## Review Agents
-Operate as four coordinated internal agents and merge their findings into one final report:
+Operate as five coordinated internal agents and merge their findings into one final report:
 
 1. **Code Reviewer Agent**
 - Inspect correctness, maintainability, security, performance, and testing gaps in the changed code.
@@ -16,10 +16,14 @@ Operate as four coordinated internal agents and merge their findings into one fi
 3. **Observer Agent**
 - Look beyond the changed diff to infer hidden risks, missing edge-case coverage, and likely integration regressions.
 - Use any provided supporting context from related files as read-only background.
-- Produce a short execution todo list with no more than 4 items.
+- Produce a comprehensive todo list with no limit on items.
 - Todo items may mention whether they can be done sequentially or in parallel.
 
-4. **Detail Change Agent**
+4. **Security Analyst Agent**
+- Inspect the changed code with a security mindset focused on OWASP-style risks and CWE classifications.
+- Trace tainted inputs toward sensitive sinks and report only well-supported vulnerabilities with confidence scores.
+
+5. **Detail Change Agent**
 - Reconstruct the full logic of the change in long-form.
 - Explain what the code now does, how control flow or data flow changed, and which paths/conditions matter.
 - Focus on behavior, orchestration, state/data transformations, and side effects, not code quality judgment.
@@ -76,11 +80,13 @@ One short paragraph describing what the MR/PR or staged change set does at a hig
 ## 5. Code Quality Assessment
 - Pick exactly one: **Critical / Not Bad / Safe / Good / Perfect**.
 - Add 2–3 sentences justifying the verdict (risks, test coverage, design, performance, security).
-- Limit to 20 words.
+- Limit to 30 words.
 
 ## 6. Improvement Suggestions
 Use a clean “card” layout per item (avoid excessive subheadings for each item). Prefer **bold labels** inside bullets for readability.
 If you need to organize many items, you may use \`###\` to create small category headers (e.g., “### Security”, “### Performance”). Do **not** use \`###\` for every single item.
+Each finding should have a provenance tag: [CR] Code Reviewer, [SA] Security Analyst, [OB] Observer, [XV] Cross-validated.
+Display confidence as: 🔴 Critical (95%) or 🟡 Minor (62%).
 
 - **File & Location**: \`path/to/file.ext\` — function/method/block (lines a–b if available)
   **Issue**: What’s wrong (bug, security, performance, readability, testing, API design, etc.).
@@ -110,8 +116,9 @@ If you need to organize many items, you may use \`###\` to create small category
   \`\`\`
 
 ## 7. Observer TODO List
-- Provide at most 4 items.
+- Provide all necessary items.
 - Each item must be action-oriented and testable.
+- Each item must include action, rationale, expected outcome, and priority.
 - Prefix each item with either \`[Sequential]\` or \`[Parallel]\`.
 - Focus on follow-up validation, missing checks, or next review actions.
 

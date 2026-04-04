@@ -10,6 +10,7 @@ import {
     ReviewReferenceContextProvider,
     ReviewReferenceContextResult
 } from '../../commands/reviewShared/referenceContextProvider';
+import { interpolate, TemplateContext } from './templateInterpolator';
 
 export interface GitChange {
     uri: vscode.Uri;
@@ -767,11 +768,13 @@ export class GitService {
     /**
      * Read the first existing file from a list of candidate paths.
      * Priority: project > global (~/.gitmew) > legacy project flat names.
+     * Optionally interpolates template variables if ctx is provided.
      */
-    private readFirstExisting(candidates: string[]): string | undefined {
+    private readFirstExisting(candidates: string[], ctx?: TemplateContext): string | undefined {
         for (const filePath of candidates) {
             if (fs.existsSync(filePath)) {
-                return fs.readFileSync(filePath, 'utf-8').trim();
+                const raw = fs.readFileSync(filePath, 'utf-8').trim();
+                return ctx ? interpolate(raw, ctx) : raw;
             }
         }
         return undefined;
@@ -785,7 +788,7 @@ export class GitService {
      * Get custom code review rules.
      * Priority: project .gitmew/review/code-rules.md > global ~/.gitmew/review/code-rules.md > legacy project code-rule.review-merge.md
      */
-    public async getCustomReviewMergeRules(): Promise<string | undefined> {
+    public async getCustomReviewMergeRules(ctx?: TemplateContext): Promise<string | undefined> {
         try {
             const workspaceRoot = this.getRepository().rootUri.fsPath;
             const projectDir = path.join(workspaceRoot, '.gitmew');
@@ -794,7 +797,7 @@ export class GitService {
                 path.join(projectDir, 'review', 'code-rules.md'),
                 path.join(globalDir, 'review', 'code-rules.md'),
                 path.join(projectDir, 'code-rule.review-merge.md'),
-            ]);
+            ], ctx);
         } catch (error) {
             console.error('Error reading custom review rules:', error);
             return undefined;
@@ -805,7 +808,7 @@ export class GitService {
      * Get custom review system prompt.
      * Priority: project .gitmew/review/system-prompt.md > global ~/.gitmew/review/system-prompt.md > legacy project system-prompt.review-merge.md
      */
-    public async getCustomReviewMergeSystemPrompt(): Promise<string | undefined> {
+    public async getCustomReviewMergeSystemPrompt(ctx?: TemplateContext): Promise<string | undefined> {
         try {
             const workspaceRoot = this.getRepository().rootUri.fsPath;
             const projectDir = path.join(workspaceRoot, '.gitmew');
@@ -814,7 +817,7 @@ export class GitService {
                 path.join(projectDir, 'review', 'system-prompt.md'),
                 path.join(globalDir, 'review', 'system-prompt.md'),
                 path.join(projectDir, 'system-prompt.review-merge.md'),
-            ]);
+            ], ctx);
         } catch (error) {
             console.error('Error reading custom system prompt:', error);
             return undefined;
@@ -825,7 +828,7 @@ export class GitService {
      * Get custom review agent instructions.
      * Priority: project .gitmew/review/agent-rules.md > global ~/.gitmew/review/agent-rules.md > legacy project agent-rule.review-merge.md
      */
-    public async getCustomReviewMergeAgentPrompt(): Promise<string | undefined> {
+    public async getCustomReviewMergeAgentPrompt(ctx?: TemplateContext): Promise<string | undefined> {
         try {
             const workspaceRoot = this.getRepository().rootUri.fsPath;
             const projectDir = path.join(workspaceRoot, '.gitmew');
@@ -834,7 +837,7 @@ export class GitService {
                 path.join(projectDir, 'review', 'agent-rules.md'),
                 path.join(globalDir, 'review', 'agent-rules.md'),
                 path.join(projectDir, 'agent-rule.review-merge.md'),
-            ]);
+            ], ctx);
         } catch (error) {
             console.error('Error reading custom review agent instructions:', error);
             return undefined;
@@ -845,7 +848,7 @@ export class GitService {
      * Get custom description system prompt.
      * Priority: project .gitmew/description/system-prompt.md > global ~/.gitmew/description/system-prompt.md > legacy project system-prompt.description-merge.md
      */
-    public async getCustomDescriptionMergeSystemPrompt(): Promise<string | undefined> {
+    public async getCustomDescriptionMergeSystemPrompt(ctx?: TemplateContext): Promise<string | undefined> {
         try {
             const workspaceRoot = this.getRepository().rootUri.fsPath;
             const projectDir = path.join(workspaceRoot, '.gitmew');
@@ -854,7 +857,7 @@ export class GitService {
                 path.join(projectDir, 'description', 'system-prompt.md'),
                 path.join(globalDir, 'description', 'system-prompt.md'),
                 path.join(projectDir, 'system-prompt.description-merge.md'),
-            ]);
+            ], ctx);
         } catch (error) {
             console.error('Error reading custom system prompt:', error);
             return undefined;
@@ -1094,6 +1097,79 @@ export class GitService {
         }
 
         // Step 3: Render diff string (reuse existing method)
+        const diff = this.renderBranchDiffFiles(changes);
+        return { changes, diff };
+    }
+
+    /**
+     * Get the combined diff for a range of commits (oldest..newest).
+     * Used by "Review Selected Commits" from the graph view.
+     *
+     * @param oldestSha - The oldest commit SHA in the selection (exclusive start)
+     * @param newestSha - The newest commit SHA in the selection (inclusive end)
+     * @returns Object with structured changes and rendered diff string
+     */
+    public async getCommitRangeDiff(oldestSha: string, newestSha: string): Promise<{ changes: UnifiedDiffFile[]; diff: string }> {
+        const repository = this.getRepository();
+        const workspaceRoot = repository.rootUri.fsPath;
+
+        // Determine the range spec. If oldest commit is the root (has no parent),
+        // use diff against the empty tree instead of SHA^.
+        let rangeSpec: string;
+        try {
+            await this.execGitCommand(['rev-parse', '--verify', `${oldestSha}^`]);
+            rangeSpec = `${oldestSha}^..${newestSha}`;
+        } catch {
+            // oldest is the root commit — diff from empty tree to newest
+            const emptyTree = '4b825dc642cb6eb9a060e54bf899d15363da7b23';
+            rangeSpec = `${emptyTree}..${newestSha}`;
+        }
+
+        // Step 1: Get list of changed files
+        const nameStatusOutput = await this.execGitCommand([
+            'diff', '--name-status', rangeSpec
+        ]);
+        if (!nameStatusOutput.trim()) { return { changes: [], diff: '' }; }
+
+        const fileEntries = nameStatusOutput.trim().split('\n')
+            .filter(line => line.trim())
+            .map(line => {
+                const parts = line.split('\t');
+                const status = parts[0].charAt(0);
+                const filePath = parts[parts.length - 1];
+                const originalPath = parts.length > 2 ? parts[1] : undefined;
+                return { status, filePath, originalPath };
+            });
+
+        // Step 2: Get diff for each file
+        const changes: UnifiedDiffFile[] = [];
+        for (const entry of fileEntries) {
+            const fullPath = path.join(workspaceRoot, entry.filePath);
+            let diff: string;
+            let isBinary = false;
+            try {
+                const fileDiff = await this.execGitCommand([
+                    'diff', rangeSpec, '--', entry.filePath
+                ]);
+                const sanitized = this.sanitizeDiffContent(fileDiff);
+                isBinary = await this.isBinaryFile(sanitized, fullPath);
+                diff = isBinary ? 'Binary file' : sanitized;
+            } catch (error) {
+                diff = `Error getting diff: ${error}`;
+            }
+            changes.push({
+                filePath: fullPath,
+                relativePath: entry.filePath,
+                diff,
+                status: this.mapGitStatusChar(entry.status),
+                statusLabel: this.mapGitStatusLabel(entry.status),
+                isDeleted: entry.status === 'D',
+                isBinary,
+                originalFilePath: entry.originalPath ? path.join(workspaceRoot, entry.originalPath) : undefined,
+            });
+        }
+
+        // Step 3: Render diff string
         const diff = this.renderBranchDiffFiles(changes);
         return { changes, diff };
     }

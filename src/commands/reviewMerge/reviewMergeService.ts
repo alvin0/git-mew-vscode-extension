@@ -17,7 +17,28 @@ import { ContextBudgetManager, DEFAULT_BUDGET_CONFIG, DESCRIPTION_BUDGET_CONFIG 
 import { AgentPromptBuilder } from '../../services/llm/orchestrator/AgentPromptBuilder';
 import { DependencyGraphIndex, DEFAULT_GRAPH_CONFIG } from '../../services/llm/orchestrator/DependencyGraphIndex';
 import { TokenEstimatorService } from '../../services/llm/TokenEstimatorService';
-import { AgentPromptBuildContext, StructuredAgentReport, CodeReviewerOutput, FlowDiagramOutput, ObserverOutput, DescriptionAgentReport, ChangeAnalyzerOutput, ContextInvestigatorOutput } from '../../services/llm/orchestrator/orchestratorTypes';
+import {
+    AgentPromptBuildContext,
+    StructuredAgentReport,
+    CodeReviewerOutput,
+    FlowDiagramOutput,
+    ObserverOutput,
+    DescriptionAgentReport,
+    ChangeAnalyzerOutput,
+    ContextInvestigatorOutput,
+    SecurityAnalystOutput,
+    SynthesisAgentContext
+} from '../../services/llm/orchestrator/orchestratorTypes';
+import { ReviewMemoryService } from '../../services/llm/ReviewMemoryService';
+import {
+    PatternEntry,
+    ResolutionStats,
+    ReviewSummary,
+    SuppressedFinding
+} from '../../services/llm/reviewMemoryTypes';
+import { mergeSynthesisOutputs } from '../../services/llm/orchestrator/SynthesisMerger';
+import { REVIEW_OUTPUT_CONTRACT } from '../../prompts/reviewOutputContract';
+import { randomUUID } from 'crypto';
 
 export interface ReviewResult {
     success: boolean;
@@ -44,8 +65,14 @@ export interface PlantUmlRepairResult {
  * Service for handling review merge operations
  */
 export class ReviewMergeService extends ReviewWorkflowServiceBase {
+    private reviewMemory?: ReviewMemoryService;
+
     constructor(gitService: GitService, llmService: LLMService) {
         super(gitService, llmService);
+    }
+
+    setReviewMemory(memory: ReviewMemoryService): void {
+        this.reviewMemory = memory;
     }
 
     /**
@@ -84,9 +111,15 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                 }
 
                 const branchDiff = await this.getBranchDiffPreview(baseBranch, compareBranch);
-                const customSystemPrompt = await this.gitService.getCustomReviewMergeSystemPrompt();
-                const customAgentInstructions = await this.gitService.getCustomReviewMergeAgentPrompt();
-                const customRules = await this.gitService.getCustomReviewMergeRules();
+                const reviewCtx = {
+                    branch: compareBranch,
+                    baseBranch,
+                    compareBranch,
+                    repoName: this.gitService.getWorkspaceRoot().split('/').pop() ?? '',
+                };
+                const customSystemPrompt = await this.gitService.getCustomReviewMergeSystemPrompt(reviewCtx);
+                const customAgentInstructions = await this.gitService.getCustomReviewMergeAgentPrompt(reviewCtx);
+                const customRules = await this.gitService.getCustomReviewMergeRules(reviewCtx);
                 const systemMessage = SYSTEM_PROMPT_GENERATE_REVIEW_MERGE(
                     language,
                     customSystemPrompt,
@@ -94,6 +127,7 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                     customAgentInstructions
                 );
                 const basePrompt = this.buildReviewPrompt(baseBranch, compareBranch, branchDiff.diff, taskInfo);
+                const reviewStartTime = Date.now();
 
                 // ── Step 2: Initialize new pipeline components ──
                 const sharedStore = new SharedContextStoreImpl();
@@ -121,6 +155,28 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                 const budgetAllocations = budgetManager.allocateAgentBudgets(adapterContextWindow, adapterMaxOutputTokens, systemTokens, diffTokens);
                 const safeBudgets = budgetManager.enforceGlobalBudget(budgetAllocations, adapterContextWindow);
 
+                let relevantPatterns: PatternEntry[] = [];
+                let suppressedFindings: SuppressedFinding[] = [];
+                let relevantHistory: ReviewSummary[] = [];
+                let resolutionStats: ResolutionStats = {
+                    overallRate: 0,
+                    byAgent: {},
+                    historicalDismissRates: {},
+                };
+
+                if (this.reviewMemory) {
+                    const fileGlobs = branchDiff.changes.map(file => file.relativePath);
+                    relevantPatterns = await this.reviewMemory.getPatterns(fileGlobs);
+                    suppressedFindings = await this.reviewMemory.getSuppressedFindings();
+                    relevantHistory = await this.reviewMemory.getRelevantHistory(fileGlobs, 3);
+                    resolutionStats = {
+                        overallRate: await this.reviewMemory.getResolutionRate(),
+                        byAgent: await this.reviewMemory.getAgentResolutionRates(),
+                        historicalDismissRates: await this.reviewMemory.getHistoricalDismissRates(),
+                    };
+                    await this.reviewMemory.decayPatterns();
+                }
+
                 // ── Step 5: Re-build reference context with dynamic limits ──
                 const dynamicReferenceContextResult = await this.gitService.buildReviewReferenceContext(branchDiff.changes, {
                     strategy,
@@ -147,88 +203,154 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                     customSystemPrompt,
                     customRules,
                     customAgentInstructions,
+                    relevantPatterns,
+                    relevantHistory,
+                    resolutionStats,
+                    suppressedFindings,
                     compareBranch,
                     gitService: this.gitService,
                 };
-                const codeReviewerAgent = promptBuilder.buildCodeReviewerPrompt(buildContext, safeBudgets[0]);
-                const flowDiagramAgent = promptBuilder.buildFlowDiagramPrompt(buildContext, safeBudgets[1]);
+                const codeReviewerBudget = safeBudgets.find(budget => budget.agentRole === 'Code Reviewer') ?? safeBudgets[0];
+                const flowDiagramBudget = safeBudgets.find(budget => budget.agentRole === 'Flow Diagram') ?? safeBudgets[1];
+                const securityBudget = safeBudgets.find(budget => budget.agentRole === 'Security Analyst') ?? codeReviewerBudget;
+
+                const codeReviewerAgent = promptBuilder.buildCodeReviewerPrompt(buildContext, codeReviewerBudget);
+                const flowDiagramAgent = promptBuilder.buildFlowDiagramPrompt(buildContext, flowDiagramBudget);
+                const securityAgent = promptBuilder.buildSecurityAgentPrompt(buildContext, securityBudget);
                 const detailChangeAgent = promptBuilder.buildDetailChangePrompt(
                     buildContext,
-                    { ...safeBudgets[0], agentRole: 'Detail Change' }
+                    { ...codeReviewerBudget, agentRole: 'Detail Change' }
                 );
 
-                const agents: AgentPrompt[] = [codeReviewerAgent, flowDiagramAgent, detailChangeAgent];
+                const agents: AgentPrompt[] = [codeReviewerAgent, flowDiagramAgent, detailChangeAgent, securityAgent];
+                const reviewRequest = {
+                    adapter: dependencyState.adapter,
+                    strategy,
+                    changes: branchDiff.changes,
+                    signal: abortController.signal,
+                    onProgress,
+                    onLog,
+                    onLlmLog,
+                    task: this.buildMergeReviewTaskSpec(
+                        baseBranch,
+                        compareBranch,
+                        branchDiff.diff,
+                        taskInfo,
+                        systemMessage,
+                        dynamicReferenceContextResult.context
+                    ),
+                };
 
-                // ── Step 7: Execute with phased config ──
-                const review = await this.contextOrchestrator.generateMultiAgentFinalText(
-                    dependencyState.adapter,
-                    agents,
-                    systemMessage,
-                    (reports) => {
-                        // Reconstruct structured reports from SharedContextStore (has real parsed data)
-                        const structuredReports: StructuredAgentReport[] = [];
-                        const crFindings = sharedStore.getAgentFindings('Code Reviewer');
-                        const fdFindings = sharedStore.getAgentFindings('Flow Diagram');
-                        const obsFindings = sharedStore.getAgentFindings('Observer');
-
-                        if (crFindings.length > 0) {
-                            structuredReports.push({
-                                role: 'Code Reviewer',
-                                structured: crFindings[0].data as CodeReviewerOutput,
-                                raw: this.getRawAgentReport(reports, 'Code Reviewer'),
-                            });
-                        }
-                        if (fdFindings.length > 0) {
-                            structuredReports.push({
-                                role: 'Flow Diagram',
-                                structured: fdFindings[0].data as FlowDiagramOutput,
-                                raw: this.getRawAgentReport(reports, 'Flow Diagram'),
-                            });
-                        }
-                        if (obsFindings.length > 0) {
-                            structuredReports.push({
-                                role: 'Observer',
-                                structured: obsFindings[0].data as ObserverOutput,
-                                raw: this.getRawAgentReport(reports, 'Observer'),
-                            });
-                        }
-
-                        // Fallback: if no structured data, build from raw text
-                        if (structuredReports.length === 0) {
-                            return reports.join('\n\n---\n\n');
-                        }
-
-                        return promptBuilder.buildSynthesizerPrompt(
-                            structuredReports,
-                            promptBuilder.buildDiffSummary(branchDiff.changes),
-                            this.getRawAgentReport(reports, 'Detail Change'),
-                        );
-                    },
-                    abortController.signal,
+                const phaseReports = await this.contextOrchestrator.executePhasedAgentReports(
                     {
-                        adapter: dependencyState.adapter,
-                        strategy,
-                        changes: branchDiff.changes,
-                        signal: abortController.signal,
-                        onProgress,
-                        onLog,
-                        onLlmLog,
-                        task: this.buildMergeReviewTaskSpec(
-                            baseBranch,
-                            compareBranch,
-                            branchDiff.diff,
-                            taskInfo,
-                            systemMessage,
-                            dynamicReferenceContextResult.context
-                        ),
-                    },
-                    {
+                        phase1: agents,
+                        phase2: [],
                         sharedStore,
                         promptBuilder,
                         buildContext,
                         budgetAllocations: safeBudgets,
-                    }
+                    },
+                    dependencyState.adapter,
+                    abortController.signal,
+                    reviewRequest
                 );
+
+                const structuredReports: StructuredAgentReport[] = [];
+                const crFindings = sharedStore.getAgentFindings('Code Reviewer');
+                const fdFindings = sharedStore.getAgentFindings('Flow Diagram');
+                const saFindings = sharedStore.getAgentFindings('Security Analyst');
+                const obsFindings = sharedStore.getAgentFindings('Observer');
+
+                if (crFindings.length > 0) {
+                    structuredReports.push({
+                        role: 'Code Reviewer',
+                        structured: crFindings[0].data as CodeReviewerOutput,
+                        raw: this.getRawAgentReport(phaseReports, 'Code Reviewer'),
+                    });
+                }
+                if (fdFindings.length > 0) {
+                    structuredReports.push({
+                        role: 'Flow Diagram',
+                        structured: fdFindings[0].data as FlowDiagramOutput,
+                        raw: this.getRawAgentReport(phaseReports, 'Flow Diagram'),
+                    });
+                }
+                if (saFindings.length > 0) {
+                    structuredReports.push({
+                        role: 'Security Analyst',
+                        structured: saFindings[0].data as SecurityAnalystOutput,
+                        raw: this.getRawAgentReport(phaseReports, 'Security Analyst'),
+                    });
+                }
+                if (obsFindings.length > 0) {
+                    structuredReports.push({
+                        role: 'Observer',
+                        structured: obsFindings[0].data as ObserverOutput,
+                        raw: this.getRawAgentReport(phaseReports, 'Observer'),
+                    });
+                }
+
+                const synthCtx: SynthesisAgentContext = {
+                    diffSummary: promptBuilder.buildDiffSummary(branchDiff.changes),
+                    changedFiles: branchDiff.changes,
+                    outputContract: REVIEW_OUTPUT_CONTRACT,
+                    suppressedFindings,
+                    resolutionStats,
+                    codeReviewerFindings: crFindings[0]?.data as CodeReviewerOutput | undefined,
+                    securityFindings: saFindings[0]?.data as SecurityAnalystOutput | undefined,
+                    observerFindings: obsFindings[0]?.data as ObserverOutput | undefined,
+                    flowDiagramFindings: fdFindings[0]?.data as FlowDiagramOutput | undefined,
+                    detailChangeReport: this.getRawAgentReport(phaseReports, 'Detail Change'),
+                    hypothesisVerdicts: (obsFindings[0]?.data as ObserverOutput | undefined)?.hypothesisVerdicts,
+                    dependencyGraphSummary: dependencyGraph
+                        ? DependencyGraphIndex.serializeForPrompt(dependencyGraph, 'summary')
+                        : undefined,
+                };
+
+                const synthesisBudgets = budgetManager.allocateSynthesisBudgets(
+                    adapterContextWindow,
+                    adapterMaxOutputTokens,
+                    systemTokens,
+                );
+                const summaryBudget = synthesisBudgets.find(budget => budget.agentRole === 'Summary & Detail') ?? synthesisBudgets[0];
+                const improvementBudget = synthesisBudgets.find(budget => budget.agentRole === 'Improvement Suggestions') ?? synthesisBudgets[1];
+                const riskBudget = synthesisBudgets.find(budget => budget.agentRole === 'Risk & TODO') ?? synthesisBudgets[2];
+                const diagramBudget = synthesisBudgets.find(budget => budget.agentRole === 'Diagram & Assessment') ?? synthesisBudgets[3];
+
+                const synthesisAgents = [
+                    promptBuilder.buildSummaryDetailAgentPrompt(synthCtx, summaryBudget),
+                    promptBuilder.buildImprovementSuggestionsAgentPrompt(synthCtx, improvementBudget),
+                    promptBuilder.buildRiskTodoAgentPrompt(synthCtx, riskBudget),
+                    promptBuilder.buildDiagramAssessmentAgentPrompt(synthCtx, diagramBudget),
+                ];
+
+                onProgress?.('Running synthesis agents...');
+                const synthesisOutputs = await this.contextOrchestrator.executeSynthesisAgentReports(
+                    synthesisAgents,
+                    dependencyState.adapter,
+                    abortController.signal,
+                    reviewRequest,
+                );
+
+                const review = mergeSynthesisOutputs(
+                    synthesisOutputs,
+                    branchDiff.changes,
+                    structuredReports,
+                    suppressedFindings,
+                    Date.now() - reviewStartTime,
+                    synthCtx.detailChangeReport,
+                );
+
+                if (this.reviewMemory) {
+                    await this.reviewMemory.savePatterns(structuredReports);
+                    await this.reviewMemory.saveReviewSummary(this.buildReviewSummary(
+                        baseBranch,
+                        compareBranch,
+                        branchDiff.changes,
+                        crFindings[0]?.data as CodeReviewerOutput | undefined,
+                        saFindings[0]?.data as SecurityAnalystOutput | undefined,
+                    ));
+                }
 
                 return {
                     success: true,
@@ -240,6 +362,50 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                 return this.handleGenerationError(error, 'Review generation cancelled.');
             }
         });
+    }
+
+    private buildReviewSummary(
+        baseBranch: string,
+        compareBranch: string,
+        changes: UnifiedDiffFile[],
+        codeReviewer?: CodeReviewerOutput,
+        security?: SecurityAnalystOutput,
+    ): ReviewSummary {
+        const issueCounts: Record<string, number> = {};
+        for (const issue of codeReviewer?.issues ?? []) {
+            issueCounts[issue.severity] = (issueCounts[issue.severity] ?? 0) + 1;
+        }
+
+        const securityVulnCounts: Record<string, number> = {};
+        for (const vulnerability of security?.vulnerabilities ?? []) {
+            securityVulnCounts[vulnerability.type] = (securityVulnCounts[vulnerability.type] ?? 0) + 1;
+        }
+
+        const topFindings = [
+            ...(codeReviewer?.issues ?? []).map(issue => ({
+                severity: issue.severity,
+                description: issue.description,
+                file: issue.file,
+            })),
+            ...(security?.vulnerabilities ?? []).map(vulnerability => ({
+                severity: vulnerability.severity,
+                description: vulnerability.description,
+                file: vulnerability.file,
+            })),
+        ].slice(0, 5);
+
+        return {
+            id: randomUUID(),
+            timestamp: Date.now(),
+            baseBranch,
+            compareBranch,
+            changedFiles: changes.map(change => change.relativePath),
+            qualityVerdict: codeReviewer?.qualityVerdict ?? 'N/A',
+            issueCounts,
+            securityVulnCounts,
+            topFindings,
+            resolutionRate: undefined,
+        };
     }
 
     /**

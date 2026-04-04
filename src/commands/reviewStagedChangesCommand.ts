@@ -8,6 +8,7 @@ import {
     WebviewMessageHandler
 } from './reviewStagedChanges';
 import { loadReviewPreferences } from './reviewShared/preferences';
+import { ReviewMemoryService } from '../services/llm/ReviewMemoryService';
 
 /**
  * Register the review staged changes command
@@ -49,6 +50,7 @@ export function registerReviewStagedChangesCommand(
             );
 
             const reviewStagedChangesService = new ReviewStagedChangesService(gitService, llmService);
+            reviewStagedChangesService.setReviewMemory(new ReviewMemoryService(context.workspaceState));
             const messageHandler = new WebviewMessageHandler(panel, reviewStagedChangesService);
 
             panel.webview.onDidReceiveMessage(

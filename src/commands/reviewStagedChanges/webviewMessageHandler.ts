@@ -103,7 +103,7 @@ export class WebviewMessageHandler {
             postResult(this.panel, {
                 review: result.review,
                 rawDiff: result.diff
-            });
+            }, 'staged-changes', model);
         } catch (error) {
             const errorMessage = `Failed to generate review: ${error}`;
             vscode.window.showErrorMessage(errorMessage);

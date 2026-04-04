@@ -6,8 +6,12 @@ import { GitmewGlobalConfigProvider, registerManageGlobalConfigCommand } from '.
 import { LLMService } from './services/llm';
 import { GitService } from './services/utils/gitService';
 import { createStatusBarItem } from './statusBar';
-import { GitMewSidebarProvider, GitMewGraphProvider, CodeReviewProvider, SettingsProvider } from './commands/sidebar';
+import { GitMewSidebarProvider, GitMewGraphProvider, CodeReviewProvider, SettingsProvider, HistoriesProvider } from './commands/sidebar';
 import { initSentry, captureError, flushSentry } from './services/sentry';
+import { ReviewMemoryService } from './services/llm/ReviewMemoryService';
+import { onHistorySaved } from './commands/reviewShared/panelMessaging';
+import { deleteHistoryFile } from './services/historyService';
+import { getWebviewContent } from './commands/markdownViewer/webviewContentGenerator';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is activated
@@ -33,6 +37,13 @@ export async function activate(context: vscode.ExtensionContext) {
 
 		// Register all commands
 		registerAllCommands(context, gitService, llmService);
+		const reviewMemoryService = new ReviewMemoryService(context.workspaceState);
+		context.subscriptions.push(
+			vscode.commands.registerCommand('gitmew.clearReviewMemory', async () => {
+				await reviewMemoryService.clear();
+				vscode.window.showInformationMessage('Git Mew: Review memory cleared.');
+			})
+		);
 
 		// Create status bar item
 		createStatusBarItem(context);
@@ -83,6 +94,59 @@ export async function activate(context: vscode.ExtensionContext) {
 		});
 		context.subscriptions.push(globalConfigTree);
 		context.subscriptions.push(...registerManageGlobalConfigCommand(globalConfigProvider));
+
+		// Register histories tree view
+		const historiesProvider = new HistoriesProvider();
+		const historiesTree = vscode.window.createTreeView('gitmew-histories', {
+			treeDataProvider: historiesProvider,
+			showCollapseAll: true,
+		});
+		context.subscriptions.push(historiesTree);
+
+		// Auto-refresh histories when a review is saved
+		onHistorySaved(() => historiesProvider.refresh());
+
+		// History commands
+		context.subscriptions.push(
+			vscode.commands.registerCommand('git-mew.history.preview', async (uri: vscode.Uri) => {
+				const panel = vscode.window.createWebviewPanel(
+					'gitmewHistoryViewer',
+					`Review: ${uri.path.split('/').pop()?.replace(/\.md$/, '') ?? 'History'}`,
+					vscode.ViewColumn.One,
+					{ enableScripts: true, retainContextWhenHidden: true }
+				);
+				try {
+					const content = await vscode.workspace.fs.readFile(uri);
+					panel.webview.html = getWebviewContent(content.toString());
+				} catch (error) {
+					vscode.window.showErrorMessage(`Failed to open history file: ${error}`);
+				}
+			}),
+			vscode.commands.registerCommand('git-mew.history.delete', async (item: { filePath?: string }) => {
+				if (!item?.filePath) { return; }
+				const confirm = await vscode.window.showWarningMessage(
+					`Delete history file: ${item.filePath.split('/').pop()}?`,
+					{ modal: true },
+					'Delete'
+				);
+				if (confirm === 'Delete') {
+					try {
+						await deleteHistoryFile(item.filePath);
+						historiesProvider.refresh();
+					} catch (err: unknown) {
+						vscode.window.showErrorMessage(`Failed to delete: ${err}`);
+					}
+				}
+			}),
+			vscode.commands.registerCommand('git-mew.history.refresh', () => {
+				historiesProvider.refresh();
+			}),
+			vscode.commands.registerCommand('git-mew.history.open-in-editor', async (item: { filePath?: string }) => {
+				if (!item?.filePath) { return; }
+				const doc = await vscode.workspace.openTextDocument(item.filePath);
+				await vscode.window.showTextDocument(doc);
+			})
+		);
 	} catch (error) {
 		captureError(error, { phase: 'activation' }, 'crash');
 		console.error('Failed to activate Git Mew:', error);

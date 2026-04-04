@@ -60,7 +60,7 @@ One short paragraph describing what the MR/PR does at a high level. Do not enume
 ## 4. Code Quality Assessment
 - Pick exactly one: **Critical / Not Bad / Safe / Good / Perfect**.  
 - Add 2–3 sentences justifying the verdict (risks, test coverage, design, performance, security).
-- Limit to 20 words.
+- Limit to 30 words.
 
 ## 5. Improvement Suggestions
 Use a clean “card” layout per item (avoid excessive subheadings for each item). Prefer **bold labels** inside bullets for readability.  

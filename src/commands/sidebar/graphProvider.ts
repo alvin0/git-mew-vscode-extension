@@ -107,6 +107,9 @@ ${getGraphScript()}
 			case 'generate-squash-msg':
 				await this._handleGenerateSquashMsg(msg.count);
 				break;
+			case 'review-selected-commits':
+				await vscode.commands.executeCommand('git-mew.review-selected-commits', msg.commits);
+				break;
 			case 'git-push':
 				await vscode.commands.executeCommand('git.push');
 				break;

@@ -138,7 +138,7 @@ export class WebviewMessageHandler {
             postResult(this.panel, {
                 review: result.review,
                 rawDiff: result.diff
-            });
+            }, `merged-branch-${message.branchName || mergeCommitSha.slice(0, 8)}`, model);
         } catch (error) {
             const errorMessage = `Failed to generate review: ${error}`;
             vscode.window.showErrorMessage(errorMessage);

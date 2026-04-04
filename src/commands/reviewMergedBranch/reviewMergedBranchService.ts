@@ -88,10 +88,14 @@ export class ReviewMergedBranchService extends ReviewWorkflowServiceBase {
                 // Step 2: Get diff from merge commit
                 const branchDiff = await this.gitService.getMergedBranchDiff(mergeCommitSha);
 
-                // Step 3: Load custom prompts
-                const customSystemPrompt = await this.gitService.getCustomReviewMergeSystemPrompt();
-                const customAgentInstructions = await this.gitService.getCustomReviewMergeAgentPrompt();
-                const customRules = await this.gitService.getCustomReviewMergeRules();
+                const currentBranch = await this.gitService.getCurrentBranch() ?? '';
+                const reviewCtx = {
+                    branch: currentBranch,
+                    repoName: this.gitService.getWorkspaceRoot().split('/').pop() ?? '',
+                };
+                const customSystemPrompt = await this.gitService.getCustomReviewMergeSystemPrompt(reviewCtx);
+                const customAgentInstructions = await this.gitService.getCustomReviewMergeAgentPrompt(reviewCtx);
+                const customRules = await this.gitService.getCustomReviewMergeRules(reviewCtx);
 
                 // Step 4: Build system message
                 const systemMessage = SYSTEM_PROMPT_GENERATE_REVIEW_MERGE(

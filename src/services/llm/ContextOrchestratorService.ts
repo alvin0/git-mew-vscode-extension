@@ -21,6 +21,7 @@ import {
   BudgetProfile,
   ContextOrchestratorConfig,
   DEFAULT_ORCHESTRATOR_CONFIG,
+  PhasedAgentConfig,
   SharedContextStore,
   AgentPromptBuilder,
   TaskExecutionProfile,
@@ -244,6 +245,24 @@ export class ContextOrchestratorService {
 
     const synthesisPrompt = buildSynthesisPrompt(agentReports);
     return this.generateFinalText(adapter, synthesisSystemMessage, synthesisPrompt, signal, request, "multi-agent-synthesis");
+  }
+
+  public async executePhasedAgentReports(
+    config: PhasedAgentConfig,
+    adapter: ILLMAdapter,
+    signal?: AbortSignal,
+    request?: ContextGenerationRequest,
+  ): Promise<string[]> {
+    return this.multiAgentExecutor.executePhasedAgents(config, adapter, signal, request);
+  }
+
+  public async executeSynthesisAgentReports(
+    agents: AgentPrompt[],
+    adapter: ILLMAdapter,
+    signal?: AbortSignal,
+    request?: ContextGenerationRequest,
+  ): Promise<Map<string, string>> {
+    return this.multiAgentExecutor.executeSynthesisAgents(agents, adapter, signal, request);
   }
 
   /**

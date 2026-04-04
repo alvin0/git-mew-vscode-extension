@@ -1,5 +1,25 @@
 # Change Log
 
+## [0.5.4] - 2026-04-04
+
+### Added
+- **Review Selected Commits**: Select commits on the graph and click "Review" to generate an AI-powered code review from the combined diff of the selected range. Supports single or multiple contiguous commits, including pushed and root commits.
+- **Review History**: Reviews are now auto-saved to `~/.gitmew/.histories/<workspace>/` as Markdown files. A new "Histories" sidebar view lets you preview, open in editor, or delete past reviews.
+- **Security Analyst Agent**: A new dedicated agent performs OWASP-aligned taint analysis, CWE-tagged vulnerability detection, and auth-flow inspection during reviews.
+- **Review Memory**: Cross-session memory tracks recurring patterns, suppressed findings, and resolution history. Repeated low-value findings are automatically de-prioritized. Clear memory via `Git Mew: Clear Review Memory`.
+- **Synthesis Merger**: A new post-pipeline stage deduplicates overlapping findings across agents, merges structured outputs, and produces a cleaner final review.
+- **Risk Hypothesis Verification**: Observer agent now uses tool calls (`find_references`, `get_symbol_definition`) to verify integration risks before reporting them, reducing false positives.
+
+### Changed
+- **Observer Agent**: Removed the 4-item TODO limit — the agent now produces a comprehensive, unbounded todo list with rationale, expected outcome, and priority per item.
+- **Structured Output Enrichment**: Code Reviewer issues and Observer risks now include a `confidence` score. Observer risks also carry `likelihood`, `impact`, and `mitigation` fields.
+- **Review Output Contract**: Updated the review prompt contract to incorporate security analysis sections and richer structured metadata.
+- **Agent Prompt Builder**: Expanded with Security Analyst prompt construction, synthesis context injection, and suppressed-finding awareness.
+- **Budget Manager**: Added helper methods for computing max symbols, max reference files, and reference context budget from the context window.
+
+### Fixed
+- **Root Commit Diff**: `getCommitRangeDiff` now handles the initial commit (no parent) by diffing against the empty tree hash instead of crashing on `SHA^`.
+
 ## [0.5.3] - 2026-04-03
 
 ### Added

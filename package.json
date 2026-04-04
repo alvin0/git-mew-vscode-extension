@@ -2,7 +2,7 @@
   "name": "git-mew",
   "displayName": "Git Mew",
   "description": "Your AI kitty for Git chaos - Generate intelligent commit messages using AI",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "icon": "resources/images/logo.png",
   "publisher": "GitMew",
   "engines": {
@@ -46,7 +46,8 @@
     "onCommand:git-mew.showCommands",
     "onCommand:git-mew.publish",
     "onCommand:git-mew.manage-global-config",
-    "onCommand:git-mew.show-review-panel"
+    "onCommand:git-mew.show-review-panel",
+    "onCommand:gitmew.clearReviewMemory"
   ],
   "extensionDependencies": [
     "vscode.git"
@@ -93,6 +94,12 @@
           "id": "gitmew-global-config",
           "name": "Global Config (~/.gitmew)",
           "icon": "$(folder)"
+        },
+        {
+          "id": "gitmew-histories",
+          "name": "Histories",
+          "icon": "$(history)",
+          "visibility": "visible"
         }
       ]
     },
@@ -131,6 +138,11 @@
         "icon": "$(history)"
       },
       {
+        "command": "git-mew.review-selected-commits",
+        "title": "git-mew: Review Selected Commits",
+        "icon": "$(checklist)"
+      },
+      {
         "command": "git-mew.showCommands",
         "title": "git-mew: Show Commands"
       },
@@ -162,9 +174,33 @@
         "title": "git-mew: Show Review Panel"
       },
       {
+        "command": "gitmew.clearReviewMemory",
+        "title": "Git Mew: Clear Review Memory"
+      },
+      {
         "command": "git-mew.send-feedback",
         "title": "git-mew: Send Feedback",
         "icon": "$(feedback)"
+      },
+      {
+        "command": "git-mew.history.preview",
+        "title": "Preview",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "git-mew.history.delete",
+        "title": "Delete",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "git-mew.history.refresh",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "git-mew.history.open-in-editor",
+        "title": "Open in Editor",
+        "icon": "$(go-to-file)"
       }
     ],
     "menus": {
@@ -172,6 +208,11 @@
         {
           "command": "git-mew.global-config.refresh",
           "when": "view == gitmew-global-config",
+          "group": "navigation"
+        },
+        {
+          "command": "git-mew.history.refresh",
+          "when": "view == gitmew-histories",
           "group": "navigation"
         }
       ],
@@ -185,6 +226,16 @@
           "command": "git-mew.global-config.delete",
           "when": "view == gitmew-global-config && viewItem == gitmew-file-exists",
           "group": "inline"
+        },
+        {
+          "command": "git-mew.history.open-in-editor",
+          "when": "view == gitmew-histories && viewItem == gitmew-history-file",
+          "group": "inline@1"
+        },
+        {
+          "command": "git-mew.history.delete",
+          "when": "view == gitmew-histories && viewItem == gitmew-history-file",
+          "group": "inline@2"
         }
       ],
       "scm/title": [

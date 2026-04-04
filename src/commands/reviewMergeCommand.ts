@@ -6,6 +6,7 @@ import { ModelProvider } from './reviewMerge/modelProvider';
 import { ReviewMergeService } from './reviewMerge/reviewMergeService';
 import { WebviewMessageHandler } from './reviewMerge/webviewMessageHandler';
 import { loadReviewPreferences } from './reviewShared/preferences';
+import { ReviewMemoryService } from '../services/llm/ReviewMemoryService';
 
 /**
  * Register the review merge command
@@ -50,6 +51,7 @@ export function registerReviewMergeCommand(
             );
 
             const reviewMergeService = new ReviewMergeService(gitService, llmService);
+            reviewMergeService.setReviewMemory(new ReviewMemoryService(context.workspaceState));
             const messageHandler = new WebviewMessageHandler(panel, reviewMergeService);
 
             panel.webview.onDidReceiveMessage(

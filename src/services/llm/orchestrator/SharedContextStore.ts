@@ -5,6 +5,7 @@ import {
   RiskHypothesis,
   CodeReviewerOutput,
   FlowDiagramOutput,
+  SecurityAnalystOutput,
 } from './orchestratorTypes';
 import { ToolExecuteResponse } from '../../../llm-tools/toolInterface';
 import { DependencyGraphIndex } from './DependencyGraphIndex';
@@ -257,6 +258,23 @@ export class SharedContextStoreImpl implements ISharedContextStore {
           `Diagrams: ${data.diagrams.length}\n` +
           data.diagrams.map(d => `- ${d.name} (${d.type}): ${d.description}`).join('\n') +
           `\nAffected flows: ${data.affectedFlows.join(', ')}`;
+      }
+      if (f.type === 'security') {
+        const data = f.data as SecurityAnalystOutput;
+        if (!data.vulnerabilities) { return `### From ${f.agentRole}\n${JSON.stringify(f.data, null, 2)}`; }
+        const vulnerabilities = data.vulnerabilities
+          .map((v) =>
+            `- [${v.severity}] ${v.file}:${v.location} — ${v.cweId}: ${v.description} ` +
+            `(confidence: ${v.confidence.toFixed(2)})`,
+          )
+          .join('\n');
+        const authConcerns = data.authFlowConcerns?.length
+          ? `\nAuth concerns:\n${data.authFlowConcerns.map((c) => `- [${c.severity}] ${c.description}`).join('\n')}`
+          : '';
+        return `### From ${f.agentRole}\n` +
+          `Vulnerabilities: ${data.vulnerabilities.length}\n` +
+          vulnerabilities +
+          authConcerns;
       }
       return `### From ${f.agentRole}\n${JSON.stringify(f.data, null, 2)}`;
     }).join('\n\n');

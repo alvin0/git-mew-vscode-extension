@@ -1,14 +1,14 @@
 <div align="center">
 
-# 🐱 Git Mew
+<img src="resources/images/git-mew-logo.png" width="120" alt="Git Mew"/>
 
-### Your AI kitty for Git chaos
+### GitMew - Your AI kitty for Git chaos
 
-**Transform your Git workflow with AI-powered commit messages, staged reviews, merged-branch reviews, and merge request descriptions**
+**AI-powered commit messages, code reviews, and MR descriptions — all inside VS Code.**
 
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.75.1+-blue.svg)](https://code.visualstudio.com/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE.md)
-[![Version](https://img.shields.io/badge/version-0.5.2-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.4-orange.svg)](CHANGELOG.md)
 
 [Features](#features) • [Quick Start](#quick-start) • [Usage](#usage) • [Customization](#customization) • [Providers](#supported-llm-providers)
 
@@ -21,6 +21,14 @@
 Git Mew is your intelligent Git companion that leverages AI to streamline commit creation, code review, and merge history analysis inside VS Code. It helps you move faster without losing visibility into what changed, why it changed, and what still needs attention.
 
 ### Core Capabilities
+
+<table>
+  <tr>
+    <td align="center"><img src="resources/documents/sidebar.png" width="280"/><br/><sub>Sidebar Panel</sub></td>
+    <td align="center"><img src="resources/documents/review-commit.png" width="520"/><br/><sub>Pre-Commit Review</sub></td>
+    <td align="center"><img src="resources/documents/review-merge.png" width="520"/><br/><sub>Code Review</sub></td>
+  </tr>
+</table>
 
 #### Sidebar Panel
 Git Mew now has its own Activity Bar icon. The sidebar gives you a unified workspace for staging, committing, pushing, reviewing, and browsing commit history — all without switching views.
@@ -45,6 +53,12 @@ Generate detailed code reviews for merge requests by comparing any two branches.
 #### Review Merged Branch History
 Inspect code that has already been merged into the current branch by selecting a historical merge commit. This is useful for understanding past work, auditing risky merges, or reviewing work after integration.
 
+#### Review Selected Commits
+Select one or more commits directly from the graph and generate a review from their combined diff. Useful for reviewing a specific set of changes without switching branches or creating merge commits.
+
+#### Review History
+Every review is automatically saved to `~/.gitmew/.histories/` as a Markdown file. Browse, preview, and manage past reviews from the "Histories" sidebar view.
+
 #### Professional MR Descriptions
 Create polished merge request descriptions with smart template selection:
 - **Default**: Standard feature/bugfix descriptions
@@ -60,15 +74,19 @@ Review outputs now include both a concise summary and a longer `Detail Change` s
 #### Context-Aware Analysis
 Git Mew intelligently inspects related files outside the diff to understand runtime flow and catch hidden integration risks.
 
+#### Security Analysis
+A dedicated Security Analyst agent performs OWASP-aligned taint analysis, CWE-tagged vulnerability detection, and auth-flow inspection as part of every review.
+
 ### Power Features
 
-- **Multiple LLM Providers**: OpenAI (GPT-5, GPT-4.1), Claude (Sonnet 4.6), Gemini (3 Pro/Flash), Ollama (local), and custom OpenAI-compatible endpoints
+- **Multiple LLM Providers**: OpenAI (GPT-5.4, GPT-5.4 Mini, GPT-5.4 Nano), Claude (Sonnet 4.6, Haiku 4.5), Gemini (3.1 Pro, 3 Flash), Ollama (local), and custom OpenAI-compatible endpoints
 - **Zero Setup for Ollama**: Run AI models locally without API keys
 - **Conventional Commits**: Automatic formatting following best practices
 - **Multi-Language Support**: Get reviews and descriptions in 8+ languages
 - **Custom Rules**: Define project-specific guidelines via `.gitmew/` folder
 - **Quick Access**: Integrated sidebar in VS Code's Activity Bar and Source Control panel buttons
 - **History-Safe Review Picker**: Review Merged Branch shows the 20 most recent merges by default and uses search for older history to avoid UI lag
+- **Review Memory**: Cross-session memory de-prioritizes recurring low-value findings and tracks resolution history
 - **Status Bar Menu**: Fast access to frequently used commands
 - **Template Publishing**: One-click distribution of customization templates
 - **Cancellable Operations**: Stop generation mid-flight if needed
@@ -82,19 +100,12 @@ Git Mew intelligently inspects related files outside the diff to understand runt
 ### Installation
 
 1. Install Git Mew from the VS Code Marketplace
-2. Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`)
-3. Run `git-mew: Setup Model Generate Commit`
-4. Choose your AI provider and configure:
+2. Click the Git Mew icon in the Activity Bar to open the sidebar
+3. Open **Settings** and configure your AI provider:
    - **OpenAI/Claude/Gemini**: Enter your API key
    - **Ollama**: Just select your local model (no API key needed)
-   - **Custom**: Provide your OpenAI-compatible endpoint URL
-5. Start using Git Mew from the sidebar (Activity Bar icon) or the Command Palette:
-   - `git-mew: Review Staged Changes`
-   - `git-mew: Review Merge`
-   - `git-mew: Review Merged Branch`
-   - `git-mew: Show Review Panel`
-
-That's it! You're ready to go.
+   - **Custom**: Provide your OpenAI-compatible endpoint URL and API key
+4. Start staging, committing, reviewing, and pushing — all from the sidebar
 
 ---
 
@@ -153,7 +164,7 @@ Get AI-powered feedback on your changes before committing. Catch issues early an
 - Improvement suggestions
 - Summary of changes
 - Detail Change walkthrough
-- Security considerations
+- Security analysis (OWASP-aligned, CWE-tagged)
 - PlantUML diagrams showing code flow
 - Related file analysis for context
 - Observer warnings for hidden risks
@@ -187,6 +198,28 @@ Review code that has already been merged into your current branch. This is usefu
 
 ---
 
+### Review Selected Commits
+
+Review a specific set of commits directly from the graph without switching branches or creating merge requests.
+
+**How to use:**
+
+1. Open the Graph view in the Git Mew sidebar
+2. Select one or more commits using the checkboxes
+3. Click the **"Review"** button in the toolbar
+4. A review dashboard opens showing the selected commits
+5. Choose LLM provider, model, and output language
+6. Click **"Generate review"**
+
+**What you get:**
+- Combined diff review across all selected commits
+- Code quality assessment with security analysis
+- Detail Change walkthrough
+- PlantUML diagrams and repair support
+- Review auto-saved to history for later reference
+
+---
+
 ### Generate Code Reviews
 
 Create comprehensive code reviews for merge requests by comparing branches.
@@ -208,10 +241,11 @@ Create comprehensive code reviews for merge requests by comparing branches.
 - Summary of all changes
 - Detail Change walkthrough
 - Code quality assessment
-- Security and performance considerations
+- Security analysis (OWASP-aligned, CWE-tagged)
+- Performance considerations
 - Improvement suggestions
 - PlantUML diagrams visualizing architecture
-- Observer todo list (max 4 items)
+- Observer todo list
 - Related file context for better understanding
 
 ---
@@ -269,20 +303,34 @@ Ollama allows you to run AI models locally without requiring an API key:
 
 Git Mew is highly customizable. Define project-specific rules, prompts, and behaviors to match your team's workflow.
 
-### Quick Start: Publish Templates
+### How Rules Are Loaded (Priority Order)
 
-The easiest way to get started with customization:
+Git Mew resolves customization files using a three-tier priority chain:
 
-1. Run: `git-mew: Publish Files`
-2. Select which template files to copy to your project
-3. Edit the files in `.gitmew/` folder
-4. Git Mew automatically uses your custom rules
+```
+Project (.gitmew/)  >  Global (~/.gitmew/)  >  Built-in defaults
+```
+
+- **Project-level** (`.gitmew/` in your repo root): highest priority, overrides everything. Commit to Git to share with your team.
+- **Global** (`~/.gitmew/` in your home directory): applies to all projects on your machine. Useful for personal preferences.
+- **Built-in defaults**: used when no custom file is found at either level.
+
+This means you can set global baseline rules and override specific ones per project.
+
+### Getting Started: Publish Rules to .gitmew
+
+The sidebar **Settings** panel has a **"Publish Rules to .gitmew"** button. Clicking it opens a picker where you select which template files to copy, then choose the scope:
+
+- **Project** — copies to `.gitmew/` in your workspace root (highest priority, team-shareable)
+- **Global** — copies to `~/.gitmew/` in your home directory (applies to all projects)
+
+After publishing, open the files and edit them to fit your project. Git Mew picks them up automatically on the next run — no restart needed.
 
 ### Customization Files
 
-Create a `.gitmew/` folder in your repository root with any of these files:
+Create a `.gitmew/` folder in your repository root (or `~/.gitmew/` for global config) with any of these files:
 
-#### 1. `commit-rule.generate-commit.md`
+#### 1. `commit/rules.md`
 Define custom rules for commit message generation.
 
 **Example:**
@@ -295,12 +343,12 @@ Define custom rules for commit message generation.
 - Include "Breaking Change:" prefix for breaking changes
 ```
 
-#### 2. `system-prompt.review-merge.md`
+#### 2. `review/system-prompt.md`
 Completely replace the default review system prompt. Full control over AI behavior.
 
 **Use when:** You want to fundamentally change how reviews work.
 
-#### 3. `code-rule.review-merge.md`
+#### 3. `review/code-rules.md`
 Add project-specific review rules on top of the default system prompt.
 
 **Example:**
@@ -320,8 +368,8 @@ Add project-specific review rules on top of the default system prompt.
 - Verify consistent error handling patterns
 ```
 
-#### 4. `agent-rule.review-merge.md`
-Customize internal review agents (flow diagrams, observer checks, domain reviewers).
+#### 4. `review/agent-rules.md`
+Customize internal review agents (flow diagrams, observer checks, security analyst, domain reviewers).
 
 **Example:**
 ```markdown
@@ -332,12 +380,15 @@ Customize internal review agents (flow diagrams, observer checks, domain reviewe
 - Use class diagrams for data model changes
 
 ## Observer Agent
-- Maximum 4 todo items
 - Focus on security and performance issues
 - Flag breaking changes
+
+## Security Analyst Agent
+- Prioritize OWASP Top 10 checks
+- Flag any hardcoded credentials
 ```
 
-#### 5. `system-prompt.description-merge.md`
+#### 5. `description/system-prompt.md`
 Customize merge request description generation and template selection.
 
 **Use when:** You want custom MR description formats or template logic.
@@ -347,62 +398,59 @@ Customize merge request description generation and template selection.
 ```
 your-project/
 ├── .gitmew/
-│   ├── commit-rule.generate-commit.md
-│   ├── system-prompt.review-merge.md
-│   ├── code-rule.review-merge.md
-│   ├── agent-rule.review-merge.md
-│   └── system-prompt.description-merge.md
+│   ├── commit/
+│   │   └── rules.md
+│   ├── review/
+│   │   ├── system-prompt.md
+│   │   ├── code-rules.md
+│   │   └── agent-rules.md
+│   └── description/
+│       └── system-prompt.md
 ├── src/
 └── ...
 ```
 
-### Customization Tips
+### Tips
 
-- Start with `code-rule.review-merge.md` for simple project rules
-- Use `system-prompt.review-merge.md` only if you need complete control
-- Keep rules concise and specific
-- Test your rules with small changes first
-- Share `.gitmew/` folder with your team via Git
+- Start with `review/code-rules.md` — it's additive, so you keep all default review behavior and just layer your project rules on top
+- Use `review/system-prompt.md` only when you need full control over how the review agents behave
+- `review/agent-rules.md` is useful for steering specific agents (e.g. tell the Security Analyst to focus on your auth layer)
+- Keep rules concise — the AI reads them as part of the prompt, so shorter and more specific is better
+- Commit `.gitmew/` to Git so your whole team benefits from the same rules
+- Use `~/.gitmew/` for personal preferences (language, style) that you don't want to impose on the team
+- To change the commit message language, edit `commit/rules.md` and update the line `**IMPORTANT: You MUST respond in English...**` to your target language
+
+### Template Variables
+
+You can use dynamic variables inside any `.gitmew/` rule file. Git Mew replaces them at runtime before sending to the AI:
+
+| Variable | Description | Available in |
+|---|---|---|
+| `{{branch}}` | Current branch name | All rule files |
+| `{{baseBranch}}` | Base branch of the review | Review Merge only |
+| `{{compareBranch}}` | Compare branch of the review | Review Merge only |
+| `{{repoName}}` | Repository folder name | All rule files |
+
+**Example** — `review/code-rules.md`:
+```markdown
+# Project Rules for {{repoName}}
+
+- This review is for branch `{{compareBranch}}` merging into `{{baseBranch}}`
+- Treat `main` as the production branch — flag any direct changes to it
+```
+
+**Example** — `commit/rules.md`:
+```markdown
+# Commit Rules
+
+- Branch: {{branch}} — include ticket number if branch matches `feature/PROJ-*`
+- Maximum subject line: 72 characters
+- **IMPORTANT: You MUST respond in Vietnamese language. All commit message content must be written in Vietnamese.**
+```
+
+Unknown variables (e.g. a typo like `{{branchh}}`) are left as-is in the output.
 
 ---
-
-## Configuration
-
-### Extension Settings
-
-Configure Git Mew through VS Code settings:
-
-#### Commit Generation
-- `git-mew.llmProvider`: Default LLM provider (openai, claude, gemini, ollama, custom)
-- `git-mew.llmModel.openai`: Default OpenAI model
-- `git-mew.llmModel.claude`: Default Claude model
-- `git-mew.llmModel.gemini`: Default Gemini model
-- `git-mew.llmModel.ollama`: Default Ollama model
-- `git-mew.llmModel.custom`: Default custom provider model
-- `git-mew.llmBaseUrl.custom`: Base URL for custom OpenAI-compatible provider
-- `git-mew.commit.contextStrategy`: Context handling strategy (direct, auto, hierarchical)
-
-#### Review & MR Description
-- `git-mew.reviewMerge.provider`: Last used provider for reviews
-- `git-mew.reviewMerge.model`: Last used model for reviews
-- `git-mew.reviewMerge.language`: Default output language (English, Vietnamese, Japanese, etc.)
-- `git-mew.reviewMerge.contextStrategy`: Context handling strategy for reviews
-
-These review settings are shared across the review workspaces, including Review Merge, Review Staged Changes, and Review Merged Branch.
-
-#### Custom Model Limits
-Configure context window and max output tokens for custom models:
-- `git-mew.llmCustomModelContextWindow.[provider]`
-- `git-mew.llmCustomModelMaxOutputTokens.[provider]`
-
-### Managing API Keys
-
-Run `git-mew: Manage API Keys` to:
-- View configured providers
-- Update API keys
-- Remove stored credentials
-
-API keys are stored securely in VS Code's encrypted secret storage.
 
 ---
 
@@ -411,7 +459,7 @@ API keys are stored securely in VS Code's encrypted secret storage.
 Git Mew supports multiple AI providers, giving you flexibility and choice.
 
 ### OpenAI
-**Models:** GPT-5, GPT-5 Mini, GPT-5 Nano, GPT-4.1
+**Models:** GPT-5.4, GPT-5.4 Mini, GPT-5.4 Nano
 
 **Setup:**
 1. Get API key from [OpenAI Platform](https://platform.openai.com/)
@@ -424,7 +472,7 @@ Git Mew supports multiple AI providers, giving you flexibility and choice.
 ---
 
 ### Anthropic Claude
-**Models:** Claude Sonnet 4.5
+**Models:** Claude Sonnet 4.6, Claude Haiku 4.5
 
 **Setup:**
 1. Get API key from [Anthropic Console](https://console.anthropic.com/)
@@ -437,7 +485,7 @@ Git Mew supports multiple AI providers, giving you flexibility and choice.
 ---
 
 ### Google Gemini
-**Models:** Gemini 2.5 Pro, Gemini 2.5 Flash
+**Models:** Gemini 3.1 Pro, Gemini 3 Flash
 
 **Setup:**
 1. Get API key from [Google AI Studio](https://makersuite.google.com/)
@@ -487,7 +535,7 @@ Your data and credentials are protected:
 
 - **API Keys**: Stored in VS Code's encrypted secret storage, never in plain text
 - **Code Privacy**: Your code is only sent to the AI provider you choose
-- **No Telemetry**: Git Mew doesn't collect or store any data
+- **Error Tracking**: Git Mew uses Sentry for anonymous crash reporting with automatic PII scrubbing. No source code is ever included in error reports.
 - **Local Control**: You control which provider and model to use
 - **Ollama Option**: Run completely locally with no external API calls
 
@@ -520,7 +568,6 @@ Future enhancements we're considering:
 - Custom commit message templates
 - Team configuration sharing
 - Automated testing integration
-- More diagram types (architecture, data flow)
 
 Have a feature request? [Open an issue](https://github.com/alvin0/git-mew-vscode-extension/issues)!
 

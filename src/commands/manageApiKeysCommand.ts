@@ -16,7 +16,9 @@ export function registerManageApiKeysCommand(
         PROVIDERS_WITH_API_KEYS.map(async (provider) => {
           const existingKey = await llmService.getApiKey(provider);
           return {
-            label: provider.toUpperCase(),
+            label: existingKey
+              ? `$(key) ${provider.toUpperCase()}`
+              : `$(circle-slash) ${provider.toUpperCase()}`,
             description: existingKey ? "API key saved" : "No API key saved",
             detail: provider,
           };
