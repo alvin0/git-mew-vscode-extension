@@ -1,5 +1,14 @@
 # Change Log
 
+## [0.5.5] - 2026-04-05
+
+### Fixed
+- **UI Graph**: Fixed UI graph rendering issues and improved visual consistency
+- **Merge Conflict Handling**: Improved merge conflict detection and resolution workflow in the sidebar
+
+### Changed
+- **UI Updates**: Enhanced UI components for better user experience
+
 ## [0.5.4] - 2026-04-04
 
 ### Added
