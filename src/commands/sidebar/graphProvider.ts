@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { GitOperations } from './gitOperations';
 import { getGraphHtml, getGraphStyles, getGraphScript } from './graphWebviewContent';
+import type { GitMewSidebarProvider } from './sidebarProvider';
 
 export class GitMewGraphProvider implements vscode.WebviewViewProvider {
 	public static readonly viewType = 'gitmew-graph';
@@ -10,10 +11,15 @@ export class GitMewGraphProvider implements vscode.WebviewViewProvider {
 	private _view?: vscode.WebviewView;
 	private _ops: GitOperations;
 	private _context: vscode.ExtensionContext;
+	private _sidebarProvider?: GitMewSidebarProvider;
 
 	constructor(context: vscode.ExtensionContext, ops: GitOperations) {
 		this._context = context;
 		this._ops = ops;
+	}
+
+	setSidebarProvider(provider: GitMewSidebarProvider): void {
+		this._sidebarProvider = provider;
 	}
 
 	resolveWebviewView(
@@ -79,6 +85,7 @@ ${getGraphScript()}
 				break;
 			case 'edit-commit':
 				await this._ops.editCommitMessage(msg.sha, msg.isPushed, msg.message);
+				if (msg.isPushed) this._sidebarProvider?.setForcePushNeeded(true);
 				break;
 			case 'get-commit-message':
 				await this._ops.pushCommitMessage(msg.sha);
@@ -88,18 +95,23 @@ ${getGraphScript()}
 				break;
 			case 'undo-edit-msg':
 				await this._ops.undoEditMessage(msg.backup);
+				this._sidebarProvider?.setForcePushNeeded(false);
 				break;
 			case 'dismiss-edit-backup':
 				await this._ops.dismissEditBackup(msg.backup);
+				this._sidebarProvider?.setForcePushNeeded(false);
 				break;
 			case 'squash-commits':
 				await this._ops.squashCommits(msg.count, msg.message);
+				if (msg.hasPushed) this._sidebarProvider?.setForcePushNeeded(true);
 				break;
 			case 'undo-squash':
 				await this._ops.undoSquash(msg.backup);
+				this._sidebarProvider?.setForcePushNeeded(false);
 				break;
 			case 'dismiss-squash-backup':
 				await this._ops.dismissSquashBackup(msg.backup);
+				this._sidebarProvider?.setForcePushNeeded(false);
 				break;
 			case 'get-squash-messages':
 				await this._ops.pushSquashMessages(msg.count);

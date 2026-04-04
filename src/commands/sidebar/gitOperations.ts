@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 import { GitService } from '../../services/utils/gitService';
 import { LLMService, UnifiedDiffFile } from '../../services/llm';
 import {
@@ -48,11 +49,12 @@ export class GitOperations {
 		try {
 			const git = getGitApi();
 			if (!git || git.repositories.length === 0) {
-				view.postMessage({ command: 'update-state', staged: [], unstaged: [], commitMsg: '' });
+				view.postMessage({ command: 'update-state', staged: [], unstaged: [], mergeConflicts: [], isMerging: false, commitMsg: '' });
 				return;
 			}
 			const staged: any[] = [];
 			const unstaged: any[] = [];
+			const mergeConflicts: any[] = [];
 			for (const repo of git.repositories) {
 				const root = repo.rootUri.fsPath;
 				for (const c of repo.state.indexChanges) {
@@ -66,10 +68,31 @@ export class GitOperations {
 						status: c.status
 					});
 				}
+				if (repo.state.mergeChanges) {
+					for (const c of repo.state.mergeChanges) {
+						mergeConflicts.push(mapChangeToFileInfo(c, root));
+					}
+				}
 			}
 			const activeRepo = getActiveRepo();
 			const commitMsg = activeRepo?.inputBox.value || '';
-			view.postMessage({ command: 'update-state', staged, unstaged, commitMsg });
+			// Check if we're in a merge state
+			let isMerging = mergeConflicts.length > 0;
+			if (!isMerging && activeRepo) {
+				try {
+					const gitDir = path.join(activeRepo.rootUri.fsPath, '.git');
+					const stat = fs.statSync(gitDir);
+					if (stat.isDirectory()) {
+						isMerging = fs.existsSync(path.join(gitDir, 'MERGE_HEAD'));
+					} else {
+						// Worktree: .git is a file pointing to the real git dir
+						const content = fs.readFileSync(gitDir, 'utf8').trim();
+						const realGitDir = content.replace(/^gitdir:\s*/, '');
+						isMerging = fs.existsSync(path.join(realGitDir, 'MERGE_HEAD'));
+					}
+				} catch { /* ignore */ }
+			}
+			view.postMessage({ command: 'update-state', staged, unstaged, mergeConflicts, isMerging, commitMsg });
 		} catch { /* ignore */ }
 	}
 

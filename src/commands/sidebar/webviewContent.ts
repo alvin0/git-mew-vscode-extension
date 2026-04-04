@@ -80,10 +80,30 @@ function getSourceControlHtml(): string {
 			<span id="push-banner-text">1 commit to push</span>
 			<button class="push-btn" onclick="sendCommand('git-push')" title="Push to remote">Push</button>
 		</div>
+		<div id="force-push-banner" style="display:none" class="force-push-banner">
+			<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8.22 1.754a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368L8.22 1.754zm-1.763-.707c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575L6.457 1.047zM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm-.25-5.25a.75.75 0 0 0-1.5 0v2.5a.75.75 0 0 0 1.5 0v-2.5z"/></svg>
+			<span id="force-push-text">History rewritten — force push required</span>
+			<button class="force-push-btn" onclick="sendCommand('git-force-push')" title="Force push to remote">Force Push</button>
+		</div>
 		<div id="sync-banner" style="display:none" class="sync-banner" onclick="sendCommand('git-sync')">
 			<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834zM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5z"/></svg>
 			<span id="sync-banner-text">Sync Changes</span>
 		</div>
+	</div>
+	<div id="merge-conflict-banner" style="display:none" class="merge-conflict-banner">
+		<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8.22 1.754a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368L8.22 1.754zm-1.763-.707c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575L6.457 1.047zM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm-.25-5.25a.75.75 0 0 0-1.5 0v2.5a.75.75 0 0 0 1.5 0v-2.5z"/></svg>
+		<span id="merge-conflict-text">Resolve conflicts before committing</span>
+		<button id="abort-merge-btn" class="abort-merge-btn" style="display:none" onclick="sendCommand('abort-merge')">Abort Merge</button>
+	</div>
+	<div id="merge-section-header" class="section-header merge-section" style="padding-left:8px;display:none" onclick="toggleSection('merge-body', this)">
+		<span class="hdr-left"><span class="chevron">›</span> Merge Changes</span>
+		<div class="hdr-right" onclick="event.stopPropagation()">
+			<button class="icon-btn" title="Stage All Merge Changes" onclick="sendCommand('stage-all-merge')">+</button>
+			<span class="count merge-count" id="merge-count">0</span>
+		</div>
+	</div>
+	<div id="merge-body" class="section-body" style="display:none">
+		<div class="file-list" id="merge-list"></div>
 	</div>
 	<div id="staged-section-header" class="section-header" style="padding-left:8px;display:none" onclick="toggleSection('staged-body', this)">
 		<span class="hdr-left"><span class="chevron">›</span> Staged Changes</span>
@@ -106,6 +126,13 @@ function getSourceControlHtml(): string {
 	<div id="unstaged-body" class="section-body">
 		<div class="file-list" id="unstaged-list"><div class="empty-state">No changes</div></div>
 	</div>
+</div>
+<div id="merge-context-menu" class="context-menu" style="display:none">
+	<div class="context-menu-item" data-ctx="accept-current">Accept Current Change</div>
+	<div class="context-menu-item" data-ctx="accept-incoming">Accept Incoming Change</div>
+	<div class="context-menu-separator"></div>
+	<div class="context-menu-item" data-ctx="open">Open File</div>
+	<div class="context-menu-item" data-ctx="stage">Stage File</div>
 </div>`;
 }
 
@@ -129,10 +156,15 @@ textarea::placeholder { color: var(--vscode-input-placeholderForeground); }
 .push-banner svg { flex-shrink: 0; opacity: 0.8; } .push-banner span { flex: 1; }
 .push-btn { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 2px; padding: 2px 10px; cursor: pointer; font-size: 11px; font-weight: 500; white-space: nowrap; }
 .push-btn:hover { background: var(--vscode-button-hoverBackground); }
+.force-push-banner { display: flex; align-items: center; gap: 6px; margin-top: 5px; padding: 5px 8px; background: rgba(241,76,76,0.15); border: 1px solid rgba(241,76,76,0.4); border-radius: 2px; font-size: 11px; color: #f14c4c; }
+.force-push-banner svg { flex-shrink: 0; opacity: 0.8; fill: #f14c4c; } .force-push-banner span { flex: 1; color: #f14c4c; }
+.force-push-btn { background: rgba(241,76,76,0.3); color: #fff; border: 1px solid rgba(241,76,76,0.5); border-radius: 2px; padding: 2px 10px; cursor: pointer; font-size: 11px; font-weight: 500; white-space: nowrap; }
+.force-push-btn:hover { background: rgba(241,76,76,0.5); }
 .sync-banner { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 5px; padding: 6px 8px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-radius: 2px; font-size: 12px; font-weight: 500; cursor: pointer; }
 .sync-banner:hover { background: var(--vscode-button-hoverBackground); }
 .commit-area.sync-required .btn-row,
 .commit-area.sync-required .push-banner { display: none !important; }
+.commit-area.sync-required .force-push-banner { display: flex !important; }
 .file-list { list-style: none; user-select: none; }
 .tree-folder { position: relative; }
 .tree-folder-children { position: relative; }
@@ -176,6 +208,18 @@ textarea::placeholder { color: var(--vscode-input-placeholderForeground); }
 .sync-ahead { color: var(--vscode-gitDecoration-addedResourceForeground, #73c991); }
 .sync-behind { color: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d); }
 .conflict-banner { margin: 4px 8px; padding: 6px 8px; background: var(--vscode-inputValidation-errorBackground, rgba(241,76,76,0.15)); border: 1px solid var(--vscode-inputValidation-errorBorder, #f14c4c); border-radius: 3px; font-size: 11px; display: flex; align-items: center; gap: 6px; color: var(--vscode-errorForeground, #f14c4c); }
+.merge-conflict-banner { display: flex; align-items: center; gap: 6px; margin: 4px 8px; padding: 5px 8px; background: rgba(241,76,76,0.12); border: 1px solid rgba(241,76,76,0.35); border-radius: 2px; font-size: 11px; color: #f14c4c; }
+.merge-conflict-banner svg { flex-shrink: 0; fill: #f14c4c; }
+.merge-conflict-banner span { flex: 1; }
+.abort-merge-btn { background: rgba(241,76,76,0.25); color: #f14c4c; border: 1px solid rgba(241,76,76,0.4); border-radius: 2px; padding: 1px 8px; cursor: pointer; font-size: 10px; font-weight: 500; white-space: nowrap; flex-shrink: 0; }
+.abort-merge-btn:hover { background: rgba(241,76,76,0.4); }
+.merge-section { color: #f14c4c; }
+.merge-count { background: rgba(241,76,76,0.3); color: #f14c4c; }
+#merge-list .status-U { color: #f14c4c; }
+.context-menu { position: fixed; z-index: 200; background: var(--vscode-menu-background, var(--vscode-editorWidget-background)); border: 1px solid var(--vscode-menu-border, var(--vscode-editorWidget-border, rgba(255,255,255,0.15))); border-radius: 4px; padding: 4px 0; min-width: 180px; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+.context-menu-item { padding: 4px 12px; font-size: 12px; cursor: pointer; color: var(--vscode-menu-foreground, var(--vscode-foreground)); }
+.context-menu-item:hover { background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground)); color: var(--vscode-menu-selectionForeground, var(--vscode-foreground)); }
+.context-menu-separator { height: 1px; margin: 4px 8px; background: var(--vscode-menu-separatorBackground, rgba(255,255,255,0.1)); }
 </style>
 ` + getScriptBody();
 }
@@ -184,7 +228,7 @@ function getScriptBody(): string {
 	return `<script>
 const vscode = acquireVsCodeApi();
 function sendCommand(cmd, extra) { vscode.postMessage({ command: cmd, ...extra }); }
-function doCommit() { const msg = document.getElementById('commit-msg').value; vscode.postMessage({ command: 'commit', message: msg }); }
+function doCommit() { if (_staged.length === 0) return; const msg = document.getElementById('commit-msg').value; vscode.postMessage({ command: 'commit', message: msg }); }
 document.getElementById('commit-msg').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.ctrlKey) doCommit(); });
 const commitMsg = document.getElementById('commit-msg');
 function autoResize(el) { el.style.height = 'auto'; el.style.height = (el.value ? Math.min(el.scrollHeight, 200) : 28) + 'px'; }
@@ -238,6 +282,35 @@ function renderUnstagedList(files) {
 	document.getElementById('unstaged-count').textContent = files.length;
 	if (!files.length) { el.innerHTML = '<div class="empty-state">No changes</div>'; return; }
 	el.innerHTML = buildFileTree(files, 'unstaged');
+}
+
+var _mergeConflicts = [];
+function renderMergeList(files) {
+	_mergeConflicts = files;
+	var el = document.getElementById('merge-list');
+	var hdr = document.getElementById('merge-section-header');
+	var body = document.getElementById('merge-body');
+	var banner = document.getElementById('merge-conflict-banner');
+	document.getElementById('merge-count').textContent = files.length;
+	if (!files.length) { hdr.style.display = 'none'; body.style.display = 'none'; banner.style.display = 'none'; el.innerHTML = ''; return; }
+	hdr.style.display = ''; body.style.display = ''; banner.style.display = 'flex';
+	document.getElementById('merge-conflict-text').textContent = 'Resolve conflicts before committing';
+	el.innerHTML = files.map(function(f, i) {
+		return '<div class="file-item" data-merge-idx="'+i+'" title="'+escapeHtml(f.filePath)+'" style="padding-left:20px">' +
+			'<span class="file-icon">' + getFileIcon(f.fileName, 'U') + '</span>' +
+			'<span class="file-name">' + escapeHtml(f.fileName) + '</span>' +
+			'<div class="file-actions">' +
+				'<button class="file-action-btn" data-merge-action="open" data-merge-file-idx="'+i+'" title="Open File">○</button>' +
+				'<button class="file-action-btn" data-merge-action="stage" data-merge-file-idx="'+i+'" title="Stage Changes">+</button>' +
+			'</div>' +
+			'<span class="status-badge status-U">U</span>' +
+			'</div>';
+	}).join('');
+}
+
+function escapeHtml(str) {
+	if (typeof str !== 'string') return '';
+	return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 function buildFileTree(files, type) {
@@ -330,6 +403,7 @@ function renderTreeNode(node, type, depth) {
 let _staged = [], _unstaged = [];
 var _selection = { staged: new Set(), unstaged: new Set() };
 var _lastClickIdx = { staged: -1, unstaged: -1 };
+var _forcePushActive = false;
 
 function handleFileSelect(type, idx, e) {
 	var sel = _selection[type];
@@ -457,12 +531,66 @@ document.getElementById('unstaged-list').addEventListener('click', (e) => {
 	else { handleFileSelect('unstaged', idx, e); const f = _unstaged[idx]; if (f && !e.shiftKey) sendCommand('open-diff', { filePath: f.filePath, isStaged: false }); }
 });
 
+document.getElementById('merge-list').addEventListener('click', (e) => {
+	const actionBtn = e.target.closest('[data-merge-action]');
+	if (actionBtn) {
+		e.stopPropagation();
+		const idx = parseInt(actionBtn.dataset.mergeFileIdx);
+		const f = _mergeConflicts[idx];
+		if (!f) return;
+		if (actionBtn.dataset.mergeAction === 'stage') {
+			sendCommand('stage-file', { filePath: f.filePath });
+		} else if (actionBtn.dataset.mergeAction === 'open') {
+			sendCommand('open-merge-editor', { filePath: f.filePath });
+		}
+		return;
+	}
+	const li = e.target.closest('.file-item[data-merge-idx]');
+	if (!li) return;
+	const idx = parseInt(li.dataset.mergeIdx);
+	const f = _mergeConflicts[idx];
+	if (f) sendCommand('open-merge-editor', { filePath: f.filePath });
+});
+
+var _ctxMergeIdx = -1;
+document.getElementById('merge-list').addEventListener('contextmenu', (e) => {
+	const li = e.target.closest('.file-item[data-merge-idx]');
+	if (!li) return;
+	e.preventDefault();
+	_ctxMergeIdx = parseInt(li.dataset.mergeIdx);
+	const menu = document.getElementById('merge-context-menu');
+	menu.style.display = 'block';
+	menu.style.left = Math.min(e.clientX, window.innerWidth - 200) + 'px';
+	menu.style.top = Math.min(e.clientY, window.innerHeight - 120) + 'px';
+});
+document.getElementById('merge-context-menu').addEventListener('click', (e) => {
+	const item = e.target.closest('[data-ctx]');
+	if (!item || _ctxMergeIdx < 0) return;
+	const f = _mergeConflicts[_ctxMergeIdx];
+	if (!f) return;
+	const action = item.dataset.ctx;
+	if (action === 'accept-current') sendCommand('accept-merge', { filePath: f.filePath, type: 'current' });
+	else if (action === 'accept-incoming') sendCommand('accept-merge', { filePath: f.filePath, type: 'incoming' });
+	else if (action === 'open') sendCommand('open-merge-editor', { filePath: f.filePath });
+	else if (action === 'stage') sendCommand('stage-file', { filePath: f.filePath });
+	hideContextMenu();
+});
+function hideContextMenu() {
+	document.getElementById('merge-context-menu').style.display = 'none';
+	_ctxMergeIdx = -1;
+}
+document.addEventListener('click', hideContextMenu);
+document.addEventListener('contextmenu', (e) => {
+	if (!e.target.closest('#merge-list')) hideContextMenu();
+});
+
 window.addEventListener('message', (event) => {
 	const msg = event.data;
 	if (msg.command === 'icon-theme') {
 		_iconTheme = msg.theme;
 		renderStagedList(_staged);
 		renderUnstagedList(_unstaged);
+		renderMergeList(_mergeConflicts);
 	}
 	if (msg.command === 'update-state') {
 		var newStaged = msg.staged || []; var newUnstaged = msg.unstaged || [];
@@ -478,6 +606,22 @@ window.addEventListener('message', (event) => {
 		_staged = newStaged; _unstaged = newUnstaged;
 		if (stagedChanged) { _selection.staged.clear(); renderStagedList(_staged); }
 		if (unstagedChanged) { _selection.unstaged.clear(); renderUnstagedList(_unstaged); }
+		// Merge conflicts
+		var newMerge = msg.mergeConflicts || [];
+		renderMergeList(newMerge);
+		// Show/hide abort merge button based on merge state
+		var abortBtn = document.getElementById('abort-merge-btn');
+		var mergeBanner = document.getElementById('merge-conflict-banner');
+		if (msg.isMerging) {
+			if (abortBtn) abortBtn.style.display = '';
+			if (newMerge.length === 0 && mergeBanner) {
+				// Merging but all conflicts resolved — show banner with different text
+				mergeBanner.style.display = 'flex';
+				document.getElementById('merge-conflict-text').textContent = 'All conflicts resolved — commit to complete merge';
+			}
+		} else {
+			if (abortBtn) abortBtn.style.display = 'none';
+		}
 		if (savedStagedSel && savedStagedSel.length) {
 			savedStagedSel.forEach(function(fp) { var i = _staged.findIndex(function(f) { return f.filePath === fp; }); if (i >= 0) _selection.staged.add(i); });
 			updateSelectionUI('staged');
@@ -487,6 +631,12 @@ window.addEventListener('message', (event) => {
 			updateSelectionUI('unstaged');
 		}
 		document.getElementById('btn-review-staged').style.display = _staged.length > 0 ? 'flex' : 'none';
+		const commitBtn = document.querySelector('.btn-commit');
+		if (commitBtn) {
+			commitBtn.disabled = _staged.length === 0;
+			commitBtn.style.opacity = _staged.length === 0 ? '0.5' : '1';
+			commitBtn.style.cursor = _staged.length === 0 ? 'not-allowed' : 'pointer';
+		}
 		const ta = document.getElementById('commit-msg');
 		if (document.activeElement !== ta) { ta.value = msg.commitMsg || ''; autoResize(ta); }
 	}
@@ -494,18 +644,40 @@ window.addEventListener('message', (event) => {
 	if (msg.command === 'update-graph') {
 		const pushBanner = document.getElementById('push-banner');
 		const pushText = document.getElementById('push-banner-text');
-		if (msg.ahead > 0) { pushText.textContent = msg.ahead + ' commit' + (msg.ahead > 1 ? 's' : '') + ' to push'; pushBanner.style.display = 'flex'; }
-		else { pushBanner.style.display = 'none'; }
+		const forcePushBanner = document.getElementById('force-push-banner');
+		if (_forcePushActive) {
+			pushBanner.style.display = 'none';
+			forcePushBanner.style.display = 'flex';
+		} else {
+			forcePushBanner.style.display = 'none';
+			if (msg.ahead > 0) { pushText.textContent = msg.ahead + ' commit' + (msg.ahead > 1 ? 's' : '') + ' to push'; pushBanner.style.display = 'flex'; }
+			else { pushBanner.style.display = 'none'; }
+		}
 		const syncBanner = document.getElementById('sync-banner');
 		const syncText = document.getElementById('sync-banner-text');
 		const commitArea = document.querySelector('.commit-area');
-		if (msg.behind > 0) {
+		if (msg.behind > 0 && !_forcePushActive) {
 			syncText.textContent = 'Sync Changes ' + msg.behind + '↓';
 			syncBanner.style.display = 'flex';
 			if (commitArea) { commitArea.classList.add('sync-required'); }
 		} else {
 			syncBanner.style.display = 'none';
 			if (commitArea) { commitArea.classList.remove('sync-required'); }
+		}
+	}
+	if (msg.command === 'force-push-status') {
+		_forcePushActive = !!msg.active;
+		const forcePushBanner = document.getElementById('force-push-banner');
+		const pushBanner = document.getElementById('push-banner');
+		const syncBanner = document.getElementById('sync-banner');
+		const commitArea = document.querySelector('.commit-area');
+		if (_forcePushActive) {
+			forcePushBanner.style.display = 'flex';
+			pushBanner.style.display = 'none';
+			syncBanner.style.display = 'none';
+			if (commitArea) { commitArea.classList.remove('sync-required'); }
+		} else {
+			forcePushBanner.style.display = 'none';
 		}
 	}
 });

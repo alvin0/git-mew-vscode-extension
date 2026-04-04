@@ -238,7 +238,7 @@ function renderGraph(data) {
 		const safeFullSha = escapeHtml(c.fullSha);
 		const metaText = isMerge ? 'merge · '+safeDate : safeAuthor+' · '+safeDate;
 		const divider = (i === boundaryIdx && boundaryIdx > 0) ? '<li class="graph-divider"><span>— pushed —</span></li>' : '';
-		const undoHtml = !isPushed ? '<div class="commit-actions"><button class="undo-commit-btn" data-undo="'+safeFullSha+'" title="Undo commit">↩ Undo</button></div>' : '';
+		const undoHtml = (!isPushed && !_squashBackup && !_editMsgBackup) ? '<div class="commit-actions"><button class="undo-commit-btn" data-undo="'+safeFullSha+'" title="Undo commit">↩ Undo</button></div>' : '';
 		const checkboxHtml = '<input type="checkbox" class="commit-checkbox" data-squash-idx="'+i+'" data-pushed="'+(isPushed?'1':'0')+'" onclick="event.stopPropagation();updateSquashSelection('+i+')">';
 		return divider + '<li class="commit-item '+(isPushed?'is-pushed':'is-local')+'" data-sha="'+safeFullSha+'" data-idx="'+i+'">'+checkboxHtml+'<div class="commit-graph-col" style="width:'+svgW+'px;min-width:'+svgW+'px"><svg width="'+svgW+'" height="'+H+'" style="overflow:visible">'+svgLines+dotInner+'</svg></div><div class="commit-info"><div class="commit-subject '+subjectClass+'" title="'+safeSubject+'">'+safeSubject+'</div><div class="commit-meta">'+metaText+'</div></div>'+undoHtml+'<span class="commit-sha">'+safeSha+'</span></li><li class="commit-files-row" id="cf-'+safeFullSha+'" style="display:none"><ul class="commit-file-list" id="cfl-'+safeFullSha+'"></ul></li>';
 	}).join('');
@@ -318,10 +318,12 @@ function cancelSquash() {
 function lockCheckboxes() { document.querySelectorAll('.commit-checkbox').forEach(cb => cb.disabled = true); }
 function unlockCheckboxes() { document.querySelectorAll('.commit-checkbox').forEach(cb => cb.disabled = false); }
 let _squashCount = 0;
+let _squashHasPushed = false;
 function doSquash() {
 	const checks = Array.from(document.querySelectorAll('.commit-checkbox:checked'));
 	if (checks.length < 2) return;
 	_squashCount = checks.length;
+	_squashHasPushed = checks.some(function(cb) { return cb.dataset.pushed === '1'; });
 	lockCheckboxes();
 	sendCommand('get-squash-messages', { count: _squashCount });
 	document.getElementById('squash-dialog').style.display = 'flex';
@@ -343,8 +345,9 @@ function confirmSquash() {
 	const msg = document.getElementById('squash-msg').value;
 	if (!msg || !msg.trim()) return;
 	const count = _squashCount;
+	const hasPushed = _squashHasPushed;
 	closeSquashDialog(); cancelSquash();
-	sendCommand('squash-commits', { count: count, message: msg });
+	sendCommand('squash-commits', { count: count, message: msg, hasPushed: hasPushed });
 }
 function generateSquashMsg() {
 	const btn = document.getElementById('squash-generate-btn');
@@ -392,12 +395,23 @@ function undoLastSquash() { if (_squashBackup) sendCommand('undo-squash', { back
 function dismissSquashBackup() {
 	if (_squashBackup) sendCommand('dismiss-squash-backup', { backup: _squashBackup });
 	_squashBackup = null; document.getElementById('undo-squash-banner').style.display = 'none';
+	showUndoCommitButtons();
 }
 let _editMsgBackup = null;
 function undoEditMsg() { if (_editMsgBackup) sendCommand('undo-edit-msg', { backup: _editMsgBackup }); }
 function dismissEditUndo() {
 	if (_editMsgBackup) sendCommand('dismiss-edit-backup', { backup: _editMsgBackup });
 	_editMsgBackup = null; document.getElementById('undo-edit-banner').style.display = 'none';
+	showUndoCommitButtons();
+}
+
+function hideUndoCommitButtons() {
+	document.querySelectorAll('.undo-commit-btn').forEach(function(btn) { btn.style.display = 'none'; });
+}
+function showUndoCommitButtons() {
+	if (!_squashBackup && !_editMsgBackup) {
+		document.querySelectorAll('.undo-commit-btn').forEach(function(btn) { btn.style.display = ''; });
+	}
 }
 
 let _graphInitialized = false;
@@ -436,14 +450,17 @@ window.addEventListener('message', (event) => {
 	if (msg.command === 'squash-done') {
 		_squashBackup = msg.backup;
 		document.getElementById('undo-squash-banner').style.display = 'flex';
+		hideUndoCommitButtons();
 	}
 	if (msg.command === 'edit-msg-done') {
 		_editMsgBackup = msg.backup;
 		document.getElementById('undo-edit-banner').style.display = 'flex';
+		hideUndoCommitButtons();
 	}
 	if (msg.command === 'edit-msg-undone') {
 		_editMsgBackup = null;
 		document.getElementById('undo-edit-banner').style.display = 'none';
+		showUndoCommitButtons();
 	}
 	if (msg.command === 'commit-message') { openEditMsgDialog(msg.text); }
 	if (msg.command === 'edit-msg-generated') {
@@ -455,6 +472,7 @@ window.addEventListener('message', (event) => {
 	if (msg.command === 'squash-undone') {
 		_squashBackup = null;
 		document.getElementById('undo-squash-banner').style.display = 'none';
+		showUndoCommitButtons();
 	}
 	if (msg.command === 'commit-files') {
 		const ul = document.getElementById('cfl-' + msg.sha);
