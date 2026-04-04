@@ -43,7 +43,7 @@ export class GitOperations {
 
 	// --- State ---
 
-	pushState(): void {
+	async pushState(): Promise<void> {
 		const view = this._getView();
 		if (!view) return;
 		try {
@@ -55,12 +55,17 @@ export class GitOperations {
 			const staged: any[] = [];
 			const unstaged: any[] = [];
 			const mergeConflicts: any[] = [];
-			for (const repo of git.repositories) {
+			
+			// Use local variables to avoid multiple git.repositories access if it's slow
+			const repositories = git.repositories;
+			for (const repo of repositories) {
 				const root = repo.rootUri.fsPath;
-				for (const c of repo.state.indexChanges) {
+				const state = repo.state;
+				
+				for (const c of state.indexChanges) {
 					staged.push(mapChangeToFileInfo(c, root));
 				}
-				for (const c of repo.state.workingTreeChanges) {
+				for (const c of state.workingTreeChanges) {
 					unstaged.push({
 						filePath: c.uri.fsPath,
 						fileName: path.basename(c.uri.fsPath),
@@ -68,32 +73,40 @@ export class GitOperations {
 						status: c.status
 					});
 				}
-				if (repo.state.mergeChanges) {
-					for (const c of repo.state.mergeChanges) {
+				if (state.mergeChanges) {
+					for (const c of state.mergeChanges) {
 						mergeConflicts.push(mapChangeToFileInfo(c, root));
 					}
 				}
 			}
 			const activeRepo = getActiveRepo();
 			const commitMsg = activeRepo?.inputBox.value || '';
+			
 			// Check if we're in a merge state
 			let isMerging = mergeConflicts.length > 0;
 			if (!isMerging && activeRepo) {
 				try {
 					const gitDir = path.join(activeRepo.rootUri.fsPath, '.git');
-					const stat = fs.statSync(gitDir);
-					if (stat.isDirectory()) {
-						isMerging = fs.existsSync(path.join(gitDir, 'MERGE_HEAD'));
-					} else {
-						// Worktree: .git is a file pointing to the real git dir
-						const content = fs.readFileSync(gitDir, 'utf8').trim();
-						const realGitDir = content.replace(/^gitdir:\s*/, '');
-						isMerging = fs.existsSync(path.join(realGitDir, 'MERGE_HEAD'));
+					const gitDirStat = await fs.promises.stat(gitDir).catch(() => null);
+					if (gitDirStat) {
+						if (gitDirStat.isDirectory()) {
+							isMerging = await fs.promises.access(path.join(gitDir, 'MERGE_HEAD')).then(() => true).catch(() => false);
+						} else {
+							// Worktree: .git is a file pointing to the real git dir
+							const content = await fs.promises.readFile(gitDir, 'utf8');
+							const realGitDirMatch = content.match(/^gitdir:\s*(.*)/);
+							if (realGitDirMatch) {
+								const realGitDir = realGitDirMatch[1].trim();
+								isMerging = await fs.promises.access(path.join(realGitDir, 'MERGE_HEAD')).then(() => true).catch(() => false);
+							}
+						}
 					}
 				} catch { /* ignore */ }
 			}
 			view.postMessage({ command: 'update-state', staged, unstaged, mergeConflicts, isMerging, commitMsg });
-		} catch { /* ignore */ }
+		} catch (error) {
+			console.error('[git-operations] pushState failed:', error);
+		}
 	}
 
 	// --- Commit ---
@@ -275,6 +288,49 @@ export class GitOperations {
 			await vscode.commands.executeCommand('vscode.diff', beforeUri, afterUri, `${fileName} (${sha.slice(0, 7)})`);
 		} catch (error) {
 			vscode.window.showErrorMessage(`Failed to open diff: ${error}`);
+		}
+	}
+
+	async openCommitAllDiffs(sha: string): Promise<void> {
+		try {
+			const git = getGitApi();
+			if (!git || git.repositories.length === 0) return;
+			const repo = git.repositories[0];
+			const api = git;
+
+			// Get list of changed files
+			const output = await execGitInRepo(repo, ['diff-tree', '--no-commit-id', '-r', '--name-status', sha]);
+			const files = output.trim().split('\n').filter(Boolean).map(line => {
+				const parts = line.split('\t');
+				return { status: parts[0].charAt(0), filePath: parts[parts.length - 1] };
+			});
+
+			if (files.length === 0) return;
+
+			// Get commit subject for the title
+			let subject = sha.slice(0, 7);
+			try {
+				subject = (await execGitInRepo(repo, ['log', '--format=%s', '-n', '1', sha])).trim();
+			} catch { /* use sha */ }
+
+			// Build resource list for vscode.changes: [fileUri, leftUri?, rightUri?][]
+			const resourceList: [vscode.Uri, vscode.Uri | undefined, vscode.Uri | undefined][] = [];
+			for (const f of files) {
+				const absPath = path.join(repo.rootUri.fsPath, f.filePath);
+				const fileUri = vscode.Uri.file(absPath);
+				try {
+					const beforeUri = f.status === 'A' ? undefined : (api as any).toGitUri(fileUri, `${sha}^`);
+					const afterUri = f.status === 'D' ? undefined : (api as any).toGitUri(fileUri, sha);
+					resourceList.push([fileUri, beforeUri, afterUri]);
+				} catch { /* skip file */ }
+			}
+
+			if (resourceList.length > 0) {
+				const title = `${sha.slice(0, 7)} - ${subject} (${resourceList.length} files)`;
+				await vscode.commands.executeCommand('vscode.changes', title, resourceList);
+			}
+		} catch (error) {
+			vscode.window.showErrorMessage(`Failed to open changes: ${error}`);
 		}
 	}
 
@@ -757,9 +813,46 @@ export class GitOperations {
 	private async _getRecentCommits(repo: any, branch: string, upstream: any, limit: number): Promise<any[]> {
 		try {
 			const upstreamRef = upstream ? `${upstream.remote}/${upstream.name}` : null;
+
+			// Get remote HEAD sha
+			let remoteHeadSha: string | null = null;
+			if (upstreamRef) {
+				try {
+					remoteHeadSha = (await execGitInRepo(repo, ['rev-parse', upstreamRef])).trim();
+				} catch { /* remote ref may not exist */ }
+			}
+
+			// Use pipe separator for basic fields (no body - body can contain anything)
 			const localCommits = await execGitInRepo(repo, [
-				'log', '--format=%H|%P|%s|%an|%ar|%D', '-n', String(limit), branch
+				'log', '--format=%H|%P|%s|%an|%ar|%D|%aI', '-n', String(limit), branch
 			]);
+
+			// Get shortstat per commit separately
+			let statOutput = '';
+			try {
+				statOutput = await execGitInRepo(repo, [
+					'log', '--format=%H', '--shortstat', '-n', String(limit), branch
+				]);
+			} catch { /* ignore */ }
+
+			// Parse stat data: sha line followed by optional stat line
+			const statMap = new Map<string, { filesChanged: number; insertions: number; deletions: number }>();
+			const statLines = statOutput.split('\n');
+			for (let si = 0; si < statLines.length; si++) {
+				const line = statLines[si].trim();
+				if (/^[0-9a-f]{40}$/.test(line)) {
+					const nextLine = (statLines[si + 1] || '').trim();
+					const sm = nextLine.match(/(\d+)\s+files?\s+changed(?:,\s+(\d+)\s+insertions?\(\+\))?(?:,\s+(\d+)\s+deletions?\(-\))?/);
+					if (sm) {
+						statMap.set(line, {
+							filesChanged: parseInt(sm[1]) || 0,
+							insertions: parseInt(sm[2]) || 0,
+							deletions: parseInt(sm[3]) || 0
+						});
+					}
+				}
+			}
+
 			let pushedShas = new Set<string>();
 			if (upstreamRef) {
 				try {
@@ -769,17 +862,26 @@ export class GitOperations {
 					remoteLog.trim().split('\n').filter(Boolean).forEach(s => pushedShas.add(s.trim()));
 				} catch { /* remote ref may not exist */ }
 			}
+
 			return localCommits.trim().split('\n').filter(Boolean).map(line => {
 				const parts = line.split('|');
 				const sha = parts[0]?.trim();
 				const parents = parts[1] ? parts[1].trim().split(' ').filter(Boolean) : [];
+				const isoDate = parts[6] || '';
+				const stat = statMap.get(sha) || { filesChanged: 0, insertions: 0, deletions: 0 };
+
 				return {
 					sha: sha.slice(0, 7), fullSha: sha, parents,
 					subject: parts[2] || '', author: parts[3] || '',
 					date: parts[4] || '', refs: parts[5] || '',
+					isoDate,
+					filesChanged: stat.filesChanged,
+					insertions: stat.insertions,
+					deletions: stat.deletions,
 					isMerge: parents.length > 1,
 					isPushed: pushedShas.has(sha),
-					isHead: (parts[5] || '').includes(`HEAD -> ${branch}`)
+					isHead: (parts[5] || '').includes(`HEAD -> ${branch}`),
+					isRemoteHead: sha === remoteHeadSha
 				};
 			});
 		} catch { return []; }

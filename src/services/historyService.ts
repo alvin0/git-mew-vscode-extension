@@ -110,6 +110,67 @@ export function listHistoryFiles(): { name: string; filePath: string; mtime: Dat
 }
 
 /**
+ * Async version of listHistoryFiles to improve performance and avoid blocking the event loop.
+ * Caps at 50 most recent files to ensure fast loading times.
+ */
+export async function listHistoryFilesAsync(): Promise<{ name: string; filePath: string; mtime: Date; dateFolder: string }[]> {
+    const historyDir = getWorkspaceHistoryDir();
+    if (!historyDir) {
+        return [];
+    }
+
+    try {
+        await fs.access(historyDir);
+    } catch {
+        return [];
+    }
+
+    try {
+        const results: { name: string; filePath: string; mtime: Date; dateFolder: string }[] = [];
+        const dateFolders = (await fs.readdir(historyDir))
+            .sort((a, b) => b.localeCompare(a)); // Newest folders first
+
+        // Only scan folders until we have enough files
+        const MAX_FILES = 50;
+        
+        for (const dateFolder of dateFolders) {
+            if (results.length >= MAX_FILES) break;
+            
+            const datePath = path.join(historyDir, dateFolder);
+            try {
+                const stat = await fs.stat(datePath);
+                if (!stat.isDirectory()) continue;
+
+                const files = (await fs.readdir(datePath)).filter(f => f.endsWith('.md'));
+                
+                // Get stats for these files
+                const fileStats = await Promise.all(
+                    files.map(async (file) => {
+                        const filePath = path.join(datePath, file);
+                        try {
+                            const s = await fs.stat(filePath);
+                            return { name: file, filePath, mtime: s.mtime, dateFolder };
+                        } catch {
+                            return null;
+                        }
+                    })
+                );
+                
+                for (const fsItem of fileStats) {
+                    if (fsItem) results.push(fsItem);
+                }
+            } catch { /* ignore */ }
+        }
+
+        return results
+            .sort((a, b) => b.mtime.getTime() - a.mtime.getTime())
+            .slice(0, MAX_FILES);
+    } catch {
+        return [];
+    }
+}
+
+/**
  * Delete a history file. Removes the parent date folder if it becomes empty.
  */
 export async function deleteHistoryFile(filePath: string): Promise<void> {

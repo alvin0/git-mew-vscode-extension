@@ -27,8 +27,8 @@ export class GitMewSidebarProvider implements vscode.WebviewViewProvider {
 		this._syncStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 200);
 		this._syncStatusBar.name = 'Git Mew Sync';
 		context.subscriptions.push(this._syncStatusBar);
-		// Subscribe to git state immediately so badge updates even before sidebar is opened
-		setTimeout(() => this._subscribeToGitState(), 1000);
+		// Subscribe to git state immediately
+		this._subscribeToGitState();
 	}
 
 	get ops(): GitOperations {
@@ -57,13 +57,18 @@ export class GitMewSidebarProvider implements vscode.WebviewViewProvider {
 			]
 		};
 		webviewView.webview.html = getWebviewHtml();
-
-		setTimeout(() => this._subscribeToGitState(), 500);
+		this._subscribeToGitState();
 
 		webviewView.onDidChangeVisibility(() => {
 			if (webviewView.visible) this._ops.pushState();
 		});
-		webviewView.onDidDispose(() => this._stateDisposable?.dispose());
+		webviewView.onDidDispose(() => {
+			if (this._inputBoxDebounce) {
+				clearTimeout(this._inputBoxDebounce);
+				this._inputBoxDebounce = undefined;
+			}
+			this._stateDisposable?.dispose();
+		});
 		webviewView.webview.onDidReceiveMessage((msg) => this._handleMessage(msg));
 	}
 
@@ -106,6 +111,14 @@ export class GitMewSidebarProvider implements vscode.WebviewViewProvider {
 			case 'stage-files': await this._ops.stageFiles(msg.filePaths); break;
 			case 'unstage-files': await this._ops.unstageFiles(msg.filePaths); break;
 			case 'discard-files': await this._ops.discardFiles(msg.filePaths); break;
+			case 'open-file':
+				try {
+					const openUri = vscode.Uri.file(msg.filePath);
+					await vscode.window.showTextDocument(openUri, { preview: false });
+				} catch (err) {
+					vscode.window.showErrorMessage(`Failed to open file: ${err}`);
+				}
+				break;
 			case 'open-diff': await this._ops.openDiff(msg.filePath, msg.isStaged); break;
 			case 'open-merge-editor':
 				try {
@@ -212,28 +225,48 @@ export class GitMewSidebarProvider implements vscode.WebviewViewProvider {
 		} catch { /* ignore */ }
 	}
 
+	private _inputBoxDebounce?: NodeJS.Timeout;
+
 	private _subscribeToGitState(): void {
-		this._stateDisposable?.dispose();
+		if (this._stateDisposable) return; // Already subscribed
+
 		try {
 			const git = getGitApi();
 			if (!git) return;
 			const disposables: vscode.Disposable[] = [];
+			
 			const refresh = () => { 
 				this._ops.pushState(); 
 				this._ops.pushGraph();
 				this._updateBadge();
 			};
+
+			const pushStateDebounced = () => {
+				if (this._inputBoxDebounce) {
+					clearTimeout(this._inputBoxDebounce);
+				}
+				this._inputBoxDebounce = setTimeout(() => {
+					this._ops.pushState();
+				}, 300);
+			};
+
+			const subscribeToRepo = (repo: any) => {
+				disposables.push(repo.state.onDidChange(refresh));
+				disposables.push(repo.inputBox.onDidChange(pushStateDebounced));
+			};
+
 			for (const repo of git.repositories) {
-				disposables.push(repo.state.onDidChange(refresh));
-				disposables.push(repo.inputBox.onDidChange(() => this._ops.pushState()));
+				subscribeToRepo(repo);
 			}
+
 			this._stateDisposable = { dispose: () => disposables.forEach(d => d.dispose()) };
+			
 			refresh();
-			git.onDidOpenRepository((repo: any) => {
-				disposables.push(repo.state.onDidChange(refresh));
-				disposables.push(repo.inputBox.onDidChange(() => this._ops.pushState()));
+			
+			disposables.push(git.onDidOpenRepository((repo: any) => {
+				subscribeToRepo(repo);
 				refresh();
-			});
+			}));
 		} catch { /* Git not available */ }
 	}
 

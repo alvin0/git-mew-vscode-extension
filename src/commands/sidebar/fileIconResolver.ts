@@ -23,6 +23,11 @@ export interface ResolvedIconTheme {
 	defaultFolderExpanded: string | null;
 }
 
+// Cache theme definitions (parsed JSON) independently of webview instance
+let _cachedThemeDef: { id: string; themeDir: string; themeDoc: IconThemeDocument } | null = null;
+// Cache resolved URIs per webview instance to avoid redundant processing
+const _webviewIconCache = new WeakMap<vscode.Webview, { id: string; theme: ResolvedIconTheme }>();
+
 /**
  * Resolve the active file icon theme to webview-safe image URIs.
  * Only works with SVG/PNG-based themes (Material Icon Theme, VSCode Icons, etc.).
@@ -33,20 +38,38 @@ export async function resolveFileIconTheme(webview: vscode.Webview): Promise<Res
 		const iconThemeId = vscode.workspace.getConfiguration('workbench').get<string>('iconTheme');
 		if (!iconThemeId) return null;
 
-		const ext = vscode.extensions.all.find(e => {
-			const contributes = e.packageJSON?.contributes?.iconThemes;
-			return Array.isArray(contributes) && contributes.some((t: any) => t.id === iconThemeId);
-		});
-		if (!ext) return null;
+		// 1. Check if we have a fully resolved cache for THIS webview
+		const webviewCached = _webviewIconCache.get(webview);
+		if (webviewCached?.id === iconThemeId) {
+			return webviewCached.theme;
+		}
 
-		const themeContrib = ext.packageJSON.contributes.iconThemes.find((t: any) => t.id === iconThemeId);
-		if (!themeContrib?.path) return null;
+		// 2. Resolve or use cached theme definition (JSON)
+		let themeDoc: IconThemeDocument;
+		let themeDir: string;
 
-		const themePath = path.join(ext.extensionPath, themeContrib.path);
-		const themeDir = path.dirname(themePath);
-		if (!fs.existsSync(themePath)) return null;
+		if (_cachedThemeDef?.id === iconThemeId) {
+			themeDoc = _cachedThemeDef.themeDoc;
+			themeDir = _cachedThemeDef.themeDir;
+		} else {
+			const ext = vscode.extensions.all.find(e => {
+				const contributes = e.packageJSON?.contributes?.iconThemes;
+				return Array.isArray(contributes) && contributes.some((t: any) => t.id === iconThemeId);
+			});
+			if (!ext) return null;
 
-		const themeDoc: IconThemeDocument = JSON.parse(fs.readFileSync(themePath, 'utf8'));
+			const themeContrib = ext.packageJSON.contributes.iconThemes.find((t: any) => t.id === iconThemeId);
+			if (!themeContrib?.path) return null;
+
+			const themePath = path.join(ext.extensionPath, themeContrib.path);
+			themeDir = path.dirname(themePath);
+			
+			const themeContent = await fs.promises.readFile(themePath, 'utf8').catch(() => null);
+			if (!themeContent) return null;
+
+			themeDoc = JSON.parse(themeContent);
+			_cachedThemeDef = { id: iconThemeId, themeDir, themeDoc };
+		}
 		const {
 			iconDefinitions = {}, fileExtensions = {}, fileNames = {},
 			file: defaultFileKey,
@@ -58,44 +81,49 @@ export async function resolveFileIconTheme(webview: vscode.Webview): Promise<Res
 		const hasIconPath = Object.values(iconDefinitions).some(d => !!d.iconPath);
 		if (!hasIconPath) return null;
 
-		const resolveUri = (defKey: string): string | null => {
-			const def = iconDefinitions[defKey];
-			if (!def?.iconPath) return null;
-			const absPath = path.join(themeDir, def.iconPath);
-			if (!fs.existsSync(absPath)) return null;
-			return webview.asWebviewUri(vscode.Uri.file(absPath)).toString();
-		};
+		// Pre-resolve all definition IRIs to avoid repeated work
+		const definitionUris: Record<string, string> = {};
+		for (const [key, def] of Object.entries(iconDefinitions)) {
+			if (def?.iconPath) {
+				const absPath = path.join(themeDir, def.iconPath);
+				definitionUris[key] = webview.asWebviewUri(vscode.Uri.file(absPath)).toString();
+			}
+		}
 
 		const extMap: Record<string, string> = {};
 		const fileMap: Record<string, string> = {};
 		for (const [e, defKey] of Object.entries(fileExtensions)) {
-			const uri = resolveUri(defKey);
+			const uri = definitionUris[defKey];
 			if (uri) extMap[e.toLowerCase()] = uri;
 		}
 		for (const [name, defKey] of Object.entries(fileNames)) {
-			const uri = resolveUri(defKey);
+			const uri = definitionUris[defKey];
 			if (uri) fileMap[name.toLowerCase()] = uri;
 		}
 
 		const folderMap: Record<string, string> = {};
 		const folderExpandedMap: Record<string, string> = {};
 		for (const [name, defKey] of Object.entries(folderNames)) {
-			const uri = resolveUri(defKey);
+			const uri = definitionUris[defKey];
 			if (uri) folderMap[name.toLowerCase()] = uri;
 		}
 		for (const [name, defKey] of Object.entries(folderNamesExpanded)) {
-			const uri = resolveUri(defKey);
+			const uri = definitionUris[defKey];
 			if (uri) folderExpandedMap[name.toLowerCase()] = uri;
 		}
 
-		return {
+		const theme = {
 			extMap, fileMap,
-			defaultFile: defaultFileKey ? resolveUri(defaultFileKey) : null,
+			defaultFile: defaultFileKey ? (definitionUris[defaultFileKey] || null) : null,
 			folderMap, folderExpandedMap,
-			defaultFolder: defaultFolderKey ? resolveUri(defaultFolderKey) : null,
-			defaultFolderExpanded: defaultFolderExpandedKey ? resolveUri(defaultFolderExpandedKey) : null,
+			defaultFolder: defaultFolderKey ? (definitionUris[defaultFolderKey] || null) : null,
+			defaultFolderExpanded: defaultFolderExpandedKey ? (definitionUris[defaultFolderExpandedKey] || null) : null,
 		};
-	} catch {
+		
+		_webviewIconCache.set(webview, { id: iconThemeId, theme });
+		return theme;
+	} catch (err) {
+		console.error('[IconResolver] Failed to resolve theme:', err);
 		return null;
 	}
 }

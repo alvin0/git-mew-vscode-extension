@@ -2,7 +2,7 @@
   "name": "git-mew",
   "displayName": "Git Mew",
   "description": "Your AI kitty for Git chaos - Generate intelligent commit messages using AI",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "icon": "resources/images/logo.png",
   "publisher": "GitMew",
   "engines": {
@@ -83,23 +83,26 @@
         {
           "id": "gitmew-code-review",
           "name": "Code Review",
-          "icon": "$(eye)"
+          "icon": "$(eye)",
+          "visibility": "collapsed"
         },
         {
           "id": "gitmew-settings",
           "name": "Settings",
-          "icon": "$(gear)"
+          "icon": "$(gear)",
+          "visibility": "collapsed"
         },
         {
           "id": "gitmew-global-config",
           "name": "Global Config (~/.gitmew)",
-          "icon": "$(folder)"
+          "icon": "$(folder)",
+          "visibility": "collapsed"
         },
         {
           "id": "gitmew-histories",
           "name": "Histories",
           "icon": "$(history)",
-          "visibility": "visible"
+          "visibility": "collapsed"
         }
       ]
     },

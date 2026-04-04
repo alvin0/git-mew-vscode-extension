@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { listHistoryFiles, getWorkspaceHistoryDir } from '../../services/historyService';
+import { listHistoryFilesAsync, getWorkspaceHistoryDir } from '../../services/historyService';
 
 type HistoryTreeItem = HistoryDateItem | HistoryFileItem;
 
@@ -9,7 +9,7 @@ class HistoryDateItem extends vscode.TreeItem {
         public readonly dateFolder: string,
         public readonly fileCount: number
     ) {
-        super(dateFolder, vscode.TreeItemCollapsibleState.Expanded);
+        super(dateFolder, vscode.TreeItemCollapsibleState.Collapsed);
         this.description = `${fileCount} file${fileCount > 1 ? 's' : ''}`;
         this.iconPath = new vscode.ThemeIcon('calendar');
         this.contextValue = 'gitmew-history-date';
@@ -40,8 +40,10 @@ class HistoryFileItem extends vscode.TreeItem {
 export class HistoriesProvider implements vscode.TreeDataProvider<HistoryTreeItem> {
     private _onDidChangeTreeData = new vscode.EventEmitter<HistoryTreeItem | undefined>();
     readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+    private _cachedFiles: { name: string; filePath: string; mtime: Date; dateFolder: string }[] | undefined;
 
     refresh(): void {
+        this._cachedFiles = undefined;
         this._onDidChangeTreeData.fire(undefined);
     }
 
@@ -49,11 +51,15 @@ export class HistoriesProvider implements vscode.TreeDataProvider<HistoryTreeIte
         return element;
     }
 
-    getChildren(element?: HistoryTreeItem): HistoryTreeItem[] {
+    async getChildren(element?: HistoryTreeItem): Promise<HistoryTreeItem[]> {
         const historyDir = getWorkspaceHistoryDir();
         if (!historyDir) { return []; }
 
-        const files = listHistoryFiles();
+        // Load files if not cached
+        if (!this._cachedFiles) {
+            this._cachedFiles = await listHistoryFilesAsync();
+        }
+        const files = this._cachedFiles || [];
         if (files.length === 0) { return []; }
 
         if (!element) {

@@ -44,25 +44,17 @@ body {
 }
 
 function getSourceControlHtml(): string {
-	const svgMerge = `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm0 2.122a2.25 2.25 0 1 0-1.5 0v.878A2.25 2.25 0 0 0 5.75 8.5h1.5v1.128a2.251 2.251 0 1 0 1.5 0V8.5h1.5a2.25 2.25 0 0 0 2.25-2.25v-.878a2.25 2.25 0 1 0-1.5 0v.878a.75.75 0 0 1-.75.75h-4.5A.75.75 0 0 1 5 6.25v-.878zm3.75 7.378a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm3-8.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0z"/></svg>`;
-	const svgHistory = `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1.643 3.143L.427 1.927A.25.25 0 0 0 0 2.104V5.75c0 .138.112.25.25.25h3.646a.25.25 0 0 0 .177-.427L2.715 4.215a6.5 6.5 0 1 1-1.18 4.458.75.75 0 1 0-1.493.154 8.001 8.001 0 1 0 1.6-5.684zM8 5.5a.75.75 0 0 1 .75.75v2.69l1.28 1.28a.75.75 0 0 1-1.06 1.06l-1.5-1.5A.75.75 0 0 1 7.25 9V6.25A.75.75 0 0 1 8 5.5z"/></svg>`;
-	const svgRefresh = `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834zM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5z"/></svg>`;
-	const svgPlus = `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8.75 1.75a.75.75 0 0 0-1.5 0V7H1.75a.75.75 0 0 0 0 1.5H7.25v5.25a.75.75 0 0 0 1.5 0V8.5h5.25a.75.75 0 0 0 0-1.5H8.75V1.75z"/></svg>`;
-	const svgSparkle = `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M7.5 1l1.5 3.5L13 6l-3.5 1.5L8 11l-1.5-3.5L3 6l3.5-1.5L7.5 1zm0 2.18L6.72 5.1 4.5 6l2.22.9.78 1.92.78-1.92L10.5 6l-2.22-.9L7.5 3.18zM2 12l.67 1.33L4 14l-1.33.67L2 16l-.67-1.33L0 14l1.33-.67L2 12zm11 0l.67 1.33L15 14l-1.33.67L13 16l-.67-1.33L11 14l1.33-.67L13 12z"/></svg>`;
-	const svgCheck = `<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>`;
-	const svgEye = `<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 3C4.5 3 1.5 5.5 1.5 8s3 5 6.5 5 6.5-2.5 6.5-5-3-5-6.5-5zm0 8.5A3.5 3.5 0 1 1 8 4.5a3.5 3.5 0 0 1 0 7zm0-5.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>`;
-	const svgPush = `<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a.75.75 0 0 1 .75.75V7h4.75a.25.25 0 0 1 .177.427l-5.25 5.25a.25.25 0 0 1-.354 0l-5.25-5.25A.25.25 0 0 1 3 7h4.25V2.25A.75.75 0 0 1 8 1.5z" transform="rotate(180 8 8)"/></svg>`;
+	const svgMerge = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" fill="currentColor"><path d="M80 104a24 24 0 1 0 0-48 24 24 0 1 0 0 48zm80-24c0 32.8-19.7 61-48 73.3l0 70.7 176 0c26.5 0 48-21.5 48-48l0-22.7c-28.3-12.3-48-40.5-48-73.3 0-44.2 35.8-80 80-80s80 35.8 80 80c0 32.8-19.7 61-48 73.3l0 22.7c0 61.9-50.1 112-112 112l-176 0 0 70.7c28.3 12.3 48 40.5 48 73.3 0 44.2-35.8 80-80 80S0 476.2 0 432c0-32.8 19.7-61 48-73.3l0-205.3C19.7 141 0 112.8 0 80 0 35.8 35.8 0 80 0s80 35.8 80 80zm232 0a24 24 0 1 0 -48 0 24 24 0 1 0 48 0zM80 456a24 24 0 1 0 0-48 24 24 0 1 0 0 48z"/></svg>`;
+	const svgHistory = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512" fill="currentColor"><path d="M288 64c106 0 192 86 192 192S394 448 288 448c-65.2 0-122.9-32.5-157.6-82.3-10.1-14.5-30.1-18-44.6-7.9s-18 30.1-7.9 44.6C124.1 468.6 201 512 288 512 429.4 512 544 397.4 544 256S429.4 0 288 0C202.3 0 126.5 42.1 80 106.7L80 80c0-17.7-14.3-32-32-32S16 62.3 16 80l0 112c0 17.7 14.3 32 32 32l24.6 0c.5 0 1 0 1.5 0l86 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-38.3 0C154.9 102.6 217 64 288 64zm24 88c0-13.3-10.7-24-24-24s-24 10.7-24 24l0 104c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65 0-94.1z"/></svg>`;
+	const svgRefresh = `<svg width="14" height="14" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="currentColor"><path d="M65.9 228.5c13.3-93 93.4-164.5 190.1-164.5 53 0 101 21.5 135.8 56.2 .2 .2 .4 .4 .6 .6l7.6 7.2-47.9 0c-17.7 0-32 14.3-32 32s14.3 32 32 32l128 0c17.7 0 32-14.3 32-32l0-128c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 53.4-11.3-10.7C390.5 28.6 326.5 0 256 0 127 0 20.3 95.4 2.6 219.5 .1 237 12.2 253.2 29.7 255.7s33.7-9.7 36.2-27.1zm443.5 64c2.5-17.5-9.7-33.7-27.1-36.2s-33.7 9.7-36.2 27.1c-13.3 93-93.4 164.5-190.1 164.5-53 0-101-21.5-135.8-56.2-.2-.2-.4-.4-.6-.6l-7.6-7.2 47.9 0c17.7 0 32-14.3 32-32s-14.3-32-32-32L32 320c-8.5 0-16.7 3.4-22.7 9.5S-.1 343.7 0 352.3l1 127c.1 17.7 14.6 31.9 32.3 31.7S65.2 496.4 65 478.7l-.4-51.5 10.7 10.1c46.3 46.1 110.2 74.7 180.7 74.7 129 0 235.7-95.4 253.4-219.5z"/></svg>`;
+	const svgPlus = `<svg width="14" height="14" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" fill="currentColor"><path d="M256 64c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 160-160 0c-17.7 0-32 14.3-32 32s14.3 32 32 32l160 0 0 160c0 17.7 14.3 32 32 32s32-14.3 32-32l0-160 160 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-160 0 0-160z"/></svg>`;
+	const svgSparkle = `<svg width="14" height="14" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><path fill="currentColor" d="M480-16c8.8 0 16 7.2 16 16l0 48 48 0c8.8 0 16 7.2 16 16s-7.2 16-16 16l-48 0 0 48c0 8.8-7.2 16-16 16s-16-7.2-16-16l0-48-48 0c-8.8 0-16-7.2-16-16s7.2-16 16-16l48 0 0-48c0-8.8 7.2-16 16-16zM192 64c6.2 0 11.9 3.6 14.5 9.3l53.1 115 115 53.1c5.7 2.6 9.3 8.3 9.3 14.5s-3.6 11.9-9.3 14.5l-115 53.1-53.1 115c-2.6 5.7-8.3 9.3-14.5 9.3s-11.9-3.6-14.5-9.3l-53.1-115-115-53.1C3.6 267.9 0 262.2 0 256s3.6-11.9 9.3-14.5l115-53.1 53.1-115c2.6-5.7 8.3-9.3 14.5-9.3zm0 54.2l-41.1 88.9c-1.6 3.5-4.4 6.2-7.8 7.8L54.2 256 143.1 297.1c3.5 1.6 6.2 4.4 7.8 7.8l41.1 88.9 41.1-88.9c1.6-3.4 4.4-6.2 7.8-7.8l88.9-41.1-88.9-41.1c-3.5-1.6-6.2-4.4-7.8-7.8L192 118.2zM464 384l0 48 48 0c8.8 0 16 7.2 16 16s-7.2 16-16 16l-48 0 0 48c0 8.8-7.2 16-16 16s-16-7.2-16-16l0-48-48 0c-8.8 0-16-7.2-16-16s7.2-16 16-16l48 0 0-48c0-8.8 7.2-16 16-16s16 7.2 16 16z"/></svg>`;
+	const svgPush = `<svg width="14" height="14" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" fill="currentColor"><path d="M256 64c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 160-160 0c-17.7 0-32 14.3-32 32s14.3 32 32 32l160 0 0 160c0 17.7 14.3 32 32 32s32-14.3 32-32l0-160 160 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-160 0 0-160z"/></svg>`;
+	const svgDash = `<svg width="14" height="14" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="currentColor"><path fill="currentColor" d="M0 256c0-17.7 14.3-32 32-32l448 0c17.7 0 32 14.3 32 32s-14.3 32-32 32L32 288c-17.7 0-32-14.3-32-32z"/></svg>`
+	const svgRotateLeft = `<svg width="14" height="14" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="currentColor"><path d="M24 192l144 0c9.7 0 18.5-5.8 22.2-14.8s1.7-19.3-5.2-26.2l-46.7-46.7c75.3-58.6 184.3-53.3 253.5 15.9 75 75 75 196.5 0 271.5s-196.5 75-271.5 0c-10.2-10.2-19-21.3-26.4-33-9.5-14.9-29.3-19.3-44.2-9.8s-19.3 29.3-9.8 44.2C49.7 408.7 61.4 423.5 75 437 175 537 337 537 437 437S537 175 437 75C342.8-19.3 193.3-24.7 92.7 58.8L41 7C34.1 .2 23.8-1.9 14.8 1.8S0 14.3 0 24L0 168c0 13.3 10.7 24 24 24z"/></svg>`
+	const svgChevonRight = `<svg width="14" height="14" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512" fill="currentColor"><path d="M311.1 233.4c12.5 12.5 12.5 32.8 0 45.3l-192 192c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L243.2 256 73.9 86.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l192 192z"/></svg>`
 
 	return `
-<div class="section-header" onclick="toggleSection('sc-body', this)">
-	<span class="hdr-left"><span class="chevron">›</span>GITMEW SOURCE CONTROL</span>
-	<div class="hdr-right" onclick="event.stopPropagation()">
-		<button class="icon-btn" title="Review Merge" onclick="sendCommand('review-merge')">${svgMerge}</button>
-		<button class="icon-btn" title="Review Merged Branch" onclick="sendCommand('review-merged-branch')">${svgHistory}</button>
-		<button class="icon-btn" title="Refresh" onclick="sendCommand('refresh')">${svgRefresh}</button>
-		<button class="icon-btn" title="Stage All Changes" onclick="sendCommand('stage-all')">${svgPlus}</button>
-	</div>
-</div>
 <div id="sc-body" class="section-body">
 	<div class="commit-area">
 		<div class="commit-input-wrap">
@@ -72,33 +64,31 @@ function getSourceControlHtml(): string {
 			</div>
 		</div>
 		<div class="btn-row">
-			<button class="btn-commit" onclick="doCommit()">${svgCheck} Commit</button>
-			<button id="btn-review-staged" class="btn-review-staged" style="display:none" onclick="sendCommand('review-staged')" title="Review Staged Changes with AI">${svgEye} Review</button>
+			<button class="btn-commit" onclick="doCommit()"><svg width="14" height="14" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><path d="M434.8 70.1c14.3 10.4 17.5 30.4 7.1 44.7l-256 352c-5.5 7.6-14 12.3-23.4 13.1s-18.5-2.7-25.1-9.3l-128-128c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l101.5 101.5 234-321.7c10.4-14.3 30.4-17.5 44.7-7.1z"/></svg> Commit</button>
+			<button id="btn-review-staged" class="btn-review-staged" style="display:none" onclick="sendCommand('review-staged')" title="Review Staged Changes with AI">Review</button>
 		</div>
-		<div id="push-banner" style="display:none" class="push-banner">
+		<button id="push-banner" style="display:none" class="push-banner" onclick="sendCommand('git-push')" title="Push to remote">
 			${svgPush}
 			<span id="push-banner-text">1 commit to push</span>
-			<button class="push-btn" onclick="sendCommand('git-push')" title="Push to remote">Push</button>
-		</div>
-		<div id="force-push-banner" style="display:none" class="force-push-banner">
-			<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8.22 1.754a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368L8.22 1.754zm-1.763-.707c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575L6.457 1.047zM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm-.25-5.25a.75.75 0 0 0-1.5 0v2.5a.75.75 0 0 0 1.5 0v-2.5z"/></svg>
+		</button>
+		<button id="force-push-banner" style="display:none" class="force-push-banner" onclick="sendCommand('git-force-push')" title="Force push to remote">
+			<svg width="14" height="14" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path d="M256 0c14.7 0 28.2 8.1 35.2 21l216 400c6.7 12.4 6.4 27.4-.8 39.5S486.1 480 472 480L40 480c-14.1 0-27.2-7.4-34.4-19.5s-7.5-27.1-.8-39.5l216-400c7-12.9 20.5-21 35.2-21zm0 352a32 32 0 1 0 0 64 32 32 0 1 0 0-64zm0-192c-18.2 0-32.7 15.5-31.4 33.7l7.4 104c.9 12.5 11.4 22.3 23.9 22.3 12.6 0 23-9.7 23.9-22.3l7.4-104c1.3-18.2-13.1-33.7-31.4-33.7z"/></svg>
 			<span id="force-push-text">History rewritten — force push required</span>
-			<button class="force-push-btn" onclick="sendCommand('git-force-push')" title="Force push to remote">Force Push</button>
-		</div>
+		</button>
 		<div id="sync-banner" style="display:none" class="sync-banner" onclick="sendCommand('git-sync')">
-			<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834zM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5z"/></svg>
+		<svg width="14" height="14" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path d="M480.1 192l7.9 0c13.3 0 24-10.7 24-24l0-144c0-9.7-5.8-18.5-14.8-22.2S477.9 .2 471 7L419.3 58.8C375 22.1 318 0 256 0 127 0 20.3 95.4 2.6 219.5 .1 237 12.2 253.2 29.7 255.7s33.7-9.7 36.2-27.1C79.2 135.5 159.3 64 256 64 300.4 64 341.2 79 373.7 104.3L327 151c-6.9 6.9-8.9 17.2-5.2 26.2S334.3 192 344 192l136.1 0zm29.4 100.5c2.5-17.5-9.7-33.7-27.1-36.2s-33.7 9.7-36.2 27.1c-13.3 93-93.4 164.5-190.1 164.5-44.4 0-85.2-15-117.7-40.3L185 361c6.9-6.9 8.9-17.2 5.2-26.2S177.7 320 168 320L24 320c-13.3 0-24 10.7-24 24L0 488c0 9.7 5.8 18.5 14.8 22.2S34.1 511.8 41 505l51.8-51.8C137 489.9 194 512 256 512 385 512 491.7 416.6 509.4 292.5z"/></svg>
 			<span id="sync-banner-text">Sync Changes</span>
 		</div>
 	</div>
 	<div id="merge-conflict-banner" style="display:none" class="merge-conflict-banner">
-		<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8.22 1.754a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368L8.22 1.754zm-1.763-.707c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575L6.457 1.047zM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm-.25-5.25a.75.75 0 0 0-1.5 0v2.5a.75.75 0 0 0 1.5 0v-2.5z"/></svg>
+	<svg width="14" height="14" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path d="M256 0c14.7 0 28.2 8.1 35.2 21l216 400c6.7 12.4 6.4 27.4-.8 39.5S486.1 480 472 480L40 480c-14.1 0-27.2-7.4-34.4-19.5s-7.5-27.1-.8-39.5l216-400c7-12.9 20.5-21 35.2-21zm0 352a32 32 0 1 0 0 64 32 32 0 1 0 0-64zm0-192c-18.2 0-32.7 15.5-31.4 33.7l7.4 104c.9 12.5 11.4 22.3 23.9 22.3 12.6 0 23-9.7 23.9-22.3l7.4-104c1.3-18.2-13.1-33.7-31.4-33.7z"/></svg>
 		<span id="merge-conflict-text">Resolve conflicts before committing</span>
 		<button id="abort-merge-btn" class="abort-merge-btn" style="display:none" onclick="sendCommand('abort-merge')">Abort Merge</button>
 	</div>
 	<div id="merge-section-header" class="section-header merge-section" style="padding-left:8px;display:none" onclick="toggleSection('merge-body', this)">
-		<span class="hdr-left"><span class="chevron">›</span> Merge Changes</span>
+		<span class="hdr-left"><span class="chevron">${svgChevonRight}</span> Merge Changes</span>
 		<div class="hdr-right" onclick="event.stopPropagation()">
-			<button class="icon-btn" title="Stage All Merge Changes" onclick="sendCommand('stage-all-merge')">+</button>
+			<button class="icon-btn" title="Stage All Merge Changes" onclick="sendCommand('stage-all-merge')">${svgPush}</button>
 			<span class="count merge-count" id="merge-count">0</span>
 		</div>
 	</div>
@@ -106,9 +96,9 @@ function getSourceControlHtml(): string {
 		<div class="file-list" id="merge-list"></div>
 	</div>
 	<div id="staged-section-header" class="section-header" style="padding-left:8px;display:none" onclick="toggleSection('staged-body', this)">
-		<span class="hdr-left"><span class="chevron">›</span> Staged Changes</span>
+		<span class="hdr-left"><span class="chevron">${svgChevonRight}</span> Staged Changes</span>
 		<div class="hdr-right" onclick="event.stopPropagation()">
-			<button class="icon-btn" title="Unstage All Changes" onclick="sendCommand('unstage-all')">−</button>
+			<button class="icon-btn" title="Unstage All Changes" onclick="sendCommand('unstage-all')">${svgDash}</button>
 			<span class="count" id="staged-count">0</span>
 		</div>
 	</div>
@@ -116,10 +106,10 @@ function getSourceControlHtml(): string {
 		<div class="file-list" id="staged-list"></div>
 	</div>
 	<div class="section-header" style="padding-left:8px" onclick="toggleSection('unstaged-body', this)">
-		<span class="hdr-left"><span class="chevron">›</span> Changes</span>
+		<span class="hdr-left"><span class="chevron">${svgChevonRight}</span> Changes</span>
 		<div class="hdr-right" onclick="event.stopPropagation()">
-			<button class="icon-btn" title="Discard All Changes" onclick="sendCommand('discard-all')">↩</button>
-			<button class="icon-btn" title="Stage All Changes" onclick="sendCommand('stage-all')">+</button>
+			<button class="icon-btn" title="Discard All Changes" onclick="sendCommand('discard-all')">${svgRotateLeft}</button>
+			<button class="icon-btn" title="Stage All Changes" onclick="sendCommand('stage-all')">${svgPush}</button>
 			<span class="count" id="unstaged-count">0</span>
 		</div>
 	</div>
@@ -152,14 +142,12 @@ textarea::placeholder { color: var(--vscode-input-placeholderForeground); }
 .btn-review-staged { padding: 5px 8px; background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.1)); color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); border: none; border-radius: 2px; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 4px; white-space: nowrap; flex-shrink: 0; }
 .btn-review-staged:hover { background: var(--vscode-button-secondaryHoverBackground, rgba(255,255,255,0.15)); }
 .btn-row { display: flex; gap: 4px; }
-.push-banner { display: flex; align-items: center; gap: 6px; margin-top: 5px; padding: 5px 8px; background: var(--vscode-inputValidation-warningBackground, rgba(226,192,141,0.15)); border: 1px solid var(--vscode-inputValidation-warningBorder, rgba(226,192,141,0.4)); border-radius: 2px; font-size: 11px; color: var(--vscode-foreground); }
-.push-banner svg { flex-shrink: 0; opacity: 0.8; } .push-banner span { flex: 1; }
-.push-btn { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 2px; padding: 2px 10px; cursor: pointer; font-size: 11px; font-weight: 500; white-space: nowrap; }
-.push-btn:hover { background: var(--vscode-button-hoverBackground); }
-.force-push-banner { display: flex; align-items: center; gap: 6px; margin-top: 5px; padding: 5px 8px; background: rgba(241,76,76,0.15); border: 1px solid rgba(241,76,76,0.4); border-radius: 2px; font-size: 11px; color: #f14c4c; }
-.force-push-banner svg { flex-shrink: 0; opacity: 0.8; fill: #f14c4c; } .force-push-banner span { flex: 1; color: #f14c4c; }
-.force-push-btn { background: rgba(241,76,76,0.3); color: #fff; border: 1px solid rgba(241,76,76,0.5); border-radius: 2px; padding: 2px 10px; cursor: pointer; font-size: 11px; font-weight: 500; white-space: nowrap; }
-.force-push-btn:hover { background: rgba(241,76,76,0.5); }
+.push-banner { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 5px; padding: 6px 8px; background: transparent; border: 1px solid var(--vscode-inputValidation-warningBorder, #e2c08d); border-radius: 2px; font-size: 11px; color: var(--vscode-inputValidation-warningBorder, #e2c08d); cursor: pointer; width: 100%; transition: background 0.1s; }
+.push-banner:hover { background: var(--vscode-toolbar-hoverBackground, rgba(255,255,255,0.05)); }
+.push-banner svg { flex-shrink: 0; opacity: 1; fill: var(--vscode-inputValidation-warningBorder, #e2c08d); color: var(--vscode-inputValidation-warningBorder, #e2c08d); } .push-banner span { font-weight: 600; }
+.force-push-banner { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 5px; padding: 6px 8px; background: transparent; border: 1px solid var(--vscode-inputValidation-errorBorder, #f14c4c); border-radius: 2px; font-size: 11px; color: var(--vscode-inputValidation-errorBorder, #f14c4c); cursor: pointer; width: 100%; transition: background 0.1s; }
+.force-push-banner:hover { background: var(--vscode-toolbar-hoverBackground, rgba(255,255,255,0.05)); }
+.force-push-banner svg { flex-shrink: 0; opacity: 1; fill: var(--vscode-inputValidation-errorBorder, #f14c4c); } .force-push-banner span { font-weight: 600; }
 .sync-banner { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 5px; padding: 6px 8px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-radius: 2px; font-size: 12px; font-weight: 500; cursor: pointer; }
 .sync-banner:hover { background: var(--vscode-button-hoverBackground); }
 .commit-area.sync-required .btn-row,
@@ -188,6 +176,7 @@ textarea::placeholder { color: var(--vscode-input-placeholderForeground); }
 .file-item .file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status-badge { font-size: 11px; font-weight: 600; width: 14px; text-align: center; flex-shrink: 0; }
 .status-M { color: #e2c08d; } .status-A { color: #73c991; } .status-D { color: #f14c4c; } .status-R { color: #73c991; } .status-U { color: #e2c08d; } .status-C { color: #73c991; }
+.file-name.deleted { text-decoration: line-through; opacity: 0.7; }
 .file-actions { display: none; gap: 1px; flex-shrink: 0; } .file-item:hover .file-actions { display: flex; }
 .file-item.selected { background: var(--vscode-list-activeSelectionBackground, rgba(255,255,255,0.1)); }
 .file-item.selected .file-actions { display: flex; }
@@ -195,7 +184,7 @@ textarea::placeholder { color: var(--vscode-input-placeholderForeground); }
 .tree-folder-header.selected { background: var(--vscode-list-activeSelectionBackground, rgba(255,255,255,0.1)); }
 .tree-folder-header.selected:hover { background: var(--vscode-list-activeSelectionBackground, rgba(255,255,255,0.12)); }
 .tree-folder-header.selected .folder-actions { display: flex; }
-.file-action-btn { background: none; border: none; color: var(--vscode-foreground); cursor: pointer; padding: 1px 3px; border-radius: 2px; font-size: 12px; opacity: 0.8; line-height: 1; }
+.file-action-btn { background: none; border: none; color: var(--vscode-foreground); cursor: pointer; padding: 2px 4px; border-radius: 3px; font-size: 16px; opacity: 0.8; line-height: 1; display: flex; align-items: center; justify-content: center; min-width: 22px; min-height: 22px; }
 .file-action-btn:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground); }
 .empty-state { padding: 0 20px; font-size: 12px; color: var(--vscode-descriptionForeground); font-style: italic; height: 22px; line-height: 22px; }
 .action-item { display: flex; align-items: center; padding: 0 8px 0 12px; cursor: pointer; gap: 8px; font-size: 12px; height: 22px; }
@@ -207,8 +196,8 @@ textarea::placeholder { color: var(--vscode-input-placeholderForeground); }
 .sync-info { padding: 4px 12px; font-size: 11px; color: var(--vscode-descriptionForeground); display: flex; gap: 8px; align-items: center; }
 .sync-ahead { color: var(--vscode-gitDecoration-addedResourceForeground, #73c991); }
 .sync-behind { color: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d); }
-.conflict-banner { margin: 4px 8px; padding: 6px 8px; background: var(--vscode-inputValidation-errorBackground, rgba(241,76,76,0.15)); border: 1px solid var(--vscode-inputValidation-errorBorder, #f14c4c); border-radius: 3px; font-size: 11px; display: flex; align-items: center; gap: 6px; color: var(--vscode-errorForeground, #f14c4c); }
-.merge-conflict-banner { display: flex; align-items: center; gap: 6px; margin: 4px 8px; padding: 5px 8px; background: rgba(241,76,76,0.12); border: 1px solid rgba(241,76,76,0.35); border-radius: 2px; font-size: 11px; color: #f14c4c; }
+.conflict-banner { margin: 4px 8px; padding: 6px 8px; background: transparent; border: 1px solid var(--vscode-inputValidation-errorBorder, #f14c4c); border-radius: 3px; font-size: 11px; display: flex; align-items: center; gap: 6px; color: var(--vscode-inputValidation-errorBorder, #f14c4c); }
+.merge-conflict-banner { display: flex; align-items: center; gap: 6px; margin: 4px 8px; padding: 5px 8px; background: transparent; border: 1px solid var(--vscode-inputValidation-errorBorder, #f14c4c); border-radius: 2px; font-size: 11px; color: var(--vscode-inputValidation-errorBorder, #f14c4c); }
 .merge-conflict-banner svg { flex-shrink: 0; fill: #f14c4c; }
 .merge-conflict-banner span { flex: 1; }
 .abort-merge-btn { background: rgba(241,76,76,0.25); color: #f14c4c; border: 1px solid rgba(241,76,76,0.4); border-radius: 2px; padding: 1px 8px; cursor: pointer; font-size: 10px; font-weight: 500; white-space: nowrap; flex-shrink: 0; }
@@ -240,9 +229,18 @@ function statusLetter(s) { return STATUS_MAP[s] || 'M'; }
 let _iconTheme = null;
 
 function getFileIcon(fileName, statusLtr) {
+	if (_iconTheme) {
+		var nameLower = (fileName || '').toLowerCase();
+		var ext = nameLower.split('.').slice(1);
+		var uri = _iconTheme.fileMap?.[nameLower];
+		if (!uri && ext.length > 1) { uri = _iconTheme.extMap?.[ext.slice(-2).join('.')]; }
+		if (!uri && ext.length > 0) { uri = _iconTheme.extMap?.[ext[ext.length - 1]]; }
+		if (!uri) { uri = _iconTheme.defaultFile; }
+		if (uri) return '<img class="file-icon-img" src="'+uri+'" width="16" height="16"/>';
+	}
 	var STATUS_COLORS = { 'M': '#e2c08d', 'A': '#73c991', 'D': '#f14c4c', 'R': '#73c991', 'C': '#73c991', 'U': '#e2c08d' };
 	var color = STATUS_COLORS[statusLtr] || 'var(--vscode-foreground)';
-	return '<svg class="file-icon-img" width="14" height="14" viewBox="0 0 16 16" fill="'+color+'" xmlns="http://www.w3.org/2000/svg"><path d="M13.85 4.44l-3.28-3.3-.35-.14H3.5a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V4.8l-.15-.36zM10.5 1.62L12.88 4H10.5V1.62zM12.5 14h-9V2h6V4.5a.5.5 0 0 0 .5.5h2.5v9z"/></svg>';
+	return '<svg width="14" height="14" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" fill="currentColor"><path d="M176 48L64 48c-8.8 0-16 7.2-16 16l0 384c0 8.8 7.2 16 16 16l256 0c8.8 0 16-7.2 16-16l0-240-88 0c-39.8 0-72-32.2-72-72l0-88zM316.1 160L224 67.9 224 136c0 13.3 10.7 24 24 24l68.1 0zM0 64C0 28.7 28.7 0 64 0L197.5 0c17 0 33.3 6.7 45.3 18.7L365.3 141.3c12 12 18.7 28.3 18.7 45.3L384 448c0 35.3-28.7 64-64 64L64 512c-35.3 0-64-28.7-64-64L0 64z"/></svg>';
 }
 
 function getFolderIcon(folderName, isExpanded) {
@@ -253,7 +251,7 @@ function getFolderIcon(folderName, isExpanded) {
 			: (_iconTheme.folderMap?.[nameLower] || _iconTheme.defaultFolder);
 		if (uri) return '<img class="file-icon-img tree-folder-icon" src="'+uri+'" width="14" height="14" data-folder="'+nameLower+'"/>';
 	}
-	return '<svg class="file-icon-img tree-folder-icon" width="14" height="14" viewBox="0 0 16 16" fill="currentColor" opacity="0.7"><path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75z"/></svg>';
+	return '<svg width="14" height="14" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="currentColor"><path d="M64 400l384 0c8.8 0 16-7.2 16-16l0-240c0-8.8-7.2-16-16-16l-149.3 0c-17.3 0-34.2-5.6-48-16L212.3 83.2c-2.8-2.1-6.1-3.2-9.6-3.2L64 80c-8.8 0-16 7.2-16 16l0 288c0 8.8 7.2 16 16 16zm384 48L64 448c-35.3 0-64-28.7-64-64L0 96C0 60.7 28.7 32 64 32l138.7 0c13.8 0 27.3 4.5 38.4 12.8l38.4 28.8c5.5 4.2 12.3 6.4 19.2 6.4L448 80c35.3 0 64 28.7 64 64l0 240c0 35.3-28.7 64-64 64z"/></svg> ';
 }
 
 function swapFolderIcon(headerEl) {
@@ -296,14 +294,15 @@ function renderMergeList(files) {
 	hdr.style.display = ''; body.style.display = ''; banner.style.display = 'flex';
 	document.getElementById('merge-conflict-text').textContent = 'Resolve conflicts before committing';
 	el.innerHTML = files.map(function(f, i) {
+		var sl = statusLetter(f.status);
 		return '<div class="file-item" data-merge-idx="'+i+'" title="'+escapeHtml(f.filePath)+'" style="padding-left:20px">' +
-			'<span class="file-icon">' + getFileIcon(f.fileName, 'U') + '</span>' +
-			'<span class="file-name">' + escapeHtml(f.fileName) + '</span>' +
+			'<span class="file-icon">' + getFileIcon(f.fileName, sl) + '</span>' +
+			'<span class="file-name' + (sl === 'D' ? ' deleted' : '') + '">' + escapeHtml(f.fileName) + '</span>' +
 			'<div class="file-actions">' +
 				'<button class="file-action-btn" data-merge-action="open" data-merge-file-idx="'+i+'" title="Open File">○</button>' +
-				'<button class="file-action-btn" data-merge-action="stage" data-merge-file-idx="'+i+'" title="Stage Changes">+</button>' +
+				'<button class="file-action-btn" data-merge-action="stage" data-merge-file-idx="'+i+'" title="Stage Changes"><svg width="14" height="14" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" fill="currentColor"><path d="M256 64c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 160-160 0c-17.7 0-32 14.3-32 32s14.3 32 32 32l160 0 0 160c0 17.7 14.3 32 32 32s32-14.3 32-32l0-160 160 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-160 0 0-160z"/></svg></button>' +
 			'</div>' +
-			'<span class="status-badge status-U">U</span>' +
+			'<span class="status-badge status-'+sl+'">'+sl+'</span>' +
 			'</div>';
 	}).join('');
 }
@@ -368,14 +367,15 @@ function renderTreeNode(node, type, depth) {
 		var lastSegment = fullName.split('/').pop() || fullName;
 		var folderActions = '';
 		if (type === 'staged') {
-			folderActions = '<button class="file-action-btn" data-folder-action="unstage" data-folder-indices="'+childIndices.join(',')+'" title="Unstage Folder">−</button>';
+			folderActions = '<button class="file-action-btn" data-folder-action="unstage" data-folder-indices="'+childIndices.join(',')+'" title="Unstage Folder"><svg width="14" height="14" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="currentColor"><path fill="currentColor" d="M0 256c0-17.7 14.3-32 32-32l448 0c17.7 0 32 14.3 32 32s-14.3 32-32 32L32 288c-17.7 0-32-14.3-32-32z"/></svg></button>';
 		} else {
-			folderActions = '<button class="file-action-btn" data-folder-action="discard" data-folder-indices="'+childIndices.join(',')+'" title="Discard Folder">↩</button><button class="file-action-btn" data-folder-action="stage" data-folder-indices="'+childIndices.join(',')+'" title="Stage Folder">+</button>';
+			folderActions = '<button class="file-action-btn" data-folder-action="discard" data-folder-indices="'+childIndices.join(',')+'" title="Discard Folder"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="currentColor"><path d="M24 192l144 0c9.7 0 18.5-5.8 22.2-14.8s1.7-19.3-5.2-26.2l-46.7-46.7c75.3-58.6 184.3-53.3 253.5 15.9 75 75 75 196.5 0 271.5s-196.5 75-271.5 0c-10.2-10.2-19-21.3-26.4-33-9.5-14.9-29.3-19.3-44.2-9.8s-19.3 29.3-9.8 44.2C49.7 408.7 61.4 423.5 75 437 175 537 337 537 437 437S537 175 437 75C342.8-19.3 193.3-24.7 92.7 58.8L41 7C34.1 .2 23.8-1.9 14.8 1.8S0 14.3 0 24L0 168c0 13.3 10.7 24 24 24z"/></svg></button><button class="file-action-btn" data-folder-action="stage" data-folder-indices="'+childIndices.join(',')+'" title="Stage Folder"><svg width="14" height="14" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" fill="currentColor"><path d="M256 64c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 160-160 0c-17.7 0-32 14.3-32 32s14.3 32 32 32l160 0 0 160c0 17.7 14.3 32 32 32s32-14.3 32-32l0-160 160 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-160 0 0-160z"/></svg></button>';
 		}
 		html += '<div class="tree-folder">';
 		html += '<div class="tree-folder-header" style="padding-left:'+pad+'px">';
-		html += '<span class="tree-chevron">›</span>';
-		html += '<span class="tree-folder-name" title="'+fullName+'">'+displayName+'</span>';
+		html += '<span class="tree-chevron"><svg width="14" height="14" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512" fill="currentColor"><path d="M311.1 233.4c12.5 12.5 12.5 32.8 0 45.3l-192 192c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L243.2 256 73.9 86.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l192 192z"/></svg></span>';
+		html += getFolderIcon(lastSegment, true);
+		html += ' <span class="tree-folder-name" title="'+fullName+'">'+displayName+'</span>';
 		html += '<div class="folder-actions">'+folderActions+'</div>';
 		html += '</div>';
 		html += '<div class="tree-folder-children" style="--guide-left:'+(pad+6)+'px">';
@@ -386,12 +386,13 @@ function renderTreeNode(node, type, depth) {
 		node._files.forEach(function(f) {
 			var sl = statusLetter(f.status);
 			var filePad = pad + 8;
+			var svgOpenFile = '<svg width="14" height="14" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" fill="currentColor"><path d="M64 48l112 0 0 88c0 39.8 32.2 72 72 72l88 0 0 240c0 8.8-7.2 16-16 16L64 464c-8.8 0-16-7.2-16-16L48 64c0-8.8 7.2-16 16-16zM224 67.9l92.1 92.1-68.1 0c-13.3 0-24-10.7-24-24l0-68.1zM64 0C28.7 0 0 28.7 0 64L0 448c0 35.3 28.7 64 64 64l256 0c35.3 0 64-28.7 64-64l0-261.5c0-17-6.7-33.3-18.7-45.3L242.7 18.7C230.7 6.7 214.5 0 197.5 0L64 0zm56 256c-13.3 0-24 10.7-24 24s10.7 24 24 24l144 0c13.3 0 24-10.7 24-24s-10.7-24-24-24l-144 0zm0 96c-13.3 0-24 10.7-24 24s10.7 24 24 24l144 0c13.3 0 24-10.7 24-24s-10.7-24-24-24l-144 0z"/></svg>';
 			var actionBtns = type === 'staged'
-				? '<button class="file-action-btn" data-action="unstage" data-idx="'+f._idx+'" title="Unstage">−</button>'
-				: '<button class="file-action-btn" data-action="discard" data-idx="'+f._idx+'" title="Discard Changes">↩</button><button class="file-action-btn" data-action="stage" data-idx="'+f._idx+'" title="Stage">+</button>';
+				? '<button class="file-action-btn" data-action="open-file" data-idx="'+f._idx+'" title="Open File">'+svgOpenFile+'</button><button class="file-action-btn" data-action="unstage" data-idx="'+f._idx+'" title="Unstage"><svg width="14" height="14" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="currentColor"><path fill="currentColor" d="M0 256c0-17.7 14.3-32 32-32l448 0c17.7 0 32 14.3 32 32s-14.3 32-32 32L32 288c-17.7 0-32-14.3-32-32z"/></svg></button>'
+				: '<button class="file-action-btn" data-action="open-file" data-idx="'+f._idx+'" title="Open File">'+svgOpenFile+'</button><button class="file-action-btn" data-action="discard" data-idx="'+f._idx+'" title="Discard Changes"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="currentColor"><path d="M24 192l144 0c9.7 0 18.5-5.8 22.2-14.8s1.7-19.3-5.2-26.2l-46.7-46.7c75.3-58.6 184.3-53.3 253.5 15.9 75 75 75 196.5 0 271.5s-196.5 75-271.5 0c-10.2-10.2-19-21.3-26.4-33-9.5-14.9-29.3-19.3-44.2-9.8s-19.3 29.3-9.8 44.2C49.7 408.7 61.4 423.5 75 437 175 537 337 537 437 437S537 175 437 75C342.8-19.3 193.3-24.7 92.7 58.8L41 7C34.1 .2 23.8-1.9 14.8 1.8S0 14.3 0 24L0 168c0 13.3 10.7 24 24 24z"/></svg></button><button class="file-action-btn" data-action="stage" data-idx="'+f._idx+'" title="Stage"><svg width="14" height="14" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" fill="currentColor"><path d="M256 64c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 160-160 0c-17.7 0-32 14.3-32 32s14.3 32 32 32l160 0 0 160c0 17.7 14.3 32 32 32s32-14.3 32-32l0-160 160 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-160 0 0-160z"/></svg></button>';
 			html += '<div class="file-item" data-idx="'+f._idx+'" data-type="'+type+'" title="'+f.filePath+'" style="padding-left:'+filePad+'px">';
 			html += '<span class="file-icon">'+getFileIcon(f.fileName, sl)+'</span>';
-			html += '<span class="file-name">'+f.fileName+'</span>';
+			html += '<span class="file-name' + (sl === 'D' ? ' deleted' : '') + '">'+f.fileName+'</span>';
 			html += '<div class="file-actions">'+actionBtns+'</div>';
 			html += '<span class="status-badge status-'+sl+'">'+sl+'</span>';
 			html += '</div>';
@@ -495,6 +496,7 @@ document.getElementById('staged-list').addEventListener('click', (e) => {
 	if (!li) return; const idx = parseInt(li.dataset.idx);
 	if (btn) {
 		e.stopPropagation();
+		if (btn.dataset.action === 'open-file') { const f = _staged[idx]; if (f) sendCommand('open-file', { filePath: f.filePath }); return; }
 		var bulkPaths = getSelectedPaths('staged', idx);
 		if (bulkPaths) { sendCommand(btn.dataset.action + '-files', { filePaths: bulkPaths }); clearSelection('staged'); }
 		else { const f = _staged[idx]; if (f && btn.dataset.action === 'unstage') sendCommand('unstage-file', { filePath: f.filePath }); }
@@ -524,6 +526,7 @@ document.getElementById('unstaged-list').addEventListener('click', (e) => {
 	if (!li) return; const idx = parseInt(li.dataset.idx);
 	if (btn) {
 		e.stopPropagation();
+		if (btn.dataset.action === 'open-file') { const f = _unstaged[idx]; if (f) sendCommand('open-file', { filePath: f.filePath }); return; }
 		var bulkPaths = getSelectedPaths('unstaged', idx);
 		if (bulkPaths) { sendCommand(btn.dataset.action + '-files', { filePaths: bulkPaths }); clearSelection('unstaged'); }
 		else { const f = _unstaged[idx]; if (!f) return; if (btn.dataset.action === 'stage') sendCommand('stage-file', { filePath: f.filePath }); if (btn.dataset.action === 'discard') sendCommand('discard-file', { filePath: f.filePath }); }

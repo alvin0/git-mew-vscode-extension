@@ -83,6 +83,9 @@ ${getGraphScript()}
 			case 'open-commit-diff':
 				await this._ops.openCommitFileDiff(msg.sha, msg.filePath);
 				break;
+			case 'open-commit-all-diffs':
+				await this._ops.openCommitAllDiffs(msg.sha);
+				break;
 			case 'edit-commit':
 				await this._ops.editCommitMessage(msg.sha, msg.isPushed, msg.message);
 				if (msg.isPushed) this._sidebarProvider?.setForcePushNeeded(true);

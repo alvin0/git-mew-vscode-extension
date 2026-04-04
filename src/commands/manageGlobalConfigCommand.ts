@@ -82,7 +82,7 @@ export class GitmewGlobalConfigProvider implements vscode.TreeDataProvider<Gitme
     return element;
   }
 
-  getChildren(element?: GitmewTreeItem): GitmewTreeItem[] {
+  async getChildren(element?: GitmewTreeItem): Promise<GitmewTreeItem[]> {
     if (!element) {
       // Root level: show folders
       const folders = new Set<string>();
@@ -91,26 +91,35 @@ export class GitmewGlobalConfigProvider implements vscode.TreeDataProvider<Gitme
         folders.add(folder);
       }
       return Array.from(folders).map(
-        (folder) => new GitmewTreeItem(folder, vscode.TreeItemCollapsibleState.Expanded)
+        (folder) => new GitmewTreeItem(folder, vscode.TreeItemCollapsibleState.Collapsed)
       );
     }
 
     // Child level: show files under this folder
     const folderName = element.label as string;
-    return CONFIG_FILES
-      .filter((f) => f.relativePath.startsWith(folderName + "/"))
-      .map((f) => {
-        const fullPath = path.join(GLOBAL_GITMEW_DIR, f.relativePath);
-        const exists = fsSync.existsSync(fullPath);
-        const fileName = path.basename(f.relativePath);
-        return new GitmewTreeItem(
-          fileName,
-          vscode.TreeItemCollapsibleState.None,
-          fullPath,
-          true,
-          exists,
-        );
-      });
+    const items = CONFIG_FILES
+      .filter((f) => f.relativePath.startsWith(folderName + "/"));
+
+    const itemPromises = items.map(async (f) => {
+      const fullPath = path.join(GLOBAL_GITMEW_DIR, f.relativePath);
+      let exists = false;
+      try {
+        await fs.access(fullPath);
+        exists = true;
+      } catch {
+        exists = false;
+      }
+      const fileName = path.basename(f.relativePath);
+      return new GitmewTreeItem(
+        fileName,
+        vscode.TreeItemCollapsibleState.None,
+        fullPath,
+        true,
+        exists,
+      );
+    });
+
+    return Promise.all(itemPromises);
   }
 }
 
