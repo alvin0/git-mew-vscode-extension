@@ -1,5 +1,21 @@
 # Change Log
 
+## [0.5.6] - 2026-04-05
+
+### Fixed
+- **Review Memory Suppression Normalization**: Fixed suppression matching to derive normalized finding text from description instead of dismiss reason, ensuring consistent pattern matching across sessions
+- **Synthesis Suppression Matching**: Corrected suppression comparison to use SHA-256-compatible hashing and consistent glob pattern handling (e.g., `src/**/*.ts`)
+- **Observer Structured Audit**: Fixed todo-item removals to apply correctly during structured self-audit phase
+- **JSON Extraction Safety**: Improved robustness of JSON extraction from agent responses to handle edge cases
+
+### Changed
+- **Documentation**: Updated `docs/review-flows.md` to accurately reflect the current 4-agent phase 1 + phase 3 synthesis architecture instead of legacy 3-agent flow
+
+### Improved
+- **Review Memory Decay**: Pattern decay is now throttled to once per 24 hours to prevent excessive recalculation
+- **Resolution History Bounds**: Resolution history is now capped to prevent unbounded growth in long-running sessions
+- **Test Coverage**: Added regression tests for review-memory suppression, decay cadence, bounded resolution history, observer todo removals, and safer JSON extraction
+
 ## [0.5.5] - 2026-04-05
 
 ### Fixed

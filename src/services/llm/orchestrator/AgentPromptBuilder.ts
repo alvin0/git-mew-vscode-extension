@@ -291,9 +291,9 @@ export class AgentPromptBuilder {
     if (ctx.resolutionStats) {
       parts.push(
         '## Resolution Signals\n' +
-        `Overall resolution rate: ${(ctx.resolutionStats.overallRate * 100).toFixed(0)}%\n` +
-        `Agent rates: ${Object.entries(ctx.resolutionStats.byAgent)
-          .map(([agent, rate]) => `${agent}=${(rate * 100).toFixed(0)}%`)
+        `Overall resolution rate: ${((ctx.resolutionStats.overallRate ?? 0) * 100).toFixed(0)}%\n` +
+        `Agent rates: ${Object.entries(ctx.resolutionStats.byAgent ?? {})
+          .map(([agent, rate]) => `${agent}=${((rate ?? 0) * 100).toFixed(0)}%`)
           .join(', ') || 'N/A'}`,
       );
     }
@@ -729,10 +729,10 @@ Return Markdown only.
     });
 
     const securityLines = (ctx.securityFindings?.vulnerabilities ?? [])
-      .filter((vulnerability) => vulnerability.confidence >= 0.5)
+      .filter((vulnerability) => (vulnerability.confidence ?? 0) >= 0.5)
       .map((vulnerability) =>
         `[SA] ${vulnerability.file}:${vulnerability.location} — ${vulnerability.cweId} ${vulnerability.description} ` +
-        `| Remediation: ${vulnerability.remediation} | Confidence: ${Math.round(vulnerability.confidence * 100)}%`,
+        `| Remediation: ${vulnerability.remediation} | Confidence: ${Math.round((vulnerability.confidence ?? 0) * 100)}%`,
       );
 
     const prompt = [
@@ -745,7 +745,7 @@ Return Markdown only.
       '## Suppressed Findings',
       this.formatSuppressedFindings(ctx.suppressedFindings),
       '## Resolution Stats',
-      `Overall resolution rate: ${(ctx.resolutionStats.overallRate * 100).toFixed(0)}%`,
+      `Overall resolution rate: ${((ctx.resolutionStats?.overallRate ?? 0) * 100).toFixed(0)}%`,
       'Write the improvement suggestions section now.',
     ].join('\n\n');
 
@@ -793,7 +793,7 @@ Return Markdown only.
         `| mitigation: ${risk.mitigation ?? 'Add targeted validation'}`,
       ),
       ...(ctx.securityFindings?.vulnerabilities ?? [])
-        .filter((vulnerability) => vulnerability.confidence >= 0.5)
+        .filter((vulnerability) => (vulnerability.confidence ?? 0) >= 0.5)
         .map((vulnerability) =>
           `[SA] ${vulnerability.file}:${vulnerability.location} — ${vulnerability.description} ` +
           `| likelihood: high | impact: ${vulnerability.cweId} vulnerability may affect consumers ` +

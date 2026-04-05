@@ -18,7 +18,7 @@ function extractAgentBody(output?: string): string {
 }
 
 function normalize(text: string): string {
-  return text.toLowerCase().replace(/\s+/g, ' ').trim();
+  return (text ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
 function wordOverlapRatio(a: string, b: string): number {
@@ -51,6 +51,7 @@ function sha256(text: string): string {
 }
 
 function globToRegExp(pattern: string): RegExp {
+  if (!pattern) { return new RegExp('^$'); }
   const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
   const regexSource = escaped
     .replace(/\*\*\//g, '::DOUBLE_STAR_DIR::')
@@ -72,10 +73,13 @@ function isSuppressed(
   description: string,
   suppressedFindings: SuppressedFinding[],
 ): boolean {
+  if (!description || !file) {
+    return false;
+  }
   const normalizedDescription = normalize(description);
   const descriptionHash = sha256(normalizedDescription);
   return suppressedFindings.some((finding) => {
-    if (!globMatch(file, finding.filePattern)) {
+    if (!finding.filePattern || !globMatch(file, finding.filePattern)) {
       return false;
     }
     if (finding.issueCategory !== category) {

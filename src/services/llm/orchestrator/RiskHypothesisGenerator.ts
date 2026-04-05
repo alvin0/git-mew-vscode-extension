@@ -123,8 +123,8 @@ export class RiskHypothesisGenerator {
     // Rule 4 (New dependency): CR issues mentioning 'import' or 'dependency'
     const importIssues = crIssues.filter(
       (i) =>
-        i.description.toLowerCase().includes("import") ||
-        i.description.toLowerCase().includes("dependency"),
+        (i.description ?? '').toLowerCase().includes("import") ||
+        (i.description ?? '').toLowerCase().includes("dependency"),
     );
     if (importIssues.length > 0) {
       const files = [...new Set(importIssues.map((i) => i.file))];
@@ -193,8 +193,8 @@ export class RiskHypothesisGenerator {
     const schemaIssues = crIssues.filter((i) =>
       SCHEMA_KEYWORDS.some(
         (kw) =>
-          i.description.toLowerCase().includes(kw) ||
-          i.file.toLowerCase().includes(kw),
+          (i.description ?? '').toLowerCase().includes(kw) ||
+          (i.file ?? '').toLowerCase().includes(kw),
       ),
     );
     const schemaAffected = [

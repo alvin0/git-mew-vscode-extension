@@ -388,6 +388,7 @@ export class ReviewMemoryService {
       if (output.role === 'Code Reviewer') {
         const structured = output.structured as CodeReviewerOutput;
         for (const issue of structured.issues ?? []) {
+          if (!issue.description || !issue.file) { continue; }
           candidates.push({
             description: issue.description,
             category: issue.category,
@@ -401,6 +402,7 @@ export class ReviewMemoryService {
       if (output.role === 'Security Analyst') {
         const structured = output.structured as SecurityAnalystOutput;
         for (const vulnerability of structured.vulnerabilities ?? []) {
+          if (!vulnerability.description || !vulnerability.file) { continue; }
           candidates.push({
             description: `${vulnerability.cweId}: ${vulnerability.description}`,
             category: 'security',
@@ -414,6 +416,7 @@ export class ReviewMemoryService {
       if (output.role === 'Observer') {
         const structured = output.structured as ObserverOutput;
         for (const risk of structured.risks ?? []) {
+          if (!risk.description || !risk.affectedArea) { continue; }
           candidates.push({
             description: risk.description,
             category: this.inferObserverCategory(risk.description),
@@ -464,7 +467,7 @@ export class ReviewMemoryService {
   }
 
   private normalize(desc: string): string {
-    return desc.toLowerCase().replace(/\s+/g, ' ').trim();
+    return (desc ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
   }
 
   private sha256(text: string): string {
@@ -502,6 +505,7 @@ export class ReviewMemoryService {
   }
 
   private globToRegExp(pattern: string): RegExp {
+    if (!pattern) { return new RegExp('^$'); }
     const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
     const regexSource = escaped
       .replace(/\*\*\//g, '::DOUBLE_STAR_DIR::')
@@ -514,6 +518,9 @@ export class ReviewMemoryService {
   }
 
   private toFilePattern(filePath: string): string {
+    if (!filePath) {
+      return '**/*';
+    }
     const normalized = filePath.replace(/\\/g, '/');
     const parts = normalized.split('/');
     const fileName = parts.pop() ?? normalized;

@@ -22,13 +22,27 @@ Git Mew is your intelligent Git companion that leverages AI to streamline commit
 
 ### Core Capabilities
 
-<table>
-  <tr>
-    <td align="center"><img src="resources/documents/sidebar.png" width="280"/><br/><sub>Sidebar Panel</sub></td>
-    <td align="center"><img src="resources/documents/review-commit.png" width="520"/><br/><sub>Pre-Commit Review</sub></td>
-    <td align="center"><img src="resources/documents/review-merge.png" width="520"/><br/><sub>Code Review</sub></td>
-  </tr>
-</table>
+<div align="center">
+  <video src="resources/documents/gitmew-overview.mp4" width="900" controls muted></video>
+  <br/><b>Overview</b><br/>
+  <sub>A quick tour of Git Mew — sidebar panel, commit graph, and all core features at a glance.</sub>
+</div>
+
+<br/>
+
+<div align="center">
+  <video src="resources/documents/gitmew-generate-commit.mp4" width="900" controls muted></video>
+  <br/><b>Generate Commit Message</b><br/>
+  <sub>Stage your changes and let Git Mew generate a meaningful, conventional commit message in seconds.</sub>
+</div>
+
+<br/>
+
+<div align="center">
+  <video src="resources/documents/gitmew-review-staged.mp4" width="900" controls muted></video>
+  <br/><b>Review Staged Changes</b><br/>
+  <sub>Get AI-powered code review on your staged changes before committing — catch issues early.</sub>
+</div>
 
 #### Sidebar Panel
 Git Mew now has its own Activity Bar icon. The sidebar gives you a unified workspace for staging, committing, pushing, reviewing, and browsing commit history — all without switching views.

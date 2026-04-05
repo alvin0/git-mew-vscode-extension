@@ -265,7 +265,7 @@ export class SharedContextStoreImpl implements ISharedContextStore {
         const vulnerabilities = data.vulnerabilities
           .map((v) =>
             `- [${v.severity}] ${v.file}:${v.location} — ${v.cweId}: ${v.description} ` +
-            `(confidence: ${v.confidence.toFixed(2)})`,
+            `(confidence: ${(v.confidence ?? 0).toFixed(2)})`,
           )
           .join('\n');
         const authConcerns = data.authFlowConcerns?.length

@@ -80,7 +80,15 @@ export function captureError(
         scope.setLevel(severity === 'crash' ? 'fatal' : 'warning');
         scope.setTag('error.severity', severity);
         if (context) {
-            scope.setExtras(context);
+            // Filter out undefined values — Sentry may call .replace() on extras
+            // and throws if a value is undefined.
+            const safeExtras: Record<string, unknown> = {};
+            for (const [key, value] of Object.entries(context)) {
+                if (value !== undefined) {
+                    safeExtras[key] = value;
+                }
+            }
+            scope.setExtras(safeExtras);
         }
         Sentry.captureException(error);
     });
