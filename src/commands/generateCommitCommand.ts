@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { LLMService } from '../services/llm';
 import { GitService } from '../services/utils/gitService';
+import { trackEvent } from '../services/posthog';
 
 // Global abort controller for commit generation
 let currentAbortController: AbortController | null = null;
@@ -23,6 +24,7 @@ export function registerGenerateCommitCommand(
 	return vscode.commands.registerCommand('git-mew.generate-commit', async () => {
 		// Set generating state to true
 		setGeneratingState(true);
+		trackEvent('generate_commit_started');
 		
 		currentAbortController?.abort();
 		currentAbortController = new AbortController();
@@ -126,6 +128,7 @@ export function registerGenerateCommitCommand(
 			
 			// Show success message
 			vscode.window.showInformationMessage('✓ Commit message generated and inserted into Git SCM!');
+			trackEvent('generate_commit_completed', { provider: currentProvider, model: currentModel });
 			
 		} catch (error) {
 			vscode.window.showErrorMessage(`Error generating commit message: ${error}`);

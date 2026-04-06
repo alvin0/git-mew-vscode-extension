@@ -652,7 +652,65 @@ export function buildReviewDiffResultMessageHandler(): string {
         }
 
         function renderRawDiff(container, diffText) {
-            container.innerHTML = '<pre><code class="language-diff">' + escapeHtml(diffText || 'No diff available.') + '</code></pre>';
+            var CHUNK_LINES = 200;
+            var text = diffText || 'No diff available.';
+            var lines = text.split('\\n');
+
+            if (lines.length <= CHUNK_LINES) {
+                container.innerHTML = '<pre><code class="language-diff">' + escapeHtml(text) + '</code></pre>';
+                return;
+            }
+
+            container.innerHTML = '';
+            var pre = document.createElement('pre');
+            var code = document.createElement('code');
+            code.className = 'language-diff';
+            pre.appendChild(code);
+            container.appendChild(pre);
+
+            var rendered = 0;
+
+            function renderNextChunk() {
+                if (rendered >= lines.length) {
+                    if (sentinel) {
+                        sentinel.remove();
+                        sentinel = null;
+                    }
+                    return;
+                }
+                var end = Math.min(rendered + CHUNK_LINES, lines.length);
+                var chunk = lines.slice(rendered, end).join('\\n');
+                if (rendered > 0) {
+                    chunk = '\\n' + chunk;
+                }
+                var span = document.createElement('span');
+                span.textContent = chunk;
+                code.appendChild(span);
+                rendered = end;
+
+                if (rendered >= lines.length && sentinel) {
+                    sentinel.remove();
+                    sentinel = null;
+                }
+            }
+
+            var sentinel = document.createElement('div');
+            sentinel.style.height = '1px';
+            container.appendChild(sentinel);
+
+            var observer = new IntersectionObserver(function(entries) {
+                if (entries[0].isIntersecting) {
+                    renderNextChunk();
+                    if (rendered >= lines.length) {
+                        observer.disconnect();
+                    }
+                }
+            }, { root: null, rootMargin: '400px' });
+
+            renderNextChunk();
+            if (sentinel && rendered < lines.length) {
+                observer.observe(sentinel);
+            }
         }
 
         async function handleWebviewResultMessage(message, markdownRenderer) {

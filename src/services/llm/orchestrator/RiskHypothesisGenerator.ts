@@ -7,6 +7,7 @@ import {
 } from "./orchestratorTypes";
 import { TokenEstimatorService } from "../TokenEstimatorService";
 import { ILLMAdapter } from "../../../llm-adapter/adapterInterface";
+import { trackEvent } from "../../posthog";
 
 const MAX_HYPOTHESES = 10;
 const MAX_LLM_HYPOTHESES = 4;
@@ -288,6 +289,15 @@ Max ${MAX_LLM_HYPOTHESES} additional hypotheses. Return ONLY the JSON array, no 
         "You are a code review risk analyst. Generate risk hypotheses as a JSON array. Return ONLY valid JSON.",
       maxTokens: 2000,
       signal,
+    });
+
+    trackEvent('llm_request', {
+      provider: adapter.getProvider(),
+      model: adapter.getModel(),
+      stage: 'risk-hypothesis',
+      ...(response.promptTokens !== undefined && { prompt_tokens: response.promptTokens }),
+      ...(response.completionTokens !== undefined && { completion_tokens: response.completionTokens }),
+      ...(response.totalTokens !== undefined && { total_tokens: response.totalTokens }),
     });
 
     return this.parseLLMResponse(response.text);

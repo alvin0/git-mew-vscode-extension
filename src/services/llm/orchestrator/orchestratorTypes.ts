@@ -272,6 +272,7 @@ export interface SynthesisAgentContext {
   outputContract: string;
   suppressedFindings: SuppressedFinding[];
   resolutionStats: ResolutionStats;
+  language: string;
   codeReviewerFindings?: CodeReviewerOutput;
   securityFindings?: SecurityAnalystOutput;
   observerFindings?: ObserverOutput;

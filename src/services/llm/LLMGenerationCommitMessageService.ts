@@ -17,6 +17,7 @@ import {
 import { LLMAdapterService } from "./LLMAdapterService";
 import { LLMUIService } from "./LLMUIService";
 import { interpolate } from "../../services/utils/templateInterpolator";
+import { trackEvent } from "../posthog";
 
 /**
  * Handles LLM-based text generation tasks
@@ -218,6 +219,15 @@ Please analyze these changes and provide a comprehensive merge request review.`;
 
       const response = await adapter.generateText(prompt, {
         systemMessage: SYSTEM_PROMPT_GENERATE_REVIEW_MERGE(),
+      });
+
+      trackEvent('llm_request', {
+        provider: adapter.getProvider(),
+        model: adapter.getModel(),
+        stage: 'review-merge-direct',
+        ...(response.promptTokens !== undefined && { prompt_tokens: response.promptTokens }),
+        ...(response.completionTokens !== undefined && { completion_tokens: response.completionTokens }),
+        ...(response.totalTokens !== undefined && { total_tokens: response.totalTokens }),
       });
 
       return response.text.trim();

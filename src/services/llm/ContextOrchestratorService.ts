@@ -13,6 +13,7 @@ import { TokenEstimatorService } from "./TokenEstimatorService";
 import { AdapterCalibrationService } from "./orchestrator/AdapterCalibrationService";
 import { ChunkAnalysisReducer } from "./orchestrator/ChunkAnalysisReducer";
 import { DiffChunkBuilder } from "./orchestrator/DiffChunkBuilder";
+import { trackEvent } from "../posthog";
 import { MultiAgentExecutor } from "./orchestrator/MultiAgentExecutor";
 import {
   AgentBudgetAllocation,
@@ -187,7 +188,18 @@ export class ContextOrchestratorService {
     );
 
     this.throwIfCancelled(signal);
+    const durationMs = Date.now() - startTime;
     this.reportLog(request, `[${stageLabel}] response received (${response.promptTokens ?? '?'} prompt tokens, ${response.completionTokens ?? '?'} completion tokens)`);
+    trackEvent('llm_request', {
+      provider: adapter.getProvider(),
+      model: adapter.getModel(),
+      stage: stageLabel,
+      ...(response.promptTokens !== undefined && { prompt_tokens: response.promptTokens }),
+      ...(response.completionTokens !== undefined && { completion_tokens: response.completionTokens }),
+      ...(response.totalTokens !== undefined && { total_tokens: response.totalTokens }),
+      finish_reason: response.finishReason,
+      duration_ms: durationMs,
+    });
     this.reportLlmLog(request, {
       stage: stageLabel,
       provider: adapter.getProvider(),
@@ -199,7 +211,7 @@ export class ContextOrchestratorService {
       completionTokens: response.completionTokens,
       totalTokens: response.totalTokens,
       finishReason: response.finishReason,
-      durationMs: Date.now() - startTime,
+      durationMs,
       timestamp: new Date().toISOString(),
     });
     return response.text.trim();

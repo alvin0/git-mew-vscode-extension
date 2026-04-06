@@ -9,6 +9,7 @@ import {
     WebviewMessageHandler
 } from './reviewSelectedCommits';
 import { loadReviewPreferences } from './reviewShared/preferences';
+import { trackEvent } from '../services/posthog';
 
 /**
  * Register the review selected commits command.
@@ -25,6 +26,7 @@ export function registerReviewSelectedCommitsCommand(
                 vscode.window.showWarningMessage('No commits selected. Please select commits from the graph first.');
                 return;
             }
+            trackEvent('review_selected_commits_started', { commit_count: commits.length });
 
             const { currentProvider, currentModel, savedLanguage } = loadReviewPreferences(llmService);
             const { providers, availableModels, customModelSettings, customProviderConfig } = await ModelProvider.getAvailableModels(llmService);

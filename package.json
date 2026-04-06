@@ -446,6 +446,7 @@
     "highlight.js": "^11.11.1",
     "markdown-it": "^14.1.1",
     "markdown-it-highlightjs": "^4.3.0",
-    "plantuml-encoder": "^1.4.0"
+    "plantuml-encoder": "^1.4.0",
+    "posthog-node": "^5.28.11"
   }
 }

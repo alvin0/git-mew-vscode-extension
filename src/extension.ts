@@ -8,6 +8,7 @@ import { GitService } from './services/utils/gitService';
 import { createStatusBarItem } from './statusBar';
 import { GitMewSidebarProvider, GitMewGraphProvider, CodeReviewProvider, SettingsProvider, HistoriesProvider } from './commands/sidebar';
 import { initSentry, captureError, flushSentry } from './services/sentry';
+import { initPostHog, trackEvent, shutdownPostHog } from './services/posthog';
 import { ReviewMemoryService } from './services/llm/ReviewMemoryService';
 import { onHistorySaved } from './commands/reviewShared/panelMessaging';
 import { deleteHistoryFile } from './services/historyService';
@@ -19,6 +20,8 @@ export async function activate(context: vscode.ExtensionContext) {
 	// Initialize Sentry error tracking
 	const extensionVersion = vscode.extensions.getExtension('GitMew.git-mew')?.packageJSON?.version ?? 'unknown';
 	initSentry(extensionVersion);
+	initPostHog(extensionVersion);
+	trackEvent('extension_activated');
 
 	try {
 		// Wait for Git extension to be available
@@ -175,6 +178,7 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 // This method is called when your extension is deactivated
-export function deactivate() {
-	flushSentry();
+export async function deactivate() {
+	await flushSentry();
+	await shutdownPostHog();
 }

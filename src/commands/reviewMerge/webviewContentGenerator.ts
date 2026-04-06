@@ -377,7 +377,7 @@ function getClientScript(
 
         window.addEventListener('message', (event) => {
             const message = event.data;
-            const markdownRenderer = window.markdownit();
+            const markdownRenderer = window.markdownit({ html: true });
 
             switch (message.command) {
                 case 'showResult':

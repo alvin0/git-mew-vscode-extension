@@ -9,6 +9,7 @@ import {
 } from './reviewStagedChanges';
 import { loadReviewPreferences } from './reviewShared/preferences';
 import { ReviewMemoryService } from '../services/llm/ReviewMemoryService';
+import { trackEvent } from '../services/posthog';
 
 /**
  * Register the review staged changes command
@@ -25,6 +26,7 @@ export function registerReviewStagedChangesCommand(
                 vscode.window.showWarningMessage('No staged files found. Please stage some files before reviewing.');
                 return;
             }
+            trackEvent('review_staged_changes_started');
 
             const { currentProvider, currentModel, savedLanguage } = loadReviewPreferences(llmService);
             const { providers, availableModels, customModelSettings, customProviderConfig } = await ModelProvider.getAvailableModels(llmService);

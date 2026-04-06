@@ -9,6 +9,54 @@ import { UnifiedDiffFile } from '../contextTypes';
 import { SuppressedFinding } from '../reviewMemoryTypes';
 import { createHash } from 'crypto';
 
+const EMPTY_SECTION_MESSAGES: Record<string, Record<string, string>> = {
+  noIssues: {
+    Vietnamese: 'Không phát hiện vấn đề nào.',
+    Japanese: '問題は検出されませんでした。',
+    Korean: '발견된 문제가 없습니다.',
+    Chinese: '未发现任何问题。',
+    French: 'Aucun problème détecté.',
+    German: 'Keine Probleme gefunden.',
+    Spanish: 'No se detectaron problemas.',
+    English: 'No issues found.',
+  },
+  noDiagram: {
+    Vietnamese: 'Không có sơ đồ nào được tạo cho thay đổi này.',
+    Japanese: 'この変更に対するダイアグラムは生成されませんでした。',
+    Korean: '이 변경 사항에 대한 다이어그램이 생성되지 않았습니다.',
+    Chinese: '未为此更改生成图表。',
+    French: 'Aucun diagramme généré pour cette modification.',
+    German: 'Kein Diagramm für diese Änderung erstellt.',
+    Spanish: 'No se generó ningún diagrama para este cambio.',
+    English: 'No diagrams generated for this change.',
+  },
+  noRisks: {
+    Vietnamese: 'Không phát hiện rủi ro tiềm ẩn nào.',
+    Japanese: '潜在的なリスクは検出されませんでした。',
+    Korean: '잠재적 위험이 감지되지 않았습니다.',
+    Chinese: '未检测到潜在风险。',
+    French: 'Aucun risque potentiel détecté.',
+    German: 'Keine potenziellen Risiken erkannt.',
+    Spanish: 'No se detectaron riesgos potenciales.',
+    English: 'No potential risks detected.',
+  },
+  noTodo: {
+    Vietnamese: 'Không có mục nào cần theo dõi.',
+    Japanese: 'フォローアップ項目はありません。',
+    Korean: '후속 조치 항목이 없습니다.',
+    Chinese: '没有需要跟进的事项。',
+    French: 'Aucun élément de suivi.',
+    German: 'Keine Nachverfolgungspunkte.',
+    Spanish: 'No hay elementos de seguimiento.',
+    English: 'No follow-up items.',
+  },
+};
+
+function emptyMessage(key: string, language: string): string {
+  const messages = EMPTY_SECTION_MESSAGES[key];
+  return messages?.[language] ?? messages?.English ?? 'None';
+}
+
 function extractAgentBody(output?: string): string {
   if (!output) {
     return '';
@@ -161,6 +209,7 @@ function buildDiagramAssessmentFallback(
   flow: FlowDiagramOutput | undefined,
   codeReviewer: CodeReviewerOutput | undefined,
   suppressedFindings: SuppressedFinding[],
+  language: string,
 ): string {
   const diagramSection = flow?.diagrams?.length
     ? flow.diagrams
@@ -168,13 +217,13 @@ function buildDiagramAssessmentFallback(
           `### Diagram: ${diagram.name}\n${diagram.description}\n\`\`\`plantuml\n${diagram.plantumlCode}\n\`\`\``,
         )
         .join('\n\n')
-    : 'None';
+    : emptyMessage('noDiagram', language);
   const activeIssues = (codeReviewer?.issues ?? []).filter(
     (issue) => !isSuppressed(issue.file, issue.category, issue.description, suppressedFindings),
   );
   const assessment = codeReviewer
-    ? `**${codeReviewer.qualityVerdict}**\n${activeIssues.slice(0, 3).map((issue) => `- ${issue.description}`).join('\n') || 'No additional justification.'}`
-    : 'None';
+    ? `**${codeReviewer.qualityVerdict}**\n${activeIssues.slice(0, 3).map((issue) => `- ${issue.description}`).join('\n') || emptyMessage('noIssues', language)}`
+    : emptyMessage('noIssues', language);
 
   return [
     '## 4. Flow Diagram',
@@ -188,6 +237,7 @@ function buildImprovementFallback(
   codeReviewer: CodeReviewerOutput | undefined,
   security: SecurityAnalystOutput | undefined,
   suppressedFindings: SuppressedFinding[],
+  language: string,
 ): { markdown: string; total: number; crossValidated: number; byAgent: Record<string, number>; bySeverity: Record<string, number> } {
   const lines: string[] = [];
   let total = 0;
@@ -256,7 +306,7 @@ function buildImprovementFallback(
   }
 
   return {
-    markdown: ['## 6. Improvement Suggestions', lines.length > 0 ? lines.join('\n') : 'None'].join('\n\n'),
+    markdown: ['## 6. Improvement Suggestions', lines.length > 0 ? lines.join('\n') : emptyMessage('noIssues', language)].join('\n\n'),
     total,
     crossValidated,
     byAgent,
@@ -268,6 +318,7 @@ function buildRiskTodoFallback(
   observer: ObserverOutput | undefined,
   security: SecurityAnalystOutput | undefined,
   suppressedFindings: SuppressedFinding[],
+  language: string,
 ): { markdown: string; observerCount: number } {
   const todoLines = (observer?.todoItems ?? []).map((item) =>
     `- ${item.parallelizable ? '[Parallel]' : '[Sequential]'} ${item.action} ` +
@@ -300,9 +351,9 @@ function buildRiskTodoFallback(
   return {
     markdown: [
       '## 7. Observer TODO List',
-      todoLines.length > 0 ? todoLines.join('\n') : 'None',
+      todoLines.length > 0 ? todoLines.join('\n') : emptyMessage('noTodo', language),
       '## 8. Potential Hidden Risks',
-      riskLines.length > 0 ? riskLines.join('\n') : 'None',
+      riskLines.length > 0 ? riskLines.join('\n') : emptyMessage('noRisks', language),
     ].join('\n\n'),
     observerCount: activeObserverRisks.length + (observer?.todoItems?.length ?? 0),
   };
@@ -412,6 +463,7 @@ export function mergeSynthesisOutputs(
   suppressedFindings: SuppressedFinding[],
   reviewDurationMs: number,
   detailChangeReport?: string,
+  language: string = 'English',
 ): string {
   const { codeReviewer, security, observer, flow } = getReports(structuredReports);
 
@@ -420,8 +472,8 @@ export function mergeSynthesisOutputs(
   const improvementSuggestions = extractAgentBody(agentOutputs.get('Improvement Suggestions'));
   const riskTodo = extractAgentBody(agentOutputs.get('Risk & TODO'));
 
-  const improvementFallback = buildImprovementFallback(codeReviewer, security, suppressedFindings);
-  const riskTodoFallback = buildRiskTodoFallback(observer, security, suppressedFindings);
+  const improvementFallback = buildImprovementFallback(codeReviewer, security, suppressedFindings, language);
+  const riskTodoFallback = buildRiskTodoFallback(observer, security, suppressedFindings, language);
   const metadataStats = computeMetadataStats(codeReviewer, security, observer, suppressedFindings);
 
   const sections = [
@@ -432,7 +484,7 @@ export function mergeSynthesisOutputs(
       : buildSummaryDetailFallback(structuredReports, detailChangeReport),
     diagramAssessment && !diagramAssessment.startsWith('[ERROR]')
       ? diagramAssessment
-      : buildDiagramAssessmentFallback(flow, codeReviewer, suppressedFindings),
+      : buildDiagramAssessmentFallback(flow, codeReviewer, suppressedFindings, language),
     improvementSuggestions && !improvementSuggestions.startsWith('[ERROR]')
       ? improvementSuggestions
       : improvementFallback.markdown,

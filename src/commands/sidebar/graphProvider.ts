@@ -4,6 +4,7 @@ import * as crypto from 'crypto';
 import { GitOperations } from './gitOperations';
 import { getGraphHtml, getGraphStyles, getGraphScript } from './graphWebviewContent';
 import type { GitMewSidebarProvider } from './sidebarProvider';
+import { trackEvent } from '../../services/posthog';
 
 export class GitMewGraphProvider implements vscode.WebviewViewProvider {
 	public static readonly viewType = 'gitmew-graph';
@@ -87,6 +88,7 @@ ${getGraphScript()}
 				await this._ops.openCommitAllDiffs(msg.sha);
 				break;
 			case 'edit-commit':
+				trackEvent('edit_commit_message', { is_pushed: msg.isPushed });
 				await this._ops.editCommitMessage(msg.sha, msg.isPushed, msg.message);
 				if (msg.isPushed) this._sidebarProvider?.setForcePushNeeded(true);
 				break;
@@ -105,6 +107,7 @@ ${getGraphScript()}
 				this._sidebarProvider?.setForcePushNeeded(false);
 				break;
 			case 'squash-commits':
+				trackEvent('squash_commits', { count: msg.count, has_pushed: msg.hasPushed });
 				await this._ops.squashCommits(msg.count, msg.message);
 				if (msg.hasPushed) this._sidebarProvider?.setForcePushNeeded(true);
 				break;

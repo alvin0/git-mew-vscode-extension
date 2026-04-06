@@ -7,6 +7,7 @@ import { ReviewMergeService } from './reviewMerge/reviewMergeService';
 import { WebviewMessageHandler } from './reviewMerge/webviewMessageHandler';
 import { loadReviewPreferences } from './reviewShared/preferences';
 import { ReviewMemoryService } from '../services/llm/ReviewMemoryService';
+import { trackEvent } from '../services/posthog';
 
 /**
  * Register the review merge command
@@ -23,6 +24,7 @@ export function registerReviewMergeCommand(
                 vscode.window.showWarningMessage('No branches found in this repository. Make sure you have a Git repository with branches.');
                 return;
             }
+            trackEvent('review_merge_started');
 
             const currentBranch = await gitService.getCurrentBranch();
             const { currentProvider, currentModel, savedLanguage } = loadReviewPreferences(llmService);

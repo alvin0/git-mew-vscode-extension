@@ -24,6 +24,40 @@ const COSMETIC_OPERATIONS = [
     'repair PlantUML',
 ];
 
+/**
+ * Lỗi từ hệ thống/môi trường user — không phải bug của extension.
+ * API errors, network, git config, v.v.
+ */
+const USER_ENVIRONMENT_PATTERNS = [
+    'API key',
+    'api_key',
+    'Unauthorized',
+    'Forbidden',
+    'rate limit',
+    'quota',
+    'too many requests',
+    'Request timeout',
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'ENOTFOUND',
+    'ETIMEDOUT',
+    'fetch failed',
+    'Cannot connect to Ollama',
+    'socket hang up',
+    'API error:',
+    'Service Unavailable',
+    'Bad Gateway',
+    'Internal Server Error',
+    'overloaded',
+    'Git extension not found',
+    'No Git repository found',
+    'Model name is required',
+    'Adapter not initialized',
+    'base URL is required',
+    'exceeds the limit',
+    'context length exceeded',
+];
+
 function classifyErrorSeverity(error: unknown, context: ReviewErrorContext): ErrorSeverity | 'skip' {
     const errorStr = error instanceof Error ? error.message : String(error);
 
@@ -40,6 +74,11 @@ function classifyErrorSeverity(error: unknown, context: ReviewErrorContext): Err
     // PlantUML repair fail → cosmetic, chỉ breadcrumb
     if (COSMETIC_OPERATIONS.includes(context.operation)) {
         return 'cosmetic';
+    }
+
+    // Lỗi từ hệ thống/môi trường user → skip, không phải bug
+    if (USER_ENVIRONMENT_PATTERNS.some(p => errorStr.toLowerCase().includes(p.toLowerCase()))) {
+        return 'skip';
     }
 
     // Error là instance Error có stack → crash thật

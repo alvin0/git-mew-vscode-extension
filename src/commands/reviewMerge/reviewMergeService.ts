@@ -296,6 +296,7 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                     outputContract: REVIEW_OUTPUT_CONTRACT,
                     suppressedFindings,
                     resolutionStats,
+                    language,
                     codeReviewerFindings: crFindings[0]?.data as CodeReviewerOutput | undefined,
                     securityFindings: saFindings[0]?.data as SecurityAnalystOutput | undefined,
                     observerFindings: obsFindings[0]?.data as ObserverOutput | undefined,
@@ -339,6 +340,7 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                     suppressedFindings,
                     Date.now() - reviewStartTime,
                     synthCtx.detailChangeReport,
+                    language,
                 );
 
                 if (this.reviewMemory) {

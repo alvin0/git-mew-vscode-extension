@@ -241,6 +241,8 @@ export class AgentPromptBuilder {
   ): string {
     const sections: string[] = [];
 
+    sections.push(`**IMPORTANT: You MUST respond in ${ctx.language} language. All sections, titles, explanations, and comments must be written in ${ctx.language}.**`);
+
     if (ctx.customSystemPrompt?.trim()) {
       sections.push(`## Custom Review Context\n\n${ctx.customSystemPrompt.trim()}`);
     }
@@ -663,7 +665,9 @@ export class AgentPromptBuilder {
     ctx: SynthesisAgentContext,
     budget: AgentBudgetAllocation,
   ): AgentPrompt {
-    const systemMessage = `You write only sections "## 2. Summary of Changes" and "## 3. Detail Change".
+    const systemMessage = `**IMPORTANT: You MUST respond in ${ctx.language} language. All sections, titles, explanations, and comments must be written in ${ctx.language}.**
+
+You write only sections "## 2. Summary of Changes" and "## 3. Detail Change".
 Return Markdown only.
 - Summary must stay within 100 words.
 - Detail Change should explain behavior and flow, not repeat every finding.
@@ -714,7 +718,9 @@ Return Markdown only.
     ctx: SynthesisAgentContext,
     _budget: AgentBudgetAllocation,
   ): AgentPrompt {
-    const systemMessage = `You write only section "## 6. Improvement Suggestions".
+    const systemMessage = `**IMPORTANT: You MUST respond in ${ctx.language} language. All sections, titles, explanations, and comments must be written in ${ctx.language}.**
+
+You write only section "## 6. Improvement Suggestions".
 Return Markdown only.
 - Do not limit the number of suggestions.
 - Group findings under category headers such as ### Correctness or ### Security.
@@ -769,7 +775,9 @@ Return Markdown only.
     ctx: SynthesisAgentContext,
     _budget: AgentBudgetAllocation,
   ): AgentPrompt {
-    const systemMessage = `You write only sections "## 7. Observer TODO List" and "## 8. Potential Hidden Risks".
+    const systemMessage = `**IMPORTANT: You MUST respond in ${ctx.language} language. All sections, titles, explanations, and comments must be written in ${ctx.language}.**
+
+You write only sections "## 7. Observer TODO List" and "## 8. Potential Hidden Risks".
 Return Markdown only.
 - Do not limit the number of TODO items or risks.
 - Prefix every TODO with [Sequential] or [Parallel].
@@ -839,7 +847,9 @@ Return Markdown only.
     ctx: SynthesisAgentContext,
     _budget: AgentBudgetAllocation,
   ): AgentPrompt {
-    const systemMessage = `You write only sections "## 4. Flow Diagram" and "## 5. Code Quality Assessment".
+    const systemMessage = `**IMPORTANT: You MUST respond in ${ctx.language} language. All sections, titles, explanations, and comments must be written in ${ctx.language}.**
+
+You write only sections "## 4. Flow Diagram" and "## 5. Code Quality Assessment".
 Return Markdown only.
 - Keep PlantUML blocks intact.
 - Add one short description per diagram.

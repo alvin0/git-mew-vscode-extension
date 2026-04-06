@@ -3,15 +3,10 @@ import * as Sentry from '@sentry/node';
 let initialized = false;
 
 /**
- * Danh sách các message pattern thuộc về user-input / validation,
- * KHÔNG nên gửi lên Sentry vì không phải bug.
+ * Tag để đánh dấu event được gửi chủ động từ code của mình.
+ * Mọi event không có tag này sẽ bị drop trong beforeSend.
  */
-const IGNORED_PATTERNS = [
-    'Please select all fields',
-    'must be different',
-    'Missing PlantUML repair payload',
-    'Review generation cancelled',
-];
+const GITMEW_ORIGIN_TAG = 'gitmew.origin';
 
 export function initSentry(extensionVersion: string) {
     if (initialized) {
@@ -23,22 +18,28 @@ export function initSentry(extensionVersion: string) {
         release: `git-mew@${extensionVersion}`,
         environment: 'production',
         sendDefaultPii: false,
-        // Chỉ gửi 100% error events — giảm nếu user base lớn
         sampleRate: 1.0,
+
+        // Tắt auto-capture cho global unhandled exceptions & rejections.
+        // Chỉ nhận events từ captureError / captureMessage của mình.
+        integrations(defaults) {
+            return defaults.filter(i =>
+                i.name !== 'OnUncaughtException' &&
+                i.name !== 'OnUnhandledRejection'
+            );
+        },
+
         beforeSend(event) {
+            // Chỉ gửi events có tag origin từ code của mình
+            if (!event.tags?.[GITMEW_ORIGIN_TAG]) {
+                return null;
+            }
+
             // Loại bỏ thông tin nhạy cảm
             if (event.extra) {
                 delete event.extra['apiKey'];
                 delete event.extra['token'];
                 delete event.extra['baseURL'];
-            }
-
-            // Không gửi validation / user-input errors
-            const message = event.message
-                || event.exception?.values?.[0]?.value
-                || '';
-            if (IGNORED_PATTERNS.some(p => message.includes(p))) {
-                return null;
             }
 
             return event;
@@ -52,9 +53,10 @@ export type ErrorSeverity = 'crash' | 'operational' | 'cosmetic';
 
 /**
  * Capture error lên Sentry với severity phân loại.
- * - crash: lỗi không mong đợi, cần fix ngay (exception trong catch)
+ * Đây là cách DUY NHẤT để gửi error lên Sentry.
+ * - crash: lỗi không mong đợi, cần fix ngay
  * - operational: lỗi từ API/network, cần theo dõi
- * - cosmetic: lỗi nhỏ (PlantUML render fail), chỉ log warning
+ * - cosmetic: lỗi nhỏ, chỉ log breadcrumb
  */
 export function captureError(
     error: unknown,
@@ -79,9 +81,8 @@ export function captureError(
     Sentry.withScope((scope) => {
         scope.setLevel(severity === 'crash' ? 'fatal' : 'warning');
         scope.setTag('error.severity', severity);
+        scope.setTag(GITMEW_ORIGIN_TAG, 'captureError');
         if (context) {
-            // Filter out undefined values — Sentry may call .replace() on extras
-            // and throws if a value is undefined.
             const safeExtras: Record<string, unknown> = {};
             for (const [key, value] of Object.entries(context)) {
                 if (value !== undefined) {
@@ -98,7 +99,10 @@ export function captureMessage(message: string, level: Sentry.SeverityLevel = 'i
     if (!initialized) {
         return;
     }
-    Sentry.captureMessage(message, level);
+    Sentry.withScope((scope) => {
+        scope.setTag(GITMEW_ORIGIN_TAG, 'captureMessage');
+        Sentry.captureMessage(message, level);
+    });
 }
 
 export function setSentryUser(userId: string) {
@@ -114,7 +118,6 @@ export function flushSentry(timeout = 2000): Promise<boolean> {
 
 /**
  * Gửi feedback / góp ý từ người dùng lên Sentry.
- * Không cần gắn với error event — user có thể gửi bất cứ lúc nào.
  */
 export function captureFeedback(message: string, email?: string, name?: string) {
     if (!initialized || !message.trim()) {

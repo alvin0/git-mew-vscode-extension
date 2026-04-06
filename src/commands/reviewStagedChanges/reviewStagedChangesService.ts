@@ -284,6 +284,7 @@ export class ReviewStagedChangesService extends ReviewWorkflowServiceBase {
                     outputContract: REVIEW_OUTPUT_CONTRACT,
                     suppressedFindings,
                     resolutionStats,
+                    language,
                     codeReviewerFindings: crFindings[0]?.data as CodeReviewerOutput | undefined,
                     securityFindings: saFindings[0]?.data as SecurityAnalystOutput | undefined,
                     observerFindings: obsFindings[0]?.data as ObserverOutput | undefined,
@@ -327,6 +328,7 @@ export class ReviewStagedChangesService extends ReviewWorkflowServiceBase {
                     suppressedFindings,
                     Date.now() - reviewStartTime,
                     synthCtx.detailChangeReport,
+                    language,
                 );
 
                 if (this.reviewMemory) {
@@ -497,7 +499,7 @@ Do not mention that the diff was summarized in multiple stages.`
 
         return `You are an expert code reviewer. Your task is to review staged changes and provide constructive feedback.
 
-IMPORTANT: Provide your review in ${language} language.
+**IMPORTANT: You MUST respond in ${language} language. All sections, titles, explanations, and comments must be written in ${language}.**
 
 ${instructionBlock}
 

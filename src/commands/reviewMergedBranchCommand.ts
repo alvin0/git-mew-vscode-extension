@@ -6,6 +6,7 @@ import { ModelProvider } from './reviewMerge/modelProvider';
 import { ReviewMergedBranchService } from './reviewMergedBranch/reviewMergedBranchService';
 import { WebviewMessageHandler } from './reviewMergedBranch/webviewMessageHandler';
 import { loadReviewPreferences } from './reviewShared/preferences';
+import { trackEvent } from '../services/posthog';
 
 /**
  * Register the review merged branch command
@@ -29,6 +30,7 @@ export function registerReviewMergedBranchCommand(
                 vscode.window.showWarningMessage('Không tìm thấy nhánh đã merge nào trong repository.');
                 return;
             }
+            trackEvent('review_merged_branch_started');
 
             const { currentProvider, currentModel, savedLanguage } = loadReviewPreferences(llmService);
             const { providers, availableModels, customModelSettings, customProviderConfig } = await ModelProvider.getAvailableModels(llmService);
