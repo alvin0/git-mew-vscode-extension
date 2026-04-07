@@ -267,6 +267,7 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                         reviewStartTimeMs: reviewStartTime,
                         signal: abortController.signal,
                         request: reviewRequest,
+                        actualReferenceTokens: dynamicReferenceContextResult.metadata.estimatedTokens,
                     });
                     structuredReports = adaptiveOutput.intermediateData.structuredReports;
                     review = adaptiveOutput.review;

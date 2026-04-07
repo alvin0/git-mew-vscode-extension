@@ -17,6 +17,7 @@ import { ContextBudgetManager } from './ContextBudgetManager';
 import { TokenEstimatorService } from '../TokenEstimatorService';
 import { DependencyGraphIndex } from './DependencyGraphIndex';
 import { ISharedContextStore } from './SharedContextStore';
+import { SessionMemory } from './SessionMemory';
 import { REVIEW_OUTPUT_CONTRACT } from '../../../prompts/reviewOutputContract';
 import { FunctionCall } from '../../../llm-tools/toolInterface';
 import { SuppressedFinding } from '../reviewMemoryTypes';
@@ -41,6 +42,25 @@ function truncateToTokenBudget(text: string, tokenBudget: number): string {
     return text;
   }
   return text.slice(0, charBudget) + '\n...[truncated]';
+}
+
+/** Format an agent briefing from Context Gatherer into a prompt section. */
+function formatAgentBriefing(ctx: AgentPromptBuildContext, role: string): string | undefined {
+  const briefing = ctx.agentBriefings?.find((b) => b.role === role);
+  if (!briefing) { return undefined; }
+
+  const parts = [`## Context Gatherer Briefing`];
+  if (ctx.patchSummary) {
+    parts.push(`**Patch Summary:** ${ctx.patchSummary}`);
+  }
+  parts.push(`**Your Focus:** ${briefing.focusSummary}`);
+  if (briefing.keyFiles.length > 0) {
+    parts.push(`**Key Files:** ${briefing.keyFiles.join(', ')}`);
+  }
+  if (briefing.concerns.length > 0) {
+    parts.push(`**Concerns to Investigate:**\n${briefing.concerns.map((c) => `- ${c}`).join('\n')}`);
+  }
+  return parts.join('\n');
 }
 
 function combineTools(baseTools: FunctionCall[], additionalTools?: FunctionCall[]): FunctionCall[] {
@@ -346,6 +366,10 @@ export class AgentPromptBuilder {
     // Prompt assembly
     const parts: string[] = [];
 
+    // 0. Agent briefing from Context Gatherer (if available)
+    const briefing = formatAgentBriefing(ctx, 'Code Reviewer');
+    if (briefing) { parts.push(briefing); }
+
     // 1. Full diff (truncated to diffBudget)
     parts.push('## Diff\n' + truncateToTokenBudget(ctx.fullDiff, budget.diffBudget));
 
@@ -418,6 +442,9 @@ export class AgentPromptBuilder {
     const systemMessage = this.buildReviewAgentSystemMessage(ctx, SECURITY_AGENT_INSTRUCTIONS);
     const parts: string[] = [];
 
+    const secBriefing = formatAgentBriefing(ctx, 'Security Analyst');
+    if (secBriefing) { parts.push(secBriefing); }
+
     parts.push('## Diff\n' + truncateToTokenBudget(ctx.fullDiff, budget.diffBudget));
 
     if (ctx.referenceContext) {
@@ -486,6 +513,9 @@ export class AgentPromptBuilder {
 
     const parts: string[] = [];
 
+    const flowBriefing = formatAgentBriefing(ctx, 'Flow Diagram');
+    if (flowBriefing) { parts.push(flowBriefing); }
+
     // 1. Structural diff only (truncated to diffBudget)
     const structuralDiff = this.filterStructuralDiff(ctx.fullDiff, ctx.changedFiles);
     parts.push('## Structural Diff\n' + truncateToTokenBudget(structuralDiff, budget.diffBudget));
@@ -552,6 +582,9 @@ export class AgentPromptBuilder {
 
     const parts: string[] = [];
 
+    const obsBriefing = formatAgentBriefing(ctx, 'Observer');
+    if (obsBriefing) { parts.push(obsBriefing); }
+
     // 1. Diff summary (NOT full diff)
     parts.push(this.buildDiffSummary(ctx.changedFiles));
 
@@ -566,15 +599,17 @@ export class AgentPromptBuilder {
       }
     }
 
-    // 3. Dependency graph serialized as 'summary'
-    if (ctx.dependencyGraph) {
+    // 3. Dependency graph — only add if NOT already included via shared context.
+    // SessionMemory.serializeForAgent skips the legacy parent (which includes graph),
+    // so we add a lightweight summary here. SharedContextStoreImpl already includes it.
+    if (ctx.dependencyGraph && ctx.sharedContextStore instanceof SessionMemory) {
       const graphText = DependencyGraphIndex.serializeForPrompt(ctx.dependencyGraph, 'summary');
       parts.push(graphText);
     }
 
     this.appendReviewMemoryContext(parts, ctx, {
-      historyLimit: 3,
-      patternLimit: 10,
+      historyLimit: 2,
+      patternLimit: 5,
       role: 'Observer',
     });
 
@@ -597,7 +632,7 @@ export class AgentPromptBuilder {
       phase: 2,
       outputSchema: 'observer',
       selfAudit: true,
-      maxIterations: 3,
+      maxIterations: 2,
       sharedStore: ctx.sharedContextStore,
       compareBranch: ctx.compareBranch,
       gitService: ctx.gitService,
@@ -611,6 +646,10 @@ export class AgentPromptBuilder {
     const systemMessage = this.buildReviewAgentSystemMessage(ctx, DETAIL_CHANGE_INSTRUCTIONS);
 
     const parts: string[] = [];
+
+    const detailBriefing = formatAgentBriefing(ctx, 'Detail Change');
+    if (detailBriefing) { parts.push(detailBriefing); }
+
     parts.push('## Diff\n' + truncateToTokenBudget(ctx.fullDiff, budget.diffBudget));
 
     if (ctx.referenceContext) {

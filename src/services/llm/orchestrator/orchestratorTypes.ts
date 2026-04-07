@@ -368,6 +368,15 @@ export interface AgentPromptBuildContext {
   compareBranch?: string;
   /** GitService instance for branch-aware file reading */
   gitService?: any;
+  /** Per-agent briefings from LLM Context Gatherer. */
+  agentBriefings?: Array<{
+    role: string;
+    focusSummary: string;
+    keyFiles: string[];
+    concerns: string[];
+  }>;
+  /** High-level patch summary from LLM Context Gatherer. */
+  patchSummary?: string;
 }
 
 // ─── Dependency Graph ───

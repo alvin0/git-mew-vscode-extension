@@ -225,6 +225,7 @@ export class ReviewMergedBranchService extends ReviewWorkflowServiceBase {
                         reviewStartTimeMs: reviewStartTime,
                         signal: abortController.signal,
                         request: reviewRequest,
+                        actualReferenceTokens: dynamicReferenceContextResult.metadata.estimatedTokens,
                     })).review
                     : await this.contextOrchestrator.generateMultiAgentFinalText(
                         dependencyState.adapter,

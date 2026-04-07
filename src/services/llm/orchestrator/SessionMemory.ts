@@ -200,12 +200,15 @@ export class SessionMemory extends SharedContextStoreImpl implements ISessionMem
       );
     }
 
-    const inherited = super.serializeForAgent(agentRole, Math.max(200, Math.floor(tokenBudget * 0.35)));
-    if (inherited) {
-      sections.push(inherited);
-    }
-
+    // When we have structured findings/hypotheses, skip the legacy parent
+    // serialization to avoid duplicating the same data in two formats.
+    // Only fall through to super when SessionMemory has no structured data
+    // (e.g. legacy bridge path where only AgentFinding[] exists).
     if (sections.length === 0) {
+      const inherited = super.serializeForAgent(agentRole, tokenBudget);
+      if (inherited) {
+        return inherited;
+      }
       return '';
     }
 

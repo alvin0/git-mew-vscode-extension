@@ -70,9 +70,14 @@ export interface ContextGenerationRequest {
 }
 
 export interface LlmRequestLogEntry {
+  /** Unique ID for this request. Pending and completed entries share the same ID
+   *  so the UI can replace the pending row with the completed one. */
+  requestId?: string;
   stage: string;
   provider: string;
   model: string;
+  /** 'pending' = request sent, waiting for response. 'completed' = response received. 'failed' = error. */
+  status?: 'pending' | 'completed' | 'failed';
   systemMessage: string;
   prompt: string;
   response?: string;
@@ -82,4 +87,6 @@ export interface LlmRequestLogEntry {
   finishReason?: string;
   durationMs?: number;
   timestamp: string;
+  /** Error message when status is 'failed'. */
+  error?: string;
 }

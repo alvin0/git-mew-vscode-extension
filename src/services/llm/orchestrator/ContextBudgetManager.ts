@@ -144,40 +144,60 @@ export class ContextBudgetManager {
     return Math.max(0, contextWindow - safetyMargin - systemTokens - referenceTokens);
   }
 
+  /**
+   * Allocate per-agent budgets from an ExecutionPlan.
+   *
+   * IMPORTANT: Each agent makes an independent LLM call and can use up to the
+   * full context window. The ratios in ExecutionPlan.agentBudgets control how
+   * each agent's per-call budget is split between diff, reference, and shared
+   * context — they do NOT divide the context window among agents.
+   */
   allocateFromExecutionPlan(
     plan: ExecutionPlan | undefined,
     contextWindow: number,
     maxOutputTokens: number,
     systemMessageTokens: number,
     diffTokens: number,
+    actualReferenceTokens?: number,
   ): AgentBudgetAllocation[] {
     if (!plan || !plan.agentBudgets || Object.keys(plan.agentBudgets).length === 0) {
       return this.allocateAgentBudgets(contextWindow, maxOutputTokens, systemMessageTokens, diffTokens);
     }
 
-    const referenceBudget = this.computeReferenceContextBudget(contextWindow);
-    const allocatablePool = this.computeAllocatablePool(contextWindow, systemMessageTokens, referenceBudget);
-    const normalizedRatios = this.normalizeRatios(plan.agentBudgets);
+    const safetyMargin = this.getSafetyMargin(contextWindow);
+    // Each agent gets the full context window minus safety and system overhead.
+    const perAgentBudget = Math.max(0, contextWindow - safetyMargin - systemMessageTokens);
+    const effectiveReferenceTokens = actualReferenceTokens ?? 0;
 
-    const allocations = Object.entries(normalizedRatios).map(([agentRole, ratio]) => {
-      const totalBudget = Math.floor(allocatablePool * ratio);
-      const diffShare = this.resolvePlanDiffShare(agentRole);
-      const referenceShare = this.resolvePlanReferenceShare(agentRole);
-      const diffBudget = Math.min(Math.floor(totalBudget * diffShare), diffTokens);
-      const referenceAllocation = Math.floor(totalBudget * referenceShare);
-      const sharedContextBudget = Math.max(0, totalBudget - diffBudget - referenceAllocation);
+    const allocations = Object.entries(plan.agentBudgets).map(([agentRole, ratio]) => {
+      // ratio controls how much of the diff this agent should receive relative
+      // to other agents. An agent with ratio 1.0 gets the full diff; 0.35 gets 35%.
+      const diffBudgetRatio = DIFF_BUDGET_RATIOS[agentRole] ?? ratio;
+      const agentDiffBudget = Math.min(
+        Math.floor(diffTokens * diffBudgetRatio),
+        perAgentBudget,
+      );
+      const refBudgetRatio = REFERENCE_BUDGET_RATIOS[agentRole] ?? 0.2;
+      const agentReferenceBudget = Math.min(
+        Math.floor(effectiveReferenceTokens * refBudgetRatio),
+        Math.max(0, perAgentBudget - agentDiffBudget),
+      );
+      const sharedContextBudget = Math.max(
+        0,
+        perAgentBudget - agentDiffBudget - agentReferenceBudget,
+      );
 
       return {
         agentRole,
-        totalBudget,
-        diffBudget,
-        referenceBudget: Math.min(referenceAllocation, referenceBudget),
+        totalBudget: perAgentBudget,
+        diffBudget: agentDiffBudget,
+        referenceBudget: agentReferenceBudget,
         sharedContextBudget,
         reservedForOutput: maxOutputTokens,
       };
     });
 
-    return this.enforceSafetyThreshold(allocations, contextWindow, 0.9);
+    return allocations;
   }
 
   allocateSectionWriterBudgets(

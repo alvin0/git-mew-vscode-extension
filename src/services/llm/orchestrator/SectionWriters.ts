@@ -25,7 +25,7 @@ export interface SectionWriterExecutionInput {
   systemMessage: string;
   tokenBudget: number;
   signal?: AbortSignal;
-  request?: { onLog?: (message: string) => void };
+  request?: { onLog?: (message: string) => void; onLlmLog?: (entry: import('../contextTypes').LlmRequestLogEntry) => void };
   stageLabel: string;
 }
 
@@ -97,6 +97,18 @@ export async function executeSectionWriter(input: SectionWriterExecutionInput): 
     undefined,
     input.tokenBudget,
   );
+  const swReqId = `section-writer:${input.stageLabel}-${Date.now()}`;
+  input.request?.onLlmLog?.({
+    requestId: swReqId,
+    stage: `section-writer:${input.stageLabel}`,
+    provider: input.adapter.getProvider(),
+    model: input.adapter.getModel(),
+    status: 'pending',
+    systemMessage: input.systemMessage,
+    prompt: safePrompt,
+    promptTokens: tokenEstimator.estimateTextTokens(safePrompt) + tokenEstimator.estimateTextTokens(input.systemMessage),
+    timestamp: new Date().toISOString(),
+  });
   const response = await input.calibration.generateTextWithAutoRetry(
     safePrompt,
     input.systemMessage,
@@ -113,6 +125,22 @@ export async function executeSectionWriter(input: SectionWriterExecutionInput): 
     throw new GenerationCancelledError();
   }
 
-  input.request?.onLog?.(`[section-writer:${input.stageLabel}] tokens=${response.totalTokens ?? tokenEstimator.estimateTextTokens(response.text)}`);
+  const totalTokens = response.totalTokens ?? tokenEstimator.estimateTextTokens(response.text);
+  input.request?.onLlmLog?.({
+    requestId: swReqId,
+    stage: `section-writer:${input.stageLabel}`,
+    provider: input.adapter.getProvider(),
+    model: input.adapter.getModel(),
+    status: 'completed',
+    systemMessage: input.systemMessage,
+    prompt: safePrompt,
+    response: response.text,
+    promptTokens: response.promptTokens,
+    completionTokens: response.completionTokens,
+    totalTokens: response.totalTokens,
+    finishReason: response.finishReason,
+    timestamp: new Date().toISOString(),
+  });
+  input.request?.onLog?.(`[section-writer:${input.stageLabel}] tokens=${totalTokens}`);
   return response.text.trim();
 }

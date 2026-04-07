@@ -105,33 +105,33 @@ function createExecutor(config: ContextOrchestratorConfig = DEFAULT_ORCHESTRATOR
 suite('Adaptive Pipeline Phase 2', () => {
   test('ContextGatherer classifies feature/refactor/bugfix/mixed fixtures and detects risk flags', () => {
     const gatherer = new ContextGatherer(new TokenEstimatorService());
-    const featurePlan = gatherer.analyze({
+    const featurePlan = gatherer.analyzeSync({
       changes: mediumPatchFixture.changes,
       diffText: mediumPatchFixture.diffText,
       diffTokens: 6000,
       contextWindow: 32768,
     });
-    const refactorPlan = gatherer.analyze({
+    const refactorPlan = gatherer.analyzeSync({
       changes: refactorPatchFixture.changes,
       diffText: refactorPatchFixture.diffText,
       diffTokens: 1200,
       contextWindow: 32768,
     });
     const bugfixFixture = createBugfixFixture();
-    const bugfixPlan = gatherer.analyze({
+    const bugfixPlan = gatherer.analyzeSync({
       changes: bugfixFixture.changes,
       diffText: bugfixFixture.diffText,
       diffTokens: 1800,
       contextWindow: 32768,
     });
     const mixedFixture = createMixedFixture();
-    const mixedPlan = gatherer.analyze({
+    const mixedPlan = gatherer.analyzeSync({
       changes: mixedFixture.changes,
       diffText: mixedFixture.diffText,
       diffTokens: 2200,
       contextWindow: 32768,
     });
-    const securityPlan = gatherer.analyze({
+    const securityPlan = gatherer.analyzeSync({
       changes: securityPatchFixture.changes,
       diffText: securityPatchFixture.diffText,
       diffTokens: 2000,
@@ -200,7 +200,7 @@ suite('Adaptive Pipeline Phase 2', () => {
     const gatherer = new ContextGatherer(new TokenEstimatorService());
     (gatherer as any).classifyPatchSize = () => { throw new Error('boom'); };
 
-    const plan = gatherer.analyze({
+    const plan = gatherer.analyzeSync({
       changes: smallPatchFixture.changes,
       diffText: smallPatchFixture.diffText,
       diffTokens: 500,
@@ -237,13 +237,13 @@ suite('Adaptive Pipeline Phase 2', () => {
 
   test('ContextGatherer preserves boosted agent ratios and marks improvement writer as runtime-eligible', () => {
     const gatherer = new ContextGatherer(new TokenEstimatorService());
-    const plan = gatherer.analyze({
+    const plan = gatherer.analyzeSync({
       changes: securityPatchFixture.changes,
       diffText: securityPatchFixture.diffText,
       diffTokens: 3200,
       contextWindow: 32768,
     });
-    const refactorPlan = gatherer.analyze({
+    const refactorPlan = gatherer.analyzeSync({
       changes: refactorPatchFixture.changes,
       diffText: refactorPatchFixture.diffText,
       diffTokens: 3200,
@@ -272,7 +272,7 @@ suite('Adaptive Pipeline Phase 2', () => {
             }),
           );
           const diffText = changes.map((change) => change.diff).join('\n');
-          const plan = gatherer.analyze({
+          const plan = gatherer.analyzeSync({
             changes,
             diffText,
             diffTokens: Math.max(128, Math.ceil(diffText.length / 4)),
@@ -463,7 +463,7 @@ suite('Adaptive Pipeline Phase 2', () => {
       '### Agent: Security Analyst\n\n{"vulnerabilities":[],"authFlowConcerns":[],"inputValidationGaps":[],"dataExposureRisks":[]}',
       '### Agent: Observer\n\n{"risks":[],"todoItems":[],"integrationConcerns":[]}',
     ];
-    (orchestrator as any).contextGatherer.analyze = () => { throw new Error('planner failed'); };
+    (orchestrator as any).contextGatherer.analyze = async () => { throw new Error('planner failed'); };
     (orchestrator as any).multiAgentExecutor.executePhasedAgents = async () => {
       store.addAgentFindings('Code Reviewer', [{ agentRole: 'Code Reviewer', type: 'issue', data: { issues: [], affectedSymbols: [], qualityVerdict: 'Good' }, timestamp: Date.now() }]);
       store.addAgentFindings('Flow Diagram', [{ agentRole: 'Flow Diagram', type: 'flow', data: { diagrams: [], affectedFlows: [] }, timestamp: Date.now() }]);

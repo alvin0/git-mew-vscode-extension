@@ -29,6 +29,11 @@ export interface AdaptivePipelineInput {
   contextWindow?: number;
   maxOutputTokens?: number;
   dependencyGraph?: DependencyGraphData;
+  /** Actual reference context tokens used (from buildReviewReferenceContext metadata).
+   *  When provided, allocateFromExecutionPlan uses this instead of the theoretical
+   *  maximum from computeReferenceContextBudget, avoiding phantom reservation of
+   *  unused reference budget. */
+  actualReferenceTokens?: number;
   signal?: AbortSignal;
   request?: ContextGenerationRequest;
   detailChangeReport?: string;

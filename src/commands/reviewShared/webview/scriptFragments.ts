@@ -33,54 +33,43 @@ export function buildSharedClientActions(actionButtonIds: string[], options?: { 
         }
 
         function appendLlmLogEntry(entry) {
-            llmLogCounter++;
-            const countEl = document.getElementById('llmLogCount');
-            if (countEl) {
-                countEl.textContent = String(llmLogCounter);
-            }
-
-            const container = document.getElementById('llmLogEntries');
+            var container = document.getElementById('llmLogEntries');
             if (!container) { return; }
 
-            const entryEl = document.createElement('div');
-            entryEl.className = 'llm-entry';
+            var reqId = entry.requestId || '';
+            var status = entry.status || 'completed';
 
-            const ts = new Date(entry.timestamp).toLocaleTimeString();
-            const duration = entry.durationMs ? (entry.durationMs / 1000).toFixed(1) + 's' : '?';
-            const tokens = [
-                entry.promptTokens ? 'in:' + entry.promptTokens : '',
-                entry.completionTokens ? 'out:' + entry.completionTokens : '',
-            ].filter(Boolean).join(' / ') || '?';
+            // If this is a completed/failed update for an existing pending entry, replace it.
+            if (reqId && status !== 'pending') {
+                var existing = container.querySelector('[data-request-id="' + reqId + '"]');
+                if (existing) {
+                    updateLlmEntryElement(existing, entry);
+                    return;
+                }
+            }
 
-            const headerEl = document.createElement('div');
+            // New entry (pending or completed without prior pending).
+            if (status === 'pending') {
+                // Don't increment counter for pending — will count when completed.
+            } else {
+                llmLogCounter++;
+                var countEl = document.getElementById('llmLogCount');
+                if (countEl) { countEl.textContent = String(llmLogCounter); }
+            }
+
+            var entryEl = document.createElement('div');
+            entryEl.className = 'llm-entry' + (status === 'pending' ? ' is-pending' : '');
+            if (reqId) { entryEl.setAttribute('data-request-id', reqId); }
+
+            var headerEl = document.createElement('div');
             headerEl.className = 'llm-entry__header';
-            headerEl.innerHTML =
-                '<span>' + escapeHtml(entry.stage) + ' — ' + escapeHtml(entry.provider) + '/' + escapeHtml(entry.model) + '</span>' +
-                '<span class="llm-entry__meta">' +
-                '<span>' + ts + '</span>' +
-                '<span>' + duration + '</span>' +
-                '<span>' + tokens + '</span>' +
-                '</span>';
+            headerEl.innerHTML = buildLlmEntryHeader(entry);
             headerEl.addEventListener('click', function() {
                 entryEl.classList.toggle('is-expanded');
             });
 
-            const bodyEl = document.createElement('div');
+            var bodyEl = document.createElement('div');
             bodyEl.className = 'llm-entry__body';
-
-            function makeSection(label, text) {
-                const section = document.createElement('div');
-                section.className = 'llm-entry__section';
-                const labelEl = document.createElement('span');
-                labelEl.className = 'llm-entry__section-label';
-                labelEl.textContent = label;
-                const pre = document.createElement('pre');
-                pre.textContent = text || '(empty)';
-                section.appendChild(labelEl);
-                section.appendChild(pre);
-                return section;
-            }
-
             bodyEl.appendChild(makeSection('System message', entry.systemMessage));
             bodyEl.appendChild(makeSection('Prompt', entry.prompt));
             bodyEl.appendChild(makeSection('Response', entry.response));
@@ -89,6 +78,54 @@ export function buildSharedClientActions(actionButtonIds: string[], options?: { 
             entryEl.appendChild(bodyEl);
             container.appendChild(entryEl);
             container.scrollTop = container.scrollHeight;
+        }
+
+        function updateLlmEntryElement(entryEl, entry) {
+            llmLogCounter++;
+            var countEl = document.getElementById('llmLogCount');
+            if (countEl) { countEl.textContent = String(llmLogCounter); }
+
+            entryEl.className = 'llm-entry' + (entry.status === 'failed' ? ' is-failed' : '');
+            var headerEl = entryEl.querySelector('.llm-entry__header');
+            if (headerEl) { headerEl.innerHTML = buildLlmEntryHeader(entry); }
+
+            var bodyEl = entryEl.querySelector('.llm-entry__body');
+            if (bodyEl) {
+                bodyEl.innerHTML = '';
+                bodyEl.appendChild(makeSection('System message', entry.systemMessage));
+                bodyEl.appendChild(makeSection('Prompt', entry.prompt));
+                bodyEl.appendChild(makeSection('Response', entry.response));
+            }
+        }
+
+        function buildLlmEntryHeader(entry) {
+            var ts = new Date(entry.timestamp).toLocaleTimeString();
+            var status = entry.status || 'completed';
+            var duration = entry.durationMs ? (entry.durationMs / 1000).toFixed(1) + 's' : (status === 'pending' ? '⏳' : '?');
+            var tokens = [
+                entry.promptTokens ? 'in:' + entry.promptTokens : '',
+                entry.completionTokens ? 'out:' + entry.completionTokens : '',
+            ].filter(Boolean).join(' / ') || (status === 'pending' ? 'in:' + (entry.promptTokens || '?') : '?');
+
+            return '<span>' + escapeHtml(entry.stage) + ' — ' + escapeHtml(entry.provider) + '/' + escapeHtml(entry.model) + '</span>' +
+                '<span class="llm-entry__meta">' +
+                '<span>' + ts + '</span>' +
+                '<span>' + duration + '</span>' +
+                '<span>' + tokens + '</span>' +
+                '</span>';
+        }
+
+        function makeSection(label, text) {
+            var section = document.createElement('div');
+            section.className = 'llm-entry__section';
+            var labelEl = document.createElement('span');
+            labelEl.className = 'llm-entry__section-label';
+            labelEl.textContent = label;
+            var pre = document.createElement('pre');
+            pre.textContent = text || '(empty)';
+            section.appendChild(labelEl);
+            section.appendChild(pre);
+            return section;
         }
 
         function switchLogTab(targetTab) {
@@ -223,6 +260,7 @@ export function buildSharedClientActions(actionButtonIds: string[], options?: { 
                 clearErrorReport();
                 setStatusState('running', 'Generating output', 'Git Mew is collecting context, sending the request, and preparing the result.');
                 logToggleBtn.classList.remove('hidden');
+                toggleControlsPanel(true);
             } else {
                 ${options?.idleHook || ''}
             }

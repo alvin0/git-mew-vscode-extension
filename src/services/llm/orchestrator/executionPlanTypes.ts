@@ -28,6 +28,15 @@ export interface ExecutionPlan {
   priorityFiles: string[];
   fallbackPolicy: 'static-budget' | 'skip-agent' | 'abort';
   patchSize?: 'small' | 'medium' | 'large';
+  /** Per-agent briefings from LLM Context Gatherer. Injected into agent prompts. */
+  agentBriefings?: Array<{
+    role: string;
+    focusSummary: string;
+    keyFiles: string[];
+    concerns: string[];
+  }>;
+  /** High-level patch summary from LLM Context Gatherer. */
+  patchSummary?: string;
 }
 
 export interface Evidence_Ref {

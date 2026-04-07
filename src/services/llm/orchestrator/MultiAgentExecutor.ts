@@ -25,6 +25,7 @@ export class MultiAgentExecutor {
   private changedFiles: UnifiedDiffFile[] = [];
   private lastAgentTokenUsage = new Map<string, number>();
   private lastSkippedAgents: Array<{ role: string; reason: string }> = [];
+  private llmRequestCounter = 0;
 
   constructor(
     private readonly config: ContextOrchestratorConfig,
@@ -469,6 +470,18 @@ Include "verificationResults" in your JSON output.`,
     );
 
     const startTime = Date.now();
+    const auditReqId = this.nextRequestId(`agent:${agent.role}:structured-self-audit`);
+    this.reportLlmLog(request, {
+      requestId: auditReqId,
+      stage: `agent:${agent.role}:structured-self-audit`,
+      provider: adapter.getProvider(),
+      model: adapter.getModel(),
+      status: 'pending',
+      systemMessage: agent.systemMessage,
+      prompt: safeAuditPrompt,
+      promptTokens: this.estimateTokens(safeAuditPrompt) + this.estimateTokens(agent.systemMessage),
+      timestamp: new Date().toISOString(),
+    });
     const auditResponse = await this.calibration.generateTextWithAutoRetry(
       safeAuditPrompt,
       agent.systemMessage,
@@ -480,9 +493,11 @@ Include "verificationResults" in your JSON output.`,
     this.throwIfCancelled(signal);
 
     this.reportLlmLog(request, {
+      requestId: auditReqId,
       stage: `agent:${agent.role}:structured-self-audit`,
       provider: adapter.getProvider(),
       model: adapter.getModel(),
+      status: 'completed',
       systemMessage: agent.systemMessage,
       prompt: safeAuditPrompt,
       response: auditResponse.text,
@@ -814,15 +829,29 @@ Include "verificationResults" in your JSON output.`,
     );
 
     const startTime = Date.now();
+    const obsAuditReqId = this.nextRequestId('agent:Observer:self-audit');
+    this.reportLlmLog(request, {
+      requestId: obsAuditReqId,
+      stage: 'agent:Observer:self-audit',
+      provider: adapter.getProvider(),
+      model: adapter.getModel(),
+      status: 'pending',
+      systemMessage: agent.systemMessage,
+      prompt: safeAuditPrompt,
+      promptTokens: this.estimateTokens(safeAuditPrompt) + this.estimateTokens(agent.systemMessage),
+      timestamp: new Date().toISOString(),
+    });
     const auditResponse = await this.calibration.generateTextWithAutoRetry(
       safeAuditPrompt, agent.systemMessage, auditOptions, adapter, request, 'Observer:self-audit'
     );
     this.throwIfCancelled(signal);
 
     this.reportLlmLog(request, {
+      requestId: obsAuditReqId,
       stage: 'agent:Observer:self-audit',
       provider: adapter.getProvider(),
       model: adapter.getModel(),
+      status: 'completed',
       systemMessage: agent.systemMessage,
       prompt: safeAuditPrompt,
       response: auditResponse.text,
@@ -874,6 +903,18 @@ Include "verificationResults" in your JSON output.`,
       );
 
       const startTime = Date.now();
+      const reqId = this.nextRequestId(`agent:${agent.role}:iter${iteration + 1}`);
+      this.reportLlmLog(request, {
+        requestId: reqId,
+        stage: `agent:${agent.role}:iter${iteration + 1}`,
+        provider: adapter.getProvider(),
+        model: adapter.getModel(),
+        status: 'pending',
+        systemMessage: options.systemMessage || "",
+        prompt: safePrompt,
+        promptTokens: this.estimateTokens(safePrompt) + this.estimateTokens(options.systemMessage || ""),
+        timestamp: new Date().toISOString(),
+      });
       const response = await this.calibration.generateTextWithAutoRetry(
         safePrompt, options.systemMessage || "", options, adapter, request, agent.role
       );
@@ -888,9 +929,11 @@ Include "verificationResults" in your JSON output.`,
       );
 
       this.reportLlmLog(request, {
+        requestId: reqId,
         stage: `agent:${agent.role}:iter${iteration + 1}`,
         provider: adapter.getProvider(),
         model: adapter.getModel(),
+        status: 'completed',
         systemMessage: options.systemMessage || "",
         prompt: safePrompt,
         response: response.text,
@@ -977,15 +1020,29 @@ Include "verificationResults" in your JSON output.`,
     );
 
     const startTime = Date.now();
+    const legacyAuditReqId = this.nextRequestId(`agent:${agent.role}:self-audit`);
+    this.reportLlmLog(request, {
+      requestId: legacyAuditReqId,
+      stage: `agent:${agent.role}:self-audit`,
+      provider: adapter.getProvider(),
+      model: adapter.getModel(),
+      status: 'pending',
+      systemMessage: agent.systemMessage,
+      prompt: safeAuditPrompt,
+      promptTokens: this.estimateTokens(safeAuditPrompt) + this.estimateTokens(agent.systemMessage),
+      timestamp: new Date().toISOString(),
+    });
     const auditResponse = await this.calibration.generateTextWithAutoRetry(
       safeAuditPrompt, agent.systemMessage, auditOptions, adapter, request, `${agent.role}:self-audit`
     );
     this.throwIfCancelled(signal);
 
     this.reportLlmLog(request, {
+      requestId: legacyAuditReqId,
       stage: `agent:${agent.role}:self-audit`,
       provider: adapter.getProvider(),
       model: adapter.getModel(),
+      status: 'completed',
       systemMessage: agent.systemMessage,
       prompt: safeAuditPrompt,
       response: auditResponse.text,
@@ -1027,6 +1084,10 @@ Include "verificationResults" in your JSON output.`,
 
   private throwIfCancelled(signal?: AbortSignal): void {
     if (signal?.aborted) { throw new GenerationCancelledError(); }
+  }
+
+  private nextRequestId(stage: string): string {
+    return `${stage}-${++this.llmRequestCounter}`;
   }
 
   private wrapError(error: unknown, stage: string): Error {

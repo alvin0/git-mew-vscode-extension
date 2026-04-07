@@ -318,25 +318,38 @@ export class ContextOrchestratorService {
       try {
         const dependencyGraph = input.dependencyGraph ?? input.phaseConfig.buildContext.dependencyGraph;
         graphAvailability = this.determineGraphAvailability(input.changedFiles, dependencyGraph);
-        executionPlan = this.contextGatherer.analyze({
+        const gathererResult = await this.contextGatherer.analyze({
           changes: input.changedFiles,
           diffText: input.diffText ?? input.phaseConfig.buildContext.fullDiff,
           dependencyGraph,
           diffTokens: input.diffTokens ?? this.estimateTokens(input.phaseConfig.buildContext.fullDiff, input.adapter.getModel()),
           contextWindow: input.contextWindow ?? input.adapter.getContextWindow(),
+          adapter: input.adapter,
+          calibration: this.calibration,
+          signal: input.signal,
+          onLog: input.request?.onLog,
+          onLlmLog: input.request?.onLlmLog,
         });
+        executionPlan = gathererResult.plan;
+        // Attach agent briefings and patch summary to the plan for downstream use.
+        executionPlan.agentBriefings = gathererResult.agentBriefings;
+        executionPlan.patchSummary = gathererResult.patchSummary;
         input.sharedStore.setExecutionPlan(executionPlan);
         telemetry.emitExecutionPlan(executionPlan, isDebugTelemetryEnabled());
         input.request?.onLog?.(`[adaptive] graph availability=${graphAvailability}`);
+        if (input.actualReferenceTokens !== undefined) {
+          input.request?.onLog?.(`[adaptive] reference budget: actual=${input.actualReferenceTokens} theoretical=${this.budgetManager.computeReferenceContextBudget(input.contextWindow ?? input.adapter.getContextWindow())}`);
+        }
         const adaptiveBudgets = this.budgetManager.allocateFromExecutionPlan(
           executionPlan,
           input.contextWindow ?? input.adapter.getContextWindow(),
           input.maxOutputTokens ?? input.adapter.getMaxOutputTokens(),
           input.systemTokens ?? this.estimateTokens(input.request?.task.systemMessage ?? '', input.adapter.getModel()),
           input.diffTokens ?? this.estimateTokens(input.phaseConfig.buildContext.fullDiff, input.adapter.getModel()),
+          input.actualReferenceTokens,
         );
         effectiveBudgets = adaptiveBudgets;
-        effectivePhaseConfig = this.rebuildAdaptivePhaseConfig(input.phaseConfig, adaptiveBudgets);
+        effectivePhaseConfig = this.rebuildAdaptivePhaseConfig(input.phaseConfig, adaptiveBudgets, executionPlan);
       } catch (error) {
         contextGathererFailed = true;
         input.request?.onLog?.(`[adaptive] context gatherer failed, falling back to static budget: ${error}`);
@@ -585,6 +598,7 @@ export class ContextOrchestratorService {
   private rebuildAdaptivePhaseConfig(
     phaseConfig: PhasedAgentConfig,
     budgetAllocations: AgentBudgetAllocation[],
+    executionPlan?: ExecutionPlan,
   ): PhasedAgentConfig {
     const roleToBudget = new Map(budgetAllocations.map((budget) => [budget.agentRole, budget]));
     const promptBuilder = phaseConfig.promptBuilder as {
@@ -594,18 +608,25 @@ export class ContextOrchestratorService {
       buildDetailChangePrompt?: (context: AgentPromptBuildContext, budget: AgentBudgetAllocation) => AgentPrompt;
     };
 
+    // Inject agent briefings and patch summary into build context.
+    const enrichedContext: AgentPromptBuildContext = {
+      ...phaseConfig.buildContext,
+      agentBriefings: executionPlan?.agentBriefings,
+      patchSummary: executionPlan?.patchSummary,
+    };
+
     const rebuiltPhase1 = phaseConfig.phase1.map((agent) => {
       switch (agent.role) {
         case 'Code Reviewer':
-          return promptBuilder.buildCodeReviewerPrompt?.(phaseConfig.buildContext, roleToBudget.get('Code Reviewer') ?? budgetAllocations[0]) ?? agent;
+          return promptBuilder.buildCodeReviewerPrompt?.(enrichedContext, roleToBudget.get('Code Reviewer') ?? budgetAllocations[0]) ?? agent;
         case 'Flow Diagram':
-          return promptBuilder.buildFlowDiagramPrompt?.(phaseConfig.buildContext, roleToBudget.get('Flow Diagram') ?? budgetAllocations[0]) ?? agent;
+          return promptBuilder.buildFlowDiagramPrompt?.(enrichedContext, roleToBudget.get('Flow Diagram') ?? budgetAllocations[0]) ?? agent;
         case 'Security Analyst':
-          return promptBuilder.buildSecurityAgentPrompt?.(phaseConfig.buildContext, roleToBudget.get('Security Analyst') ?? budgetAllocations[0]) ?? agent;
+          return promptBuilder.buildSecurityAgentPrompt?.(enrichedContext, roleToBudget.get('Security Analyst') ?? budgetAllocations[0]) ?? agent;
         case 'Detail Change': {
           const baseBudget = roleToBudget.get('Code Reviewer') ?? budgetAllocations[0];
           const detailBudget = { ...baseBudget, agentRole: 'Detail Change' };
-          return promptBuilder.buildDetailChangePrompt?.(phaseConfig.buildContext, detailBudget) ?? agent;
+          return promptBuilder.buildDetailChangePrompt?.(enrichedContext, detailBudget) ?? agent;
         }
         default:
           return agent;
