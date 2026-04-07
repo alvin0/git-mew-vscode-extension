@@ -12,6 +12,7 @@ import {
 import { ContextBudgetManager, DEFAULT_BUDGET_CONFIG } from '../../services/llm/orchestrator/ContextBudgetManager';
 import { DependencyGraphIndex, DEFAULT_GRAPH_CONFIG } from '../../services/llm/orchestrator/DependencyGraphIndex';
 import { SharedContextStoreImpl } from '../../services/llm/orchestrator/SharedContextStore';
+import { SessionMemory } from '../../services/llm/orchestrator/SessionMemory';
 import { AgentPromptBuilder } from '../../services/llm/orchestrator/AgentPromptBuilder';
 import { TokenEstimatorService } from '../../services/llm/TokenEstimatorService';
 import {
@@ -22,6 +23,7 @@ import {
     ObserverOutput,
     StructuredAgentReport
 } from '../../services/llm/orchestrator/orchestratorTypes';
+import { shouldUseAdaptivePipeline } from '../../services/llm/orchestrator/adaptivePipelineFlag';
 import { GitService } from '../../services/utils/gitService';
 import { MergedBranchInfo } from '../../services/utils/gitService';
 import { ReviewWorkflowServiceBase } from '../reviewShared/reviewWorkflowServiceBase';
@@ -76,6 +78,7 @@ export class ReviewMergedBranchService extends ReviewWorkflowServiceBase {
     ): Promise<ReviewResult> {
         return this.withAbortController(async (abortController) => {
             try {
+                const reviewStartTime = Date.now();
                 // Step 1: Prepare LLM adapter
                 const dependencyState = await this.prepareAdapter(
                     provider, model, language, strategy,
@@ -106,7 +109,7 @@ export class ReviewMergedBranchService extends ReviewWorkflowServiceBase {
                 );
 
                 // Step 5: Initialize pipeline components
-                const sharedStore = new SharedContextStoreImpl();
+                const sharedStore = shouldUseAdaptivePipeline() ? new SessionMemory() : new SharedContextStoreImpl();
                 const tokenEstimator = new TokenEstimatorService();
                 const budgetManager = new ContextBudgetManager(DEFAULT_BUDGET_CONFIG, tokenEstimator);
                 const promptBuilder = new AgentPromptBuilder(budgetManager, tokenEstimator);
@@ -188,69 +191,87 @@ export class ReviewMergedBranchService extends ReviewWorkflowServiceBase {
                 const agents: AgentPrompt[] = [codeReviewerAgent, flowDiagramAgent, detailChangeAgent];
 
                 // Step 11: Execute multi-agent pipeline
-                const review = await this.contextOrchestrator.generateMultiAgentFinalText(
-                    dependencyState.adapter,
-                    agents,
-                    systemMessage,
-                    (reports) => {
-                        const structuredReports: StructuredAgentReport[] = [];
-                        const crFindings = sharedStore.getAgentFindings('Code Reviewer');
-                        const fdFindings = sharedStore.getAgentFindings('Flow Diagram');
-                        const obsFindings = sharedStore.getAgentFindings('Observer');
+                const reviewRequest = {
+                    adapter: dependencyState.adapter,
+                    strategy,
+                    changes: branchDiff.changes,
+                    signal: abortController.signal,
+                    onProgress,
+                    onLog,
+                    onLlmLog,
+                    task: this.buildMergedBranchReviewTaskSpec(
+                        mergeCommitSha, branchDiff.diff, taskInfo,
+                        systemMessage, dynamicReferenceContextResult.context
+                    ),
+                };
+                const phaseConfig = {
+                    phase1: agents,
+                    phase2: [],
+                    sharedStore,
+                    promptBuilder,
+                    buildContext,
+                    budgetAllocations: safeBudgets,
+                };
 
-                        if (crFindings.length > 0) {
-                            structuredReports.push({
-                                role: 'Code Reviewer',
-                                structured: crFindings[0].data as CodeReviewerOutput,
-                                raw: this.getRawAgentReport(reports, 'Code Reviewer'),
-                            });
-                        }
-                        if (fdFindings.length > 0) {
-                            structuredReports.push({
-                                role: 'Flow Diagram',
-                                structured: fdFindings[0].data as FlowDiagramOutput,
-                                raw: this.getRawAgentReport(reports, 'Flow Diagram'),
-                            });
-                        }
-                        if (obsFindings.length > 0) {
-                            structuredReports.push({
-                                role: 'Observer',
-                                structured: obsFindings[0].data as ObserverOutput,
-                                raw: this.getRawAgentReport(reports, 'Observer'),
-                            });
-                        }
-
-                        if (structuredReports.length === 0) {
-                            return reports.join('\n\n---\n\n');
-                        }
-
-                        return promptBuilder.buildSynthesizerPrompt(
-                            structuredReports,
-                            promptBuilder.buildDiffSummary(branchDiff.changes),
-                            this.getRawAgentReport(reports, 'Detail Change'),
-                        );
-                    },
-                    abortController.signal,
-                    {
+                const review = shouldUseAdaptivePipeline()
+                    ? (await this.contextOrchestrator.runAdaptivePipeline({
                         adapter: dependencyState.adapter,
-                        strategy,
-                        changes: branchDiff.changes,
-                        signal: abortController.signal,
-                        onProgress,
-                        onLog,
-                        onLlmLog,
-                        task: this.buildMergedBranchReviewTaskSpec(
-                            mergeCommitSha, branchDiff.diff, taskInfo,
-                            systemMessage, dynamicReferenceContextResult.context
-                        ),
-                    },
-                    {
+                        phaseConfig,
                         sharedStore,
-                        promptBuilder,
-                        buildContext,
-                        budgetAllocations: safeBudgets,
-                    }
-                );
+                        suppressedFindings: [],
+                        changedFiles: branchDiff.changes,
+                        language,
+                        reviewDurationMs: 0,
+                        reviewStartTimeMs: reviewStartTime,
+                        signal: abortController.signal,
+                        request: reviewRequest,
+                    })).review
+                    : await this.contextOrchestrator.generateMultiAgentFinalText(
+                        dependencyState.adapter,
+                        agents,
+                        systemMessage,
+                        (reports) => {
+                            const structuredReports: StructuredAgentReport[] = [];
+                            const crFindings = sharedStore.getAgentFindings('Code Reviewer');
+                            const fdFindings = sharedStore.getAgentFindings('Flow Diagram');
+                            const obsFindings = sharedStore.getAgentFindings('Observer');
+
+                            if (crFindings.length > 0) {
+                                structuredReports.push({
+                                    role: 'Code Reviewer',
+                                    structured: crFindings[0].data as CodeReviewerOutput,
+                                    raw: this.getRawAgentReport(reports, 'Code Reviewer'),
+                                });
+                            }
+                            if (fdFindings.length > 0) {
+                                structuredReports.push({
+                                    role: 'Flow Diagram',
+                                    structured: fdFindings[0].data as FlowDiagramOutput,
+                                    raw: this.getRawAgentReport(reports, 'Flow Diagram'),
+                                });
+                            }
+                            if (obsFindings.length > 0) {
+                                structuredReports.push({
+                                    role: 'Observer',
+                                    structured: obsFindings[0].data as ObserverOutput,
+                                    raw: this.getRawAgentReport(reports, 'Observer'),
+                                });
+                            }
+
+                            if (structuredReports.length === 0) {
+                                return reports.join('\n\n---\n\n');
+                            }
+
+                            return promptBuilder.buildSynthesizerPrompt(
+                                structuredReports,
+                                promptBuilder.buildDiffSummary(branchDiff.changes),
+                                this.getRawAgentReport(reports, 'Detail Change'),
+                            );
+                        },
+                        abortController.signal,
+                        reviewRequest,
+                        phaseConfig
+                    );
 
                 // Step 12: Return result
                 return {

@@ -7,6 +7,7 @@ import {
   FlowDiagramOutput,
   SecurityAnalystOutput,
 } from './orchestratorTypes';
+import { ExecutionPlan } from './executionPlanTypes';
 import { ToolExecuteResponse } from '../../../llm-tools/toolInterface';
 import { DependencyGraphIndex } from './DependencyGraphIndex';
 
@@ -29,6 +30,9 @@ export interface ISharedContextStore {
   setRiskHypotheses(hypotheses: RiskHypothesis[]): void;
   getRiskHypotheses(): RiskHypothesis[];
 
+  setExecutionPlan(plan: ExecutionPlan): void;
+  getExecutionPlan(): ExecutionPlan | undefined;
+
   serializeForAgent(agentRole: string, tokenBudget: number): string;
 
   getStats(): { toolCacheHits: number; toolCacheMisses: number; totalFindings: number };
@@ -39,6 +43,7 @@ export class SharedContextStoreImpl implements ISharedContextStore {
   private findings: AgentFinding[] = [];
   private graph: DependencyGraphData | undefined;
   private hypotheses: RiskHypothesis[] = [];
+  private executionPlan: ExecutionPlan | undefined;
   private stats = { toolCacheHits: 0, toolCacheMisses: 0 };
 
   // ── Key Normalization ──
@@ -131,6 +136,14 @@ export class SharedContextStoreImpl implements ISharedContextStore {
 
   getRiskHypotheses(): RiskHypothesis[] {
     return [...this.hypotheses];
+  }
+
+  setExecutionPlan(plan: ExecutionPlan): void {
+    this.executionPlan = plan;
+  }
+
+  getExecutionPlan(): ExecutionPlan | undefined {
+    return this.executionPlan;
   }
 
   // ── Serialization for prompt injection ──

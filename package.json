@@ -413,6 +413,16 @@
             "hierarchical"
           ],
           "description": "Context handling strategy for Review Merge and Review Staged Changes"
+        },
+        "gitmew.useAdaptivePipeline": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable adaptive review pipeline (removes Phase 3 synthesis agents, uses deterministic rendering)"
+        },
+        "gitmew.debugTelemetry": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable verbose telemetry logging for the adaptive review pipeline"
         }
       }
     }
@@ -424,6 +434,10 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
     "test": "vscode-test",
+    "benchmark:pipeline": "npm run compile && node out/test/benchmarks/pipelineBenchmark.js",
+    "benchmark:pipeline:baseline": "npm run compile && node out/test/benchmarks/pipelineBenchmark.js --write-baseline",
+    "benchmark:tokens": "npm run compile && node out/test/benchmarks/tokenAccountingHarness.js",
+    "benchmark:renderer": "npm run compile && node out/test/benchmarks/rendererLatencyBenchmark.js",
     "build:package": "vsce package"
   },
   "devDependencies": {

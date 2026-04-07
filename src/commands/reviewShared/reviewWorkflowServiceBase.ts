@@ -1,6 +1,7 @@
 import { ILLMAdapter, LLMProvider } from '../../llm-adapter';
 import { SYSTEM_PROMPT_REPAIR_PLANTUML } from '../../prompts/systemPromptRepairPlantUml';
 import { ContextOrchestratorService, ContextStrategy, LLMService } from '../../services/llm';
+import { shouldUseAdaptivePipeline } from '../../services/llm/orchestrator/adaptivePipelineFlag';
 import { GitService } from '../../services/utils/gitService';
 import { createInitializedAdapter, resolveCustomProviderBaseUrl, resolveProviderApiKey } from './adapter';
 import { persistCustomModelCapabilitiesIfNeeded, persistReviewPreferences } from './preferences';
@@ -95,6 +96,13 @@ export abstract class ReviewWorkflowServiceBase {
                 this.currentAbortController = null;
             }
         }
+    }
+
+    protected executeReviewPipeline<T>(
+        adaptivePipeline: () => Promise<T>,
+        legacyPipeline: () => Promise<T>
+    ): Promise<T> {
+        return shouldUseAdaptivePipeline() ? adaptivePipeline() : legacyPipeline();
     }
 
     protected async repairPlantUmlMarkdown(

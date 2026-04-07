@@ -12,9 +12,12 @@ import {
 import { TokenEstimatorService } from "./TokenEstimatorService";
 import { AdapterCalibrationService } from "./orchestrator/AdapterCalibrationService";
 import { ChunkAnalysisReducer } from "./orchestrator/ChunkAnalysisReducer";
+import { DEFAULT_BUDGET_CONFIG, ContextBudgetManager } from "./orchestrator/ContextBudgetManager";
+import { ContextGatherer } from "./orchestrator/ContextGatherer";
 import { DiffChunkBuilder } from "./orchestrator/DiffChunkBuilder";
 import { trackEvent } from "../posthog";
 import { MultiAgentExecutor } from "./orchestrator/MultiAgentExecutor";
+import { HybridAssembly } from "./orchestrator/HybridAssembly";
 import {
   AgentBudgetAllocation,
   AgentPrompt,
@@ -29,8 +32,19 @@ import {
   FAST_REDUCER_SYSTEM_PROMPT,
   FAST_WORKER_SYSTEM_PROMPT,
   REDUCER_SYSTEM_PROMPT,
+  StructuredAgentReport,
+  ExecutionPlan,
   WORKER_SYSTEM_PROMPT,
 } from "./orchestrator/orchestratorTypes";
+import {
+  AdaptivePipelineInput,
+  AdaptivePipelineOutput,
+  LegacyStructuredReportAdapter,
+} from "./orchestrator/adaptivePipelineTypes";
+import { SuppressionFilter } from "./orchestrator/SuppressionFilter";
+import { PipelineTelemetryEmitter } from "./orchestrator/PipelineTelemetryEmitter";
+import { isDebugTelemetryEnabled } from "./orchestrator/adaptivePipelineFlag";
+import { SessionMemory } from "./orchestrator/SessionMemory";
 
 export { AgentPrompt };
 
@@ -48,6 +62,8 @@ export class ContextOrchestratorService {
   private readonly chunkBuilder: DiffChunkBuilder;
   private readonly reducer: ChunkAnalysisReducer;
   private readonly multiAgentExecutor: MultiAgentExecutor;
+  private readonly budgetManager: ContextBudgetManager;
+  private readonly contextGatherer: ContextGatherer;
 
   constructor(config: Partial<ContextOrchestratorConfig> = {}) {
     this.config = { ...DEFAULT_ORCHESTRATOR_CONFIG, ...config };
@@ -56,6 +72,8 @@ export class ContextOrchestratorService {
     this.chunkBuilder = new DiffChunkBuilder(this.tokenEstimator);
     this.reducer = new ChunkAnalysisReducer(this.config, this.tokenEstimator);
     this.multiAgentExecutor = new MultiAgentExecutor(this.config, this.calibration, this.tokenEstimator);
+    this.budgetManager = new ContextBudgetManager(DEFAULT_BUDGET_CONFIG, this.tokenEstimator);
+    this.contextGatherer = new ContextGatherer(this.tokenEstimator, DEFAULT_BUDGET_CONFIG.agentBudgetRatios);
   }
 
   public estimateTokens(text: string, model?: string): number {
@@ -277,6 +295,202 @@ export class ContextOrchestratorService {
     return this.multiAgentExecutor.executeSynthesisAgents(agents, adapter, signal, request);
   }
 
+  public async runAdaptivePipeline(input: AdaptivePipelineInput): Promise<AdaptivePipelineOutput> {
+    try {
+      if (input.signal?.aborted) {
+        throw new GenerationCancelledError();
+      }
+
+      const telemetry = input.telemetryEmitter ?? new PipelineTelemetryEmitter(input.request?.onLog);
+      this.calibration.setTruncationHandler((payload) => telemetry.emitTruncation(payload));
+      telemetry.emitPipelineStart({
+        changedFiles: input.changedFiles.length,
+        suppressedRules: input.suppressedFindings.length,
+      });
+
+      const contextGathererStart = Date.now();
+      let executionPlan: ExecutionPlan | undefined;
+      let effectivePhaseConfig = input.phaseConfig;
+      let effectiveBudgets = input.phaseConfig.budgetAllocations;
+      let contextGathererFailed = false;
+      let graphAvailability: 'available' | 'unavailable' | 'partial' = 'unavailable';
+
+      try {
+        const dependencyGraph = input.dependencyGraph ?? input.phaseConfig.buildContext.dependencyGraph;
+        graphAvailability = this.determineGraphAvailability(input.changedFiles, dependencyGraph);
+        executionPlan = this.contextGatherer.analyze({
+          changes: input.changedFiles,
+          diffText: input.diffText ?? input.phaseConfig.buildContext.fullDiff,
+          dependencyGraph,
+          diffTokens: input.diffTokens ?? this.estimateTokens(input.phaseConfig.buildContext.fullDiff, input.adapter.getModel()),
+          contextWindow: input.contextWindow ?? input.adapter.getContextWindow(),
+        });
+        input.sharedStore.setExecutionPlan(executionPlan);
+        telemetry.emitExecutionPlan(executionPlan, isDebugTelemetryEnabled());
+        input.request?.onLog?.(`[adaptive] graph availability=${graphAvailability}`);
+        const adaptiveBudgets = this.budgetManager.allocateFromExecutionPlan(
+          executionPlan,
+          input.contextWindow ?? input.adapter.getContextWindow(),
+          input.maxOutputTokens ?? input.adapter.getMaxOutputTokens(),
+          input.systemTokens ?? this.estimateTokens(input.request?.task.systemMessage ?? '', input.adapter.getModel()),
+          input.diffTokens ?? this.estimateTokens(input.phaseConfig.buildContext.fullDiff, input.adapter.getModel()),
+        );
+        effectiveBudgets = adaptiveBudgets;
+        effectivePhaseConfig = this.rebuildAdaptivePhaseConfig(input.phaseConfig, adaptiveBudgets);
+      } catch (error) {
+        contextGathererFailed = true;
+        input.request?.onLog?.(`[adaptive] context gatherer failed, falling back to static budget: ${error}`);
+      }
+      const contextGathererDurationMs = Date.now() - contextGathererStart;
+
+      const phaseStart = Date.now();
+      const phaseReports = await this.multiAgentExecutor.executePhasedAgents(
+        effectivePhaseConfig,
+        input.adapter,
+        input.signal,
+        input.request,
+        executionPlan,
+      );
+      const phaseDurationMs = Date.now() - phaseStart;
+
+      if (input.signal?.aborted) {
+        throw new GenerationCancelledError();
+      }
+
+      const structuredReports = LegacyStructuredReportAdapter.fromSharedStore(input.sharedStore, phaseReports);
+      const agentTokenUsage = this.multiAgentExecutor.getLastAgentTokenUsage();
+      const skippedAgents = executionPlan?.disabledAgents ?? this.multiAgentExecutor.getLastSkippedAgents();
+      for (const report of structuredReports) {
+        const allocated = effectiveBudgets.find((budget) => budget.agentRole === report.role)?.totalBudget;
+        telemetry.emitAgentComplete({
+          role: report.role,
+          structured: true,
+          rawLength: report.raw.length,
+          allocatedTokens: allocated,
+          actualTokens: agentTokenUsage[report.role] ?? 0,
+        });
+      }
+
+      const suppressionResult = input.sharedStore instanceof SessionMemory
+        ? SuppressionFilter.applyToSessionMemory(input.sharedStore, input.suppressedFindings)
+        : SuppressionFilter.applyToLegacyReports(
+          structuredReports,
+          input.suppressedFindings,
+        );
+
+      const assemblyStart = Date.now();
+      const assembly = new HybridAssembly();
+      const actualReviewDurationMs = input.reviewStartTimeMs
+        ? Math.max(0, Date.now() - input.reviewStartTimeMs)
+        : input.reviewDurationMs;
+      const assemblyResult = input.sharedStore instanceof SessionMemory
+        ? await assembly.assembleAdaptive({
+          sessionMemory: input.sharedStore,
+          adapter: input.adapter,
+          calibration: this.calibration,
+          changedFiles: input.changedFiles,
+          detailChangeReport: input.detailChangeReport ?? LegacyStructuredReportAdapter.findRawReport(phaseReports, 'Detail Change'),
+          executionPlan,
+          language: input.language,
+          reviewDurationMs: actualReviewDurationMs,
+          signal: input.signal,
+          suppressedFindings: input.suppressedFindings,
+          suppressedCount: suppressionResult.suppressedCount,
+          telemetryEmitter: telemetry,
+          request: input.request,
+        })
+        : {
+          review: assembly.assemble({
+            structuredReports: suppressionResult.filteredReports,
+            changedFiles: input.changedFiles,
+            detailChangeReport: input.detailChangeReport ?? LegacyStructuredReportAdapter.findRawReport(phaseReports, 'Detail Change'),
+            language: input.language,
+            reviewDurationMs: actualReviewDurationMs,
+            suppressedFindings: input.suppressedFindings,
+            suppressedCount: suppressionResult.suppressedCount,
+          }),
+          sectionWriterUsed: [] as string[],
+          deterministicRendered: ['changed-files', 'summary', 'detail-change', 'flow', 'quality', 'improvements', 'todo', 'risks'],
+        };
+      const assemblyDurationMs = Date.now() - assemblyStart;
+      const review = assemblyResult.review;
+      const totalFindings = input.sharedStore instanceof SessionMemory
+        ? input.sharedStore.getRenderableFindings().length
+        : this.countStructuredFindings(suppressionResult.filteredReports);
+
+      telemetry.emitAssemblyComplete({
+        suppressedCount: suppressionResult.suppressedCount,
+        sectionsRendered: 8,
+        structureValid: assembly.validateReportStructure(review),
+        durationMs: assemblyDurationMs,
+      });
+      telemetry.emitPipelineComplete({
+        pipelineMode: 'adaptive',
+        patchIntent: executionPlan?.patchIntent,
+        riskFlags: executionPlan?.riskFlags,
+        enabledAgents: executionPlan?.enabledAgents ?? input.phaseConfig.phase1.map((agent) => agent.role).concat('Observer'),
+        disabledAgents: skippedAgents.map((item) => item.role),
+        sectionWritersEnabled: {
+          summary: assemblyResult.sectionWriterUsed.includes('summary'),
+          improvements: assemblyResult.sectionWriterUsed.includes('improvements'),
+        },
+        phaseLatencies: {
+          contextGatherer: contextGathererDurationMs,
+          phase1Agents: phaseDurationMs,
+          phase2Observer: 0,
+          assembly: assemblyDurationMs,
+        },
+        tokenUsage: {
+          totalInput: this.estimateTokens(review, input.adapter.getModel()),
+          perAgent: Object.fromEntries(
+            effectiveBudgets.map((budget) => [
+              budget.agentRole,
+              {
+                allocated: budget.totalBudget,
+                actual: agentTokenUsage[budget.agentRole] ?? 0,
+              },
+            ]),
+          ),
+          truncationEvents: [],
+        },
+        outputCompleteness: {
+          sectionsRendered: 8,
+          sectionWriterUsed: assemblyResult.sectionWriterUsed,
+          deterministicRendered: assemblyResult.deterministicRendered,
+          totalFindings,
+        },
+      });
+
+      if (executionPlan) {
+        input.request?.onLog?.(
+          `[adaptive] patchIntent=${executionPlan.patchIntent} riskFlags=${JSON.stringify(executionPlan.riskFlags)} fallback=${executionPlan.fallbackPolicy} graph=${graphAvailability}`
+        );
+      } else if (contextGathererFailed) {
+        input.request?.onLog?.('[adaptive] using static budget fallback path');
+      }
+
+      if (isDebugTelemetryEnabled()) {
+        input.request?.onLog?.(`[adaptive] rendered report preview:\n${this.truncateLog(review, 800)}`);
+      }
+
+      return {
+        review,
+        intermediateData: {
+          structuredReports,
+          observerFindings: suppressionResult.filteredReports.find((report) => report.role === 'Observer')?.structured,
+          suppressionResult,
+        },
+      };
+    } catch (error) {
+      if (error instanceof GenerationCancelledError) {
+        throw error;
+      }
+      throw this.wrapError(error, 'adaptive-pipeline');
+    } finally {
+      this.calibration.setTruncationHandler(undefined);
+    }
+  }
+
   /**
    * Multi-agent MR description generation.
    * Phase 1: Change Analyzer + Context Investigator run in parallel.
@@ -368,10 +582,77 @@ export class ContextOrchestratorService {
     return `${normalized.slice(0, maxLength)}\n...[truncated ${normalized.length - maxLength} chars]`;
   }
 
+  private rebuildAdaptivePhaseConfig(
+    phaseConfig: PhasedAgentConfig,
+    budgetAllocations: AgentBudgetAllocation[],
+  ): PhasedAgentConfig {
+    const roleToBudget = new Map(budgetAllocations.map((budget) => [budget.agentRole, budget]));
+    const promptBuilder = phaseConfig.promptBuilder as {
+      buildCodeReviewerPrompt?: (context: AgentPromptBuildContext, budget: AgentBudgetAllocation) => AgentPrompt;
+      buildFlowDiagramPrompt?: (context: AgentPromptBuildContext, budget: AgentBudgetAllocation) => AgentPrompt;
+      buildSecurityAgentPrompt?: (context: AgentPromptBuildContext, budget: AgentBudgetAllocation) => AgentPrompt;
+      buildDetailChangePrompt?: (context: AgentPromptBuildContext, budget: AgentBudgetAllocation) => AgentPrompt;
+    };
+
+    const rebuiltPhase1 = phaseConfig.phase1.map((agent) => {
+      switch (agent.role) {
+        case 'Code Reviewer':
+          return promptBuilder.buildCodeReviewerPrompt?.(phaseConfig.buildContext, roleToBudget.get('Code Reviewer') ?? budgetAllocations[0]) ?? agent;
+        case 'Flow Diagram':
+          return promptBuilder.buildFlowDiagramPrompt?.(phaseConfig.buildContext, roleToBudget.get('Flow Diagram') ?? budgetAllocations[0]) ?? agent;
+        case 'Security Analyst':
+          return promptBuilder.buildSecurityAgentPrompt?.(phaseConfig.buildContext, roleToBudget.get('Security Analyst') ?? budgetAllocations[0]) ?? agent;
+        case 'Detail Change': {
+          const baseBudget = roleToBudget.get('Code Reviewer') ?? budgetAllocations[0];
+          const detailBudget = { ...baseBudget, agentRole: 'Detail Change' };
+          return promptBuilder.buildDetailChangePrompt?.(phaseConfig.buildContext, detailBudget) ?? agent;
+        }
+        default:
+          return agent;
+      }
+    });
+
+    return {
+      ...phaseConfig,
+      phase1: rebuiltPhase1,
+      budgetAllocations,
+    };
+  }
+
+  private determineGraphAvailability(
+    changes: UnifiedDiffFile[],
+    dependencyGraph?: AgentPromptBuildContext['dependencyGraph'],
+  ): 'available' | 'unavailable' | 'partial' {
+    if (!dependencyGraph) {
+      return 'unavailable';
+    }
+
+    const expected = changes.filter((change) => !change.isBinary && !change.isDeleted).length;
+    if (dependencyGraph.fileDependencies.size === 0) {
+      return 'partial';
+    }
+    return dependencyGraph.fileDependencies.size >= expected ? 'available' : 'partial';
+  }
+
   private wrapError(error: unknown, stage: string): Error {
     if (error instanceof GenerationCancelledError) { return error; }
     return error instanceof Error
       ? new Error(`[${stage}] ${error.message}`)
       : new Error(`[${stage}] ${String(error)}`);
+  }
+
+  private countStructuredFindings(reports: StructuredAgentReport[]): number {
+    return reports.reduce((total, report) => {
+      if (report.role === 'Code Reviewer') {
+        return total + report.structured.issues.length;
+      }
+      if (report.role === 'Security Analyst') {
+        return total + report.structured.vulnerabilities.filter((finding) => finding.confidence >= 0.5).length;
+      }
+      if (report.role === 'Observer') {
+        return total + report.structured.risks.length;
+      }
+      return total;
+    }, 0);
   }
 }

@@ -1,0 +1,15 @@
+{
+  "scenario": "small",
+  "generatedAt": "2026-04-07T09:06:09.091Z",
+  "metrics": {
+    "scenario": "small",
+    "pipeline": "legacy",
+    "llmCalls": 9,
+    "totalInputTokens": 1069,
+    "endToEndLatencyMs": 1080.767,
+    "assemblyLatencyMs": 0.767,
+    "sectionsRendered": 8,
+    "outputStructureValid": true,
+    "reviewMarkdown": "# Code Review Report\n\n## 1. Changed File Paths\n- `src/example.ts` — modified\n- `src/helper.ts` — added\n\n## 2. Summary of Changes\n\nThe review covered Code Reviewer, Flow Diagram, Security Analyst, Observer findings for the changed files.\n\n## 3. Detail Change\n\nsmall patch updates 2 files.\n\nThe benchmark fixture keeps this section long enough to avoid fallback.\n\nEstimated diff size: 280 characters.\n\n## 4. Flow Diagram\n\n### Diagram: small review flow\nsmall benchmark flow\n```plantuml\n@startuml\nClient -> Service: review\nService -> Store: persist\n@enduml\n```\n\n## 5. Code Quality Assessment\n\n**Safe**\n- small pipeline issue 1\n- small pipeline issue 2\n\n## 6. Improvement Suggestions\n\n### Correctness\n- **File & Location**: `src/example.ts` — line 10\n  **Issue**: [CR] small pipeline issue 1\n  **Why it matters**: correctness risk in changed behavior.\n  **Actionable fix**: Fix small issue 1\n  **Confidence score**: 80%\n- **File & Location**: `src/helper.ts` — line 11\n  **Issue**: [CR] small pipeline issue 2\n  **Why it matters**: maintainability risk in changed behavior.\n  **Actionable fix**: Fix small issue 2\n  **Confidence score**: 80%\n### Security\n- **File & Location**: `src/example.ts` — line 20\n  **Issue**: [SA] CWE-476 small security finding 1\n  **Why it matters**: other vulnerability may affect security boundaries.\n  **Actionable fix**: Mitigate small security finding 1\n  **Confidence score**: 84%\n\n## 7. Observer TODO List\n\n- [Parallel] Add small follow-up 1 (rationale: Validate behavior, expected: Behavior confirmed, priority: high)\n\n## 8. Potential Hidden Risks\n\n- [OB] src/example.ts — small observer risk 1 (confidence: 72%, likelihood: medium, impact: Needs validation, mitigation: Review small observer risk 1)\n- [SA] src/example.ts:line 20 — small security finding 1 (impact: CWE-476, mitigation: Mitigate small security finding 1)\n\n<!-- Review Metadata: findings=4, critical=0, major=3, minor=1, suggestion=0, by_agent={CR:2, SA:1, OB:1}, cross_validated=0, suppressed=0, duration=0ms -->"
+  }
+}

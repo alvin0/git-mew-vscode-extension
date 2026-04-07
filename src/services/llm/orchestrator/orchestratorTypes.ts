@@ -6,6 +6,19 @@ import {
   ReviewSummary,
   SuppressedFinding,
 } from "../reviewMemoryTypes";
+export type {
+  ActorRole,
+  Evidence_Ref,
+  ExecutionPlan,
+  Finding,
+  FindingFilter,
+  FindingStatus,
+  Hypothesis,
+  HypothesisFilter,
+  HypothesisStatus,
+  PatchIntent,
+  RiskFlags,
+} from './executionPlanTypes';
 
 export type BudgetProfile = {
   contextWindow: number;
@@ -40,6 +53,8 @@ export type AgentPrompt = {
   compareBranch?: string;
   /** GitService instance for branch-aware file reading */
   gitService?: any;
+  /** Optional resolved token budget for telemetry/truncation tracking. */
+  allocatedBudget?: AgentBudgetAllocation;
 };
 
 // Forward reference — actual implementation in SharedContextStore.ts

@@ -2,6 +2,7 @@ import { GenerateOptions, ILLMAdapter } from "../../../llm-adapter";
 import { ContextGenerationRequest } from "../contextTypes";
 import { TokenEstimatorService } from "../TokenEstimatorService";
 import { ContextOrchestratorConfig } from "./orchestratorTypes";
+import { TruncationTelemetry } from "./telemetryTypes";
 
 /**
  * Manages per-session context window calibration.
@@ -9,6 +10,7 @@ import { ContextOrchestratorConfig } from "./orchestratorTypes";
  */
 export class AdapterCalibrationService {
   private readonly calibrationCache: Map<string, { contextWindow: number }> = new Map();
+  private truncationHandler?: (payload: TruncationTelemetry) => void;
 
   constructor(
     private readonly config: ContextOrchestratorConfig,
@@ -38,6 +40,10 @@ export class AdapterCalibrationService {
     this.config.onCalibrate?.(adapter.getProvider(), adapter.getModel(), contextWindow);
   }
 
+  setTruncationHandler(handler?: (payload: TruncationTelemetry) => void): void {
+    this.truncationHandler = handler;
+  }
+
   /**
    * Truncates a prompt to fit within the model's context window.
    *
@@ -56,7 +62,8 @@ export class AdapterCalibrationService {
     adapter: ILLMAdapter,
     request?: ContextGenerationRequest,
     role?: string,
-    overrideContextWindow?: number
+    overrideContextWindow?: number,
+    budgetAllocated?: number,
   ): string {
     const contextWindow = overrideContextWindow ?? this.getCalibratedContextWindow(adapter);
     const model = adapter.getModel();
@@ -93,6 +100,12 @@ export class AdapterCalibrationService {
     request?.onLog?.(
       `[${role ?? "agent"}] prompt truncated: ~${totalTokens} tokens → ~${allowedPromptTokens} allowed (context window: ${contextWindow}, safety margin: ${safetyMargin})`
     );
+    this.truncationHandler?.({
+      agentRole: role ?? 'agent',
+      tokensTruncated: Math.max(0, totalTokens - allowedPromptTokens),
+      contextWindowActual: contextWindow,
+      budgetAllocated,
+    });
 
     return truncated;
   }

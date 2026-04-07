@@ -8,6 +8,7 @@ import {
   AgentPrompt,
   CodeReviewerOutput,
   ContextOrchestratorConfig,
+  ExecutionPlan,
   FlowDiagramOutput,
   PhasedAgentConfig,
   RiskHypothesis,
@@ -17,10 +18,13 @@ import {
 } from "./orchestratorTypes";
 import { RiskHypothesisGenerator } from "./RiskHypothesisGenerator";
 import { ISharedContextStore } from "./SharedContextStore";
+import { SessionMemory } from "./SessionMemory";
 
 export class MultiAgentExecutor {
   private diffSummary: string = "";
   private changedFiles: UnifiedDiffFile[] = [];
+  private lastAgentTokenUsage = new Map<string, number>();
+  private lastSkippedAgents: Array<{ role: string; reason: string }> = [];
 
   constructor(
     private readonly config: ContextOrchestratorConfig,
@@ -107,9 +111,12 @@ export class MultiAgentExecutor {
     config: PhasedAgentConfig,
     adapter: ILLMAdapter,
     signal?: AbortSignal,
-    request?: ContextGenerationRequest
+    request?: ContextGenerationRequest,
+    executionPlan?: ExecutionPlan,
   ): Promise<string[]> {
-    const { phase1, sharedStore, promptBuilder, buildContext, budgetAllocations } = config;
+    const { sharedStore, promptBuilder, buildContext, budgetAllocations } = config;
+    this.lastAgentTokenUsage = new Map();
+    this.lastSkippedAgents = [];
     this.setDiffContext(
       typeof (promptBuilder as { buildDiffSummary?: (files: UnifiedDiffFile[]) => string }).buildDiffSummary === "function"
         ? (promptBuilder as { buildDiffSummary: (files: UnifiedDiffFile[]) => string }).buildDiffSummary(buildContext.changedFiles)
@@ -117,55 +124,77 @@ export class MultiAgentExecutor {
       buildContext.changedFiles,
     );
 
+    const enabledRoles = executionPlan?.enabledAgents
+      ? new Set(executionPlan.enabledAgents)
+      : undefined;
+    const phase1 = enabledRoles
+      ? config.phase1.filter((agent) => enabledRoles.has(agent.role))
+      : config.phase1;
+    const budgetByRole = new Map(budgetAllocations.map((budget) => [budget.agentRole, budget]));
+    const phase1Agents = phase1.map((agent) => ({
+      ...agent,
+      allocatedBudget: budgetByRole.get(agent.role),
+    }));
+
+    if (executionPlan?.disabledAgents?.length) {
+      this.lastSkippedAgents = executionPlan.disabledAgents.map((item) => ({ ...item }));
+      for (const disabled of executionPlan.disabledAgents) {
+        this.reportLog(request, `[phase1] skipped agent ${disabled.role}: ${disabled.reason}`);
+      }
+    }
+
     // ── Phase 1: Parallel execution ──
-    const phase1Roles = phase1.map(agent => agent.role).join(', ');
+    const phase1Roles = phase1Agents.map(agent => agent.role).join(', ');
     this.reportProgress(
       request,
-      phase1.length > 0
+      phase1Agents.length > 0
         ? `Executing phase 1 agents: ${phase1Roles}...`
         : 'Executing phase 1 agents...'
     );
-    const phase1Results: (string | Error)[] = new Array(phase1.length);
+    const phase1Results: (string | Error)[] = new Array(phase1Agents.length);
 
     let nextIndex = 0;
     const runPhase1 = async () => {
       while (true) {
         this.throwIfCancelled(signal);
         const idx = nextIndex++;
-        if (idx >= phase1.length) { return; }
+        if (idx >= phase1Agents.length) { return; }
         try {
-          phase1Results[idx] = await this.runAgent(phase1[idx], adapter, signal, request);
+          phase1Results[idx] = await this.runAgent(phase1Agents[idx], adapter, signal, request);
         } catch (error) {
           phase1Results[idx] = error instanceof Error ? error : new Error(String(error));
-          this.reportLog(request, `[phase1] agent ${phase1[idx].role} failed: ${error}`);
+          this.reportLog(request, `[phase1] agent ${phase1Agents[idx].role} failed: ${error}`);
         }
       }
     };
     await Promise.all(Array.from(
-      { length: Math.min(this.config.concurrency, phase1.length) },
+      { length: Math.min(this.config.concurrency, phase1Agents.length) },
       () => runPhase1()
     ));
 
     // ── Parse Phase 1 structured outputs → store in SharedContextStore ──
     const structuredReports: StructuredAgentReport[] = [];
-    for (let i = 0; i < phase1.length; i++) {
+    for (let i = 0; i < phase1Agents.length; i++) {
       const result = phase1Results[i];
       if (typeof result !== 'string') { continue; }
 
-      const parsed = this.parseStructuredOutput(result, phase1[i].outputSchema);
+      const parsed = this.parseStructuredOutput(result, phase1Agents[i].outputSchema);
       if (parsed) {
         structuredReports.push(parsed);
-        (sharedStore as ISharedContextStore).addAgentFindings(phase1[i].role, [{
-          agentRole: phase1[i].role,
+        (sharedStore as ISharedContextStore).addAgentFindings(phase1Agents[i].role, [{
+          agentRole: phase1Agents[i].role,
           type:
-            phase1[i].role === 'Code Reviewer'
+            phase1Agents[i].role === 'Code Reviewer'
               ? 'issue'
-              : phase1[i].role === 'Security Analyst'
+              : phase1Agents[i].role === 'Security Analyst'
                 ? 'security'
                 : 'flow',
           data: parsed.structured,
           timestamp: Date.now(),
         }]);
+        if (sharedStore instanceof SessionMemory) {
+          this.transitionSessionMemoryByRole(sharedStore, phase1Agents[i].role, 'self_audit');
+        }
       }
     }
 
@@ -193,43 +222,69 @@ export class MultiAgentExecutor {
         this.reportLog(request, `[hypothesis] skipped: missing Phase 1 outputs (CR=${!!crReport}, FD=${!!fdReport}, graph=${!!graph})`);
       }
       (sharedStore as ISharedContextStore).setRiskHypotheses(hypotheses);
+      if (sharedStore instanceof SessionMemory) {
+        for (const hypothesis of sharedStore.getHypotheses({ status: ['proposed'] })) {
+          sharedStore.transitionHypothesisStatus(hypothesis.id, 'verified', 'observer');
+        }
+      }
     } catch (error) {
       this.reportLog(request, `[hypothesis] generation failed, Observer runs without hypotheses: ${error}`);
     }
 
     // ── Phase 2: Observer with injected context ──
-    this.reportProgress(request, "Observer analyzing with context from other agents...");
-    const observerBudget = budgetAllocations.find(b => b.agentRole === 'Observer')!;
-    const observerAgent = promptBuilder.buildObserverPrompt(
-      { ...buildContext, sharedContextStore: sharedStore, riskHypotheses: hypotheses },
-      observerBudget
-    );
+    let observerResult = '';
+    const observerEnabled = !enabledRoles || enabledRoles.has('Observer');
+    if (observerEnabled) {
+      this.reportProgress(request, "Observer analyzing with context from other agents...");
+      const observerBudget = budgetAllocations.find(b => b.agentRole === 'Observer')!;
+      const observerAgent = {
+        ...promptBuilder.buildObserverPrompt(
+          { ...buildContext, sharedContextStore: sharedStore, riskHypotheses: hypotheses },
+          observerBudget
+        ),
+        allocatedBudget: observerBudget,
+      };
 
-    let observerResult: string;
-    try {
-      observerResult = await this.runAgent(observerAgent, adapter, signal, request);
+      try {
+        observerResult = await this.runAgent(observerAgent, adapter, signal, request);
 
-      // Parse and store Observer structured output
-      const parsedObserver = this.parseStructuredOutput(observerResult, 'observer');
-      if (parsedObserver) {
-        (sharedStore as ISharedContextStore).addAgentFindings('Observer', [{
-          agentRole: 'Observer',
-          type: 'risk',
-          data: parsedObserver.structured,
-          timestamp: Date.now(),
-        }]);
+        // Parse and store Observer structured output
+        const parsedObserver = this.parseStructuredOutput(observerResult, 'observer');
+        if (parsedObserver) {
+          (sharedStore as ISharedContextStore).addAgentFindings('Observer', [{
+            agentRole: 'Observer',
+            type: 'risk',
+            data: parsedObserver.structured,
+            timestamp: Date.now(),
+          }]);
+          if (sharedStore instanceof SessionMemory) {
+            this.transitionSessionMemoryByRole(sharedStore, 'Observer', 'observer');
+          }
+        }
+      } catch (error) {
+        this.reportLog(request, `[phase2] Observer failed: ${error}`);
+        observerResult = `### Agent: Observer\n\nObserver analysis unavailable due to error.`;
       }
-    } catch (error) {
-      this.reportLog(request, `[phase2] Observer failed: ${error}`);
-      observerResult = `### Agent: Observer\n\nObserver analysis unavailable due to error.`;
+    } else {
+      const reason = executionPlan?.disabledAgents.find((item) => item.role === 'Observer')?.reason ?? 'disabled by execution plan';
+      this.reportLog(request, `[phase2] skipped agent Observer: ${reason}`);
+      this.lastSkippedAgents.push({ role: 'Observer', reason });
     }
 
     // ── Combine all results ──
     const allResults = [
       ...phase1Results.filter((r): r is string => typeof r === 'string'),
-      observerResult,
+      ...(observerResult ? [observerResult] : []),
     ];
     return allResults;
+  }
+
+  getLastAgentTokenUsage(): Record<string, number> {
+    return Object.fromEntries(this.lastAgentTokenUsage.entries());
+  }
+
+  getLastSkippedAgents(): Array<{ role: string; reason: string }> {
+    return [...this.lastSkippedAgents];
   }
 
   /**
@@ -616,6 +671,17 @@ Include "verificationResults" in your JSON output.`,
     ].join('\n');
   }
 
+  private transitionSessionMemoryByRole(
+    sessionMemory: SessionMemory,
+    role: string,
+    actor: 'self_audit' | 'observer',
+  ): void {
+    const pending = sessionMemory.getFindings({ agentRole: role, status: ['proposed'] });
+    for (const finding of pending) {
+      sessionMemory.transitionFindingStatus(finding.id, 'verified', actor);
+    }
+  }
+
   private estimateTokens(text: string): number {
     if (this.tokenEstimator) {
       return this.tokenEstimator.estimateTextTokens(text);
@@ -798,7 +864,13 @@ Include "verificationResults" in your JSON output.`,
         : currentPrompt;
 
       const safePrompt = this.calibration.safeTruncatePrompt(
-        promptForGeneration, options.systemMessage || "", adapter, request, agent.role
+        promptForGeneration,
+        options.systemMessage || "",
+        adapter,
+        request,
+        agent.role,
+        undefined,
+        agent.allocatedBudget?.totalBudget,
       );
 
       const startTime = Date.now();
@@ -807,6 +879,13 @@ Include "verificationResults" in your JSON output.`,
       );
       this.throwIfCancelled(signal);
       lastResponse = response;
+      const estimatedTotal =
+        response.totalTokens ??
+        ((response.promptTokens ?? this.estimateTokens(safePrompt)) + (response.completionTokens ?? this.estimateTokens(response.text)));
+      this.lastAgentTokenUsage.set(
+        agent.role,
+        (this.lastAgentTokenUsage.get(agent.role) ?? 0) + estimatedTotal,
+      );
 
       this.reportLlmLog(request, {
         stage: `agent:${agent.role}:iter${iteration + 1}`,

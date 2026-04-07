@@ -13,6 +13,7 @@ import { GitService } from '../../services/utils/gitService';
 import { ReviewWorkflowServiceBase } from '../reviewShared/reviewWorkflowServiceBase';
 import { AgentPrompt } from '../../services/llm/ContextOrchestratorService';
 import { SharedContextStoreImpl } from '../../services/llm/orchestrator/SharedContextStore';
+import { SessionMemory } from '../../services/llm/orchestrator/SessionMemory';
 import { ContextBudgetManager, DEFAULT_BUDGET_CONFIG, DESCRIPTION_BUDGET_CONFIG } from '../../services/llm/orchestrator/ContextBudgetManager';
 import { AgentPromptBuilder } from '../../services/llm/orchestrator/AgentPromptBuilder';
 import { DependencyGraphIndex, DEFAULT_GRAPH_CONFIG } from '../../services/llm/orchestrator/DependencyGraphIndex';
@@ -39,6 +40,7 @@ import {
 import { mergeSynthesisOutputs } from '../../services/llm/orchestrator/SynthesisMerger';
 import { REVIEW_OUTPUT_CONTRACT } from '../../prompts/reviewOutputContract';
 import { randomUUID } from 'crypto';
+import { shouldUseAdaptivePipeline } from '../../services/llm/orchestrator/adaptivePipelineFlag';
 
 export interface ReviewResult {
     success: boolean;
@@ -130,7 +132,7 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                 const reviewStartTime = Date.now();
 
                 // ── Step 2: Initialize new pipeline components ──
-                const sharedStore = new SharedContextStoreImpl();
+                const sharedStore = shouldUseAdaptivePipeline() ? new SessionMemory() : new SharedContextStoreImpl();
                 const tokenEstimator = new TokenEstimatorService();
                 const budgetManager = new ContextBudgetManager(DEFAULT_BUDGET_CONFIG, tokenEstimator);
                 const promptBuilder = new AgentPromptBuilder(budgetManager, tokenEstimator);
@@ -241,107 +243,131 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                     ),
                 };
 
-                const phaseReports = await this.contextOrchestrator.executePhasedAgentReports(
-                    {
-                        phase1: agents,
-                        phase2: [],
-                        sharedStore,
-                        promptBuilder,
-                        buildContext,
-                        budgetAllocations: safeBudgets,
-                    },
-                    dependencyState.adapter,
-                    abortController.signal,
-                    reviewRequest
-                );
-
-                const structuredReports: StructuredAgentReport[] = [];
-                const crFindings = sharedStore.getAgentFindings('Code Reviewer');
-                const fdFindings = sharedStore.getAgentFindings('Flow Diagram');
-                const saFindings = sharedStore.getAgentFindings('Security Analyst');
-                const obsFindings = sharedStore.getAgentFindings('Observer');
-
-                if (crFindings.length > 0) {
-                    structuredReports.push({
-                        role: 'Code Reviewer',
-                        structured: crFindings[0].data as CodeReviewerOutput,
-                        raw: this.getRawAgentReport(phaseReports, 'Code Reviewer'),
-                    });
-                }
-                if (fdFindings.length > 0) {
-                    structuredReports.push({
-                        role: 'Flow Diagram',
-                        structured: fdFindings[0].data as FlowDiagramOutput,
-                        raw: this.getRawAgentReport(phaseReports, 'Flow Diagram'),
-                    });
-                }
-                if (saFindings.length > 0) {
-                    structuredReports.push({
-                        role: 'Security Analyst',
-                        structured: saFindings[0].data as SecurityAnalystOutput,
-                        raw: this.getRawAgentReport(phaseReports, 'Security Analyst'),
-                    });
-                }
-                if (obsFindings.length > 0) {
-                    structuredReports.push({
-                        role: 'Observer',
-                        structured: obsFindings[0].data as ObserverOutput,
-                        raw: this.getRawAgentReport(phaseReports, 'Observer'),
-                    });
-                }
-
-                const synthCtx: SynthesisAgentContext = {
-                    diffSummary: promptBuilder.buildDiffSummary(branchDiff.changes),
-                    changedFiles: branchDiff.changes,
-                    outputContract: REVIEW_OUTPUT_CONTRACT,
-                    suppressedFindings,
-                    resolutionStats,
-                    language,
-                    codeReviewerFindings: crFindings[0]?.data as CodeReviewerOutput | undefined,
-                    securityFindings: saFindings[0]?.data as SecurityAnalystOutput | undefined,
-                    observerFindings: obsFindings[0]?.data as ObserverOutput | undefined,
-                    flowDiagramFindings: fdFindings[0]?.data as FlowDiagramOutput | undefined,
-                    detailChangeReport: this.getRawAgentReport(phaseReports, 'Detail Change'),
-                    hypothesisVerdicts: (obsFindings[0]?.data as ObserverOutput | undefined)?.hypothesisVerdicts,
-                    dependencyGraphSummary: dependencyGraph
-                        ? DependencyGraphIndex.serializeForPrompt(dependencyGraph, 'summary')
-                        : undefined,
+                const phaseConfig = {
+                    phase1: agents,
+                    phase2: [],
+                    sharedStore,
+                    promptBuilder,
+                    buildContext,
+                    budgetAllocations: safeBudgets,
                 };
 
-                const synthesisBudgets = budgetManager.allocateSynthesisBudgets(
-                    adapterContextWindow,
-                    adapterMaxOutputTokens,
-                    systemTokens,
-                );
-                const summaryBudget = synthesisBudgets.find(budget => budget.agentRole === 'Summary & Detail') ?? synthesisBudgets[0];
-                const improvementBudget = synthesisBudgets.find(budget => budget.agentRole === 'Improvement Suggestions') ?? synthesisBudgets[1];
-                const riskBudget = synthesisBudgets.find(budget => budget.agentRole === 'Risk & TODO') ?? synthesisBudgets[2];
-                const diagramBudget = synthesisBudgets.find(budget => budget.agentRole === 'Diagram & Assessment') ?? synthesisBudgets[3];
+                let structuredReports: StructuredAgentReport[] = [];
+                let review: string;
 
-                const synthesisAgents = [
-                    promptBuilder.buildSummaryDetailAgentPrompt(synthCtx, summaryBudget),
-                    promptBuilder.buildImprovementSuggestionsAgentPrompt(synthCtx, improvementBudget),
-                    promptBuilder.buildRiskTodoAgentPrompt(synthCtx, riskBudget),
-                    promptBuilder.buildDiagramAssessmentAgentPrompt(synthCtx, diagramBudget),
-                ];
+                if (shouldUseAdaptivePipeline()) {
+                    const adaptiveOutput = await this.contextOrchestrator.runAdaptivePipeline({
+                        adapter: dependencyState.adapter,
+                        phaseConfig,
+                        sharedStore,
+                        suppressedFindings,
+                        changedFiles: branchDiff.changes,
+                        language,
+                        reviewDurationMs: 0,
+                        reviewStartTimeMs: reviewStartTime,
+                        signal: abortController.signal,
+                        request: reviewRequest,
+                    });
+                    structuredReports = adaptiveOutput.intermediateData.structuredReports;
+                    review = adaptiveOutput.review;
+                } else {
+                    const phaseReports = await this.contextOrchestrator.executePhasedAgentReports(
+                        phaseConfig,
+                        dependencyState.adapter,
+                        abortController.signal,
+                        reviewRequest
+                    );
 
-                onProgress?.('Running synthesis agents...');
-                const synthesisOutputs = await this.contextOrchestrator.executeSynthesisAgentReports(
-                    synthesisAgents,
-                    dependencyState.adapter,
-                    abortController.signal,
-                    reviewRequest,
-                );
+                    const crFindings = sharedStore.getAgentFindings('Code Reviewer');
+                    const fdFindings = sharedStore.getAgentFindings('Flow Diagram');
+                    const saFindings = sharedStore.getAgentFindings('Security Analyst');
+                    const obsFindings = sharedStore.getAgentFindings('Observer');
 
-                const review = mergeSynthesisOutputs(
-                    synthesisOutputs,
-                    branchDiff.changes,
-                    structuredReports,
-                    suppressedFindings,
-                    Date.now() - reviewStartTime,
-                    synthCtx.detailChangeReport,
-                    language,
-                );
+                    if (crFindings.length > 0) {
+                        structuredReports.push({
+                            role: 'Code Reviewer',
+                            structured: crFindings[0].data as CodeReviewerOutput,
+                            raw: this.getRawAgentReport(phaseReports, 'Code Reviewer'),
+                        });
+                    }
+                    if (fdFindings.length > 0) {
+                        structuredReports.push({
+                            role: 'Flow Diagram',
+                            structured: fdFindings[0].data as FlowDiagramOutput,
+                            raw: this.getRawAgentReport(phaseReports, 'Flow Diagram'),
+                        });
+                    }
+                    if (saFindings.length > 0) {
+                        structuredReports.push({
+                            role: 'Security Analyst',
+                            structured: saFindings[0].data as SecurityAnalystOutput,
+                            raw: this.getRawAgentReport(phaseReports, 'Security Analyst'),
+                        });
+                    }
+                    if (obsFindings.length > 0) {
+                        structuredReports.push({
+                            role: 'Observer',
+                            structured: obsFindings[0].data as ObserverOutput,
+                            raw: this.getRawAgentReport(phaseReports, 'Observer'),
+                        });
+                    }
+
+                    const synthCtx: SynthesisAgentContext = {
+                        diffSummary: promptBuilder.buildDiffSummary(branchDiff.changes),
+                        changedFiles: branchDiff.changes,
+                        outputContract: REVIEW_OUTPUT_CONTRACT,
+                        suppressedFindings,
+                        resolutionStats,
+                        language,
+                        codeReviewerFindings: crFindings[0]?.data as CodeReviewerOutput | undefined,
+                        securityFindings: saFindings[0]?.data as SecurityAnalystOutput | undefined,
+                        observerFindings: obsFindings[0]?.data as ObserverOutput | undefined,
+                        flowDiagramFindings: fdFindings[0]?.data as FlowDiagramOutput | undefined,
+                        detailChangeReport: this.getRawAgentReport(phaseReports, 'Detail Change'),
+                        hypothesisVerdicts: (obsFindings[0]?.data as ObserverOutput | undefined)?.hypothesisVerdicts,
+                        dependencyGraphSummary: dependencyGraph
+                            ? DependencyGraphIndex.serializeForPrompt(dependencyGraph, 'summary')
+                            : undefined,
+                    };
+
+                    const synthesisBudgets = budgetManager.allocateSynthesisBudgets(
+                        adapterContextWindow,
+                        adapterMaxOutputTokens,
+                        systemTokens,
+                    );
+                    const summaryBudget = synthesisBudgets.find(budget => budget.agentRole === 'Summary & Detail') ?? synthesisBudgets[0];
+                    const improvementBudget = synthesisBudgets.find(budget => budget.agentRole === 'Improvement Suggestions') ?? synthesisBudgets[1];
+                    const riskBudget = synthesisBudgets.find(budget => budget.agentRole === 'Risk & TODO') ?? synthesisBudgets[2];
+                    const diagramBudget = synthesisBudgets.find(budget => budget.agentRole === 'Diagram & Assessment') ?? synthesisBudgets[3];
+
+                    const synthesisAgents = [
+                        promptBuilder.buildSummaryDetailAgentPrompt(synthCtx, summaryBudget),
+                        promptBuilder.buildImprovementSuggestionsAgentPrompt(synthCtx, improvementBudget),
+                        promptBuilder.buildRiskTodoAgentPrompt(synthCtx, riskBudget),
+                        promptBuilder.buildDiagramAssessmentAgentPrompt(synthCtx, diagramBudget),
+                    ];
+
+                    onProgress?.('Running synthesis agents...');
+                    const synthesisOutputs = await this.contextOrchestrator.executeSynthesisAgentReports(
+                        synthesisAgents,
+                        dependencyState.adapter,
+                        abortController.signal,
+                        reviewRequest,
+                    );
+
+                    review = mergeSynthesisOutputs(
+                        synthesisOutputs,
+                        branchDiff.changes,
+                        structuredReports,
+                        suppressedFindings,
+                        Date.now() - reviewStartTime,
+                        synthCtx.detailChangeReport,
+                        language,
+                    );
+                }
+
+                const crFindings = sharedStore.getAgentFindings('Code Reviewer');
+                const saFindings = sharedStore.getAgentFindings('Security Analyst');
 
                 if (this.reviewMemory) {
                     await this.reviewMemory.savePatterns(structuredReports);
@@ -448,7 +474,7 @@ export class ReviewMergeService extends ReviewWorkflowServiceBase {
                 const systemMessage = SYSTEM_PROMPT_GENERATE_DESCRIPTION_MERGE(language, customSystemPrompt, '');
 
                 // ── Initialize multi-agent pipeline ──
-                const sharedStore = new SharedContextStoreImpl();
+                const sharedStore = shouldUseAdaptivePipeline() ? new SessionMemory() : new SharedContextStoreImpl();
                 const tokenEstimator = new TokenEstimatorService();
                 const budgetManager = new ContextBudgetManager(DESCRIPTION_BUDGET_CONFIG, tokenEstimator);
                 const promptBuilder = new AgentPromptBuilder(budgetManager, tokenEstimator);

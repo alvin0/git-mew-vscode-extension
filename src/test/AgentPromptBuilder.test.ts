@@ -16,6 +16,7 @@ import {
   RiskHypothesis,
 } from '../services/llm/orchestrator/orchestratorTypes';
 import { SharedContextStoreImpl } from '../services/llm/orchestrator/SharedContextStore';
+import { SessionMemory } from '../services/llm/orchestrator/SessionMemory';
 import { REVIEW_OUTPUT_CONTRACT } from '../prompts/reviewOutputContract';
 import { UnifiedDiffFile } from '../services/llm/contextTypes';
 import {
@@ -424,6 +425,105 @@ suite('AgentPromptBuilder', () => {
     assert.ok(result.prompt.includes('Changed Files Summary'), 'Should contain diff summary');
     assert.strictEqual(result.role, 'Observer');
     assert.strictEqual(result.phase, 2);
+  });
+
+  test('buildObserverPrompt parity: SessionMemory structured-read path preserves key observer context from legacy store', () => {
+    const builder = createBuilder();
+    const legacyStore = new SharedContextStoreImpl();
+    const sessionMemory = new SessionMemory();
+
+    const crData: CodeReviewerOutput = {
+      issues: [{
+        file: 'src/auth.ts',
+        location: 'line 15',
+        severity: 'major',
+        category: 'correctness',
+        description: 'null check missing for user input',
+        suggestion: 'add null check',
+      }],
+      affectedSymbols: ['login'],
+      qualityVerdict: 'Not Bad',
+    };
+    const fdData: FlowDiagramOutput = {
+      diagrams: [{
+        name: 'auth-flow',
+        type: 'sequence',
+        plantumlCode: '@startuml\nA -> B\n@enduml',
+        description: 'Auth flow',
+      }],
+      affectedFlows: ['login-flow'],
+    };
+
+    legacyStore.addAgentFindings('Code Reviewer', [{
+      agentRole: 'Code Reviewer',
+      type: 'issue',
+      data: crData,
+      timestamp: Date.now(),
+    }]);
+    legacyStore.addAgentFindings('Flow Diagram', [{
+      agentRole: 'Flow Diagram',
+      type: 'flow',
+      data: fdData,
+      timestamp: Date.now(),
+    }]);
+
+    sessionMemory.addAgentFindings('Code Reviewer', [{
+      agentRole: 'Code Reviewer',
+      type: 'issue',
+      data: crData,
+      timestamp: Date.now(),
+    }]);
+    sessionMemory.addAgentFindings('Flow Diagram', [{
+      agentRole: 'Flow Diagram',
+      type: 'flow',
+      data: fdData,
+      timestamp: Date.now(),
+    }]);
+    for (const finding of sessionMemory.getFindings({ status: ['proposed'] })) {
+      sessionMemory.transitionFindingStatus(finding.id, 'verified', 'self_audit');
+    }
+
+    const budget = createBudget({ agentRole: 'Observer' });
+    const legacyPrompt = builder.buildObserverPrompt(createBuildContext({ sharedContextStore: legacyStore }), budget);
+    const sessionPrompt = builder.buildObserverPrompt(createBuildContext({ sharedContextStore: sessionMemory }), budget);
+
+    for (const expected of ['Changed Files Summary', 'null check missing', 'auth-flow']) {
+      assert.ok(legacyPrompt.prompt.includes(expected), `Legacy prompt should include ${expected}`);
+      assert.ok(sessionPrompt.prompt.includes(expected), `SessionMemory prompt should include ${expected}`);
+    }
+  });
+
+  test('buildObserverPrompt with SessionMemory handles skipped-agent data gracefully', () => {
+    const builder = createBuilder();
+    const sessionMemory = new SessionMemory();
+    sessionMemory.addAgentFindings('Code Reviewer', [{
+      agentRole: 'Code Reviewer',
+      type: 'issue',
+      data: {
+        issues: [{
+          file: 'src/auth.ts',
+          location: 'line 15',
+          severity: 'major',
+          category: 'correctness',
+          description: 'null check missing for user input',
+          suggestion: 'add null check',
+        }],
+        affectedSymbols: ['login'],
+        qualityVerdict: 'Not Bad',
+      } as CodeReviewerOutput,
+      timestamp: Date.now(),
+    }]);
+    for (const finding of sessionMemory.getFindings({ status: ['proposed'] })) {
+      sessionMemory.transitionFindingStatus(finding.id, 'verified', 'self_audit');
+    }
+
+    const result = builder.buildObserverPrompt(
+      createBuildContext({ sharedContextStore: sessionMemory }),
+      createBudget({ agentRole: 'Observer' }),
+    );
+
+    assert.ok(result.prompt.includes('null check missing'), 'Observer prompt should still include CR findings');
+    assert.ok(!result.prompt.includes('auth-flow'), 'Observer prompt should not require missing Flow Diagram data');
   });
 
   // ── buildSynthesizerPrompt ──

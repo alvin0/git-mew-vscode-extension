@@ -1,5 +1,6 @@
 import { BudgetManagerConfig, AgentBudgetAllocation } from './orchestratorTypes';
 import { TokenEstimatorService } from '../TokenEstimatorService';
+import { ExecutionPlan } from './executionPlanTypes';
 
 export const DEFAULT_BUDGET_CONFIG: BudgetManagerConfig = {
   referenceContextRatio: 0.40,
@@ -15,6 +16,7 @@ export const DEFAULT_BUDGET_CONFIG: BudgetManagerConfig = {
   safetyThreshold: 0.85,
 };
 
+/** @deprecated Will be removed after Phase 3 stabilization. */
 export const SYNTHESIS_BUDGET_RATIOS: Record<string, number> = {
   'Summary & Detail': 0.15,
   'Improvement Suggestions': 0.40,
@@ -133,16 +135,101 @@ export class ContextBudgetManager {
     return allocations;
   }
 
+  computeAllocatablePool(
+    contextWindow: number,
+    systemTokens: number,
+    referenceTokens: number,
+  ): number {
+    const safetyMargin = this.getSafetyMargin(contextWindow);
+    return Math.max(0, contextWindow - safetyMargin - systemTokens - referenceTokens);
+  }
+
+  allocateFromExecutionPlan(
+    plan: ExecutionPlan | undefined,
+    contextWindow: number,
+    maxOutputTokens: number,
+    systemMessageTokens: number,
+    diffTokens: number,
+  ): AgentBudgetAllocation[] {
+    if (!plan || !plan.agentBudgets || Object.keys(plan.agentBudgets).length === 0) {
+      return this.allocateAgentBudgets(contextWindow, maxOutputTokens, systemMessageTokens, diffTokens);
+    }
+
+    const referenceBudget = this.computeReferenceContextBudget(contextWindow);
+    const allocatablePool = this.computeAllocatablePool(contextWindow, systemMessageTokens, referenceBudget);
+    const normalizedRatios = this.normalizeRatios(plan.agentBudgets);
+
+    const allocations = Object.entries(normalizedRatios).map(([agentRole, ratio]) => {
+      const totalBudget = Math.floor(allocatablePool * ratio);
+      const diffShare = this.resolvePlanDiffShare(agentRole);
+      const referenceShare = this.resolvePlanReferenceShare(agentRole);
+      const diffBudget = Math.min(Math.floor(totalBudget * diffShare), diffTokens);
+      const referenceAllocation = Math.floor(totalBudget * referenceShare);
+      const sharedContextBudget = Math.max(0, totalBudget - diffBudget - referenceAllocation);
+
+      return {
+        agentRole,
+        totalBudget,
+        diffBudget,
+        referenceBudget: Math.min(referenceAllocation, referenceBudget),
+        sharedContextBudget,
+        reservedForOutput: maxOutputTokens,
+      };
+    });
+
+    return this.enforceSafetyThreshold(allocations, contextWindow, 0.9);
+  }
+
+  allocateSectionWriterBudgets(
+    plan: ExecutionPlan,
+    contextWindow: number,
+    maxOutputTokens: number,
+    systemMessageTokens: number,
+  ): AgentBudgetAllocation[] {
+    if (!plan.sectionWriters.summary && !plan.sectionWriters.improvements) {
+      return [];
+    }
+
+    const safetyMargin = this.getSafetyMargin(contextWindow);
+    const availablePool = Math.max(0, contextWindow - safetyMargin - systemMessageTokens);
+    const enabledWriters = Object.entries(plan.sectionWriters)
+      .filter(([, enabled]) => enabled)
+      .map(([section]) => section);
+
+    const explicitBudgets = {
+      summary: plan.sectionWriterBudgets?.summary,
+      improvements: plan.sectionWriterBudgets?.improvements,
+    };
+
+    const derivedRatios = {
+      summary: 0.15,
+      improvements: 0.40,
+    };
+
+    return enabledWriters.map((section) => {
+      const explicit = explicitBudgets[section as 'summary' | 'improvements'];
+      const totalBudget = explicit
+        ? Math.min(explicit, availablePool)
+        : Math.floor(availablePool * derivedRatios[section as 'summary' | 'improvements']);
+
+      return {
+        agentRole: section === 'summary' ? 'Summary Writer' : 'Improvement Writer',
+        totalBudget,
+        diffBudget: 0,
+        referenceBudget: 0,
+        sharedContextBudget: totalBudget,
+        reservedForOutput: maxOutputTokens,
+      };
+    });
+  }
+
+  /** @deprecated Will be removed after Phase 3 stabilization. */
   allocateSynthesisBudgets(
     contextWindow: number,
     maxOutputTokens: number,
     systemMessageTokens: number,
   ): AgentBudgetAllocation[] {
-    const safetyMargin = contextWindow > 128_000
-      ? 8192
-      : contextWindow > 32_000
-        ? 4096
-        : 2048;
+    const safetyMargin = this.getSafetyMargin(contextWindow);
 
     const totalInputBudget = Math.max(0, contextWindow - safetyMargin - systemMessageTokens);
     return Object.entries(SYNTHESIS_BUDGET_RATIOS).map(([agentRole, ratio]) => {
@@ -163,7 +250,15 @@ export class ContextBudgetManager {
     allocations: AgentBudgetAllocation[],
     contextWindow: number
   ): AgentBudgetAllocation[] {
-    const safetyLimit = Math.floor(contextWindow * this.config.safetyThreshold);
+    return this.enforceSafetyThreshold(allocations, contextWindow, this.config.safetyThreshold);
+  }
+
+  private enforceSafetyThreshold(
+    allocations: AgentBudgetAllocation[],
+    contextWindow: number,
+    threshold: number,
+  ): AgentBudgetAllocation[] {
+    const safetyLimit = Math.floor(contextWindow * threshold);
 
     const totalEstimated = allocations.reduce(
       (sum, a) => sum + a.diffBudget + a.referenceBudget + a.sharedContextBudget,
@@ -182,5 +277,49 @@ export class ContextBudgetManager {
       sharedContextBudget: Math.floor(a.sharedContextBudget * overageRatio),
       // diffBudget unchanged
     }));
+  }
+
+  private getSafetyMargin(contextWindow: number): number {
+    return contextWindow > 128_000
+      ? 8192
+      : contextWindow > 32_000
+        ? 4096
+        : 2048;
+  }
+
+  private normalizeRatios(ratios: Record<string, number>): Record<string, number> {
+    const sum = Object.values(ratios).reduce((total, value) => total + value, 0);
+    if (sum <= 1) {
+      return { ...ratios };
+    }
+
+    console.warn(`[ContextBudgetManager] ExecutionPlan ratios exceed 1.0 (${sum.toFixed(3)}). Normalizing.`);
+    const normalized: Record<string, number> = {};
+    for (const [role, ratio] of Object.entries(ratios)) {
+      normalized[role] = ratio / sum;
+    }
+    return normalized;
+  }
+
+  private resolvePlanDiffShare(agentRole: string): number {
+    const ratio = DIFF_BUDGET_RATIOS[agentRole] ?? 0.25;
+    if (ratio >= 1) {
+      return 0.55;
+    }
+    if (ratio >= 0.35) {
+      return 0.4;
+    }
+    return 0.25;
+  }
+
+  private resolvePlanReferenceShare(agentRole: string): number {
+    const ratio = REFERENCE_BUDGET_RATIOS[agentRole] ?? 0.2;
+    if (ratio >= 0.5) {
+      return 0.2;
+    }
+    if (ratio >= 0.3) {
+      return 0.15;
+    }
+    return 0.1;
   }
 }
